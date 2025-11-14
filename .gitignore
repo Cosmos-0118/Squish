@@ -1,6 +1,7 @@
 Clop/bin/*
 Clop/bin-*/*
 Clop/bin.zip
+Clop/bin.tar.lrz
 *.dmg
 *.delta
 *.bkp
@@ -9,3 +10,9 @@ required.swift
 Releases/old_updates/
 *.tmp
 build/
+
+# Dotnet build outputs for the Windows port
+Clop-Windows/**/bin/
+Clop-Windows/**/obj/
+Clop-Windows/**/TestResults/
+Clop-Windows/**/publish/
