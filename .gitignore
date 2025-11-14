@@ -1,0 +1,11 @@
+Clop/bin/*
+Clop/bin-*/*
+Clop/bin.zip
+*.dmg
+*.delta
+*.bkp
+Releases/*.html
+required.swift
+Releases/old_updates/
+*.tmp
+build/

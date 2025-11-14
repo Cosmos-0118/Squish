@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "SampleWinUITemp (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "SampleWinUITemp (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}
