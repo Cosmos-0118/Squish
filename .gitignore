@@ -16,3 +16,9 @@ Clop-Windows/**/bin/
 Clop-Windows/**/obj/
 Clop-Windows/**/TestResults/
 Clop-Windows/**/publish/
+
+# External tool bundles (downloaded binaries, not source-controlled)
+Clop-Windows/tools/**
+!Clop-Windows/tools/
+!Clop-Windows/tools/.gitkeep
+!Clop-Windows/tools/README.md
