@@ -75,6 +75,7 @@ public partial class App : System.Windows.Application
                 services.AddSingleton<DirectoryOptimisationService>();
                 services.AddSingleton<ShortcutsBridge>();
                 services.AddSingleton<CrossAppAutomationHost>();
+                services.AddSingleton<IFolderPicker, FolderPicker>();
                 services.AddHostedService<Worker>();
 
                 services.AddSingleton<FloatingHudViewModel>();

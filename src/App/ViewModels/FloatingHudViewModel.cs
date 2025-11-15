@@ -19,21 +19,21 @@ public sealed class FloatingHudViewModel : ObservableObject
 
     public double PreferredWidth => _results.Count switch
     {
-        0 => 320,
-        1 => 340,
-        2 => 360,
-        3 => 380,
-        _ => 420
+        0 => 220,
+        1 => 230,
+        2 => 240,
+        3 => 250,
+        _ => 260
     };
 
     public double MaxResultsHeight => _results.Count switch
     {
-        0 => 180,
-        1 => 220,
-        2 => 280,
-        3 => 340,
-        4 => 380,
-        _ => 420
+        0 => 120,
+        1 => 160,
+        2 => 210,
+        3 => 260,
+        4 => 300,
+        _ => 320
     };
 
     private void OnResultsChanged(object? sender, NotifyCollectionChangedEventArgs e)

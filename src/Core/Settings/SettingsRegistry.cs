@@ -16,6 +16,7 @@ public static class SettingsRegistry
     public static readonly SettingKey<bool> OptimiseTiff = Bool("optimiseTIFF", true);
     public static readonly SettingKey<bool> EnableClipboardOptimiser = Bool("enableClipboardOptimiser", true);
     public static readonly SettingKey<bool> OptimiseVideoClipboard = Bool("optimiseVideoClipboard", true);
+    public static readonly SettingKey<bool> OptimiseClipboardFileDrops = Bool("optimiseClipboardFileDrops", false);
     public static readonly SettingKey<bool> OptimiseImagePathClipboard = Bool("optimiseImagePathClipboard", false);
     public static readonly SettingKey<bool> OptimisePdfClipboard = Bool("optimisePdfClipboard", true);
     public static readonly SettingKey<bool> StripMetadata = Bool("stripMetadata", true);
@@ -121,6 +122,7 @@ public static class SettingsRegistry
         OptimiseTiff,
         EnableClipboardOptimiser,
         OptimiseVideoClipboard,
+        OptimiseClipboardFileDrops,
         OptimisePdfClipboard,
         OptimiseImagePathClipboard,
         StripMetadata,

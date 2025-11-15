@@ -63,7 +63,7 @@ public sealed class FloatingHudController : IDisposable
             RegisterRequest(request);
         }
 
-        EnsureVisible(forceShow: true);
+        EnsureVisible();
         ApplyAutoHideSettings();
     }
 
