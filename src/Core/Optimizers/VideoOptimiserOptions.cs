@@ -16,11 +16,27 @@ public sealed record VideoOptimiserOptions
     public string FfmpegPath { get; init; } = "ffmpeg";
 
     /// <summary>
+    /// Absolute path for ffprobe. Defaults to PATH lookup.
+    /// </summary>
+    public string FfprobePath { get; init; } = "ffprobe";
+
+    /// <summary>
+    /// Allows callers to disable expensive metadata probing when not required.
+    /// </summary>
+    public bool EnableMetadataProbe { get; init; } = true;
+
+    /// <summary>
     /// Optional path to gifski. Required only when GIF export is requested.
     /// </summary>
     public string? GifskiPath { get; init; } = "gifski";
 
     public bool ForceMp4 { get; init; } = true;
+
+    public bool EnableContainerAwareRemux { get; init; } = true;
+
+    public bool EnableFormatSpecificTuning { get; init; } = true;
+
+    public double MinimumSavingsPercentBeforeReencode { get; init; } = 5d;
 
     public bool RemoveAudio { get; init; }
         = false;

@@ -1,7 +1,9 @@
 using System;
 using System.ComponentModel;
 using System.Drawing;
+using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Resources;
 using ClopWindows.App.Localization;
 using Microsoft.Extensions.Logging;
 
@@ -9,9 +11,12 @@ namespace ClopWindows.App.Services;
 
 public sealed class TrayIconService : IDisposable
 {
+    private const string TrayIconPackUri = "pack://application:,,,/ClopWindows;component/Assets/Brand/Assets.xcassets/MenubarIcon.imageset/clop-menubar.png";
+
     private readonly ILogger<TrayIconService> _logger;
     private readonly System.Windows.Forms.NotifyIcon _notifyIcon;
     private readonly System.Windows.Forms.ContextMenuStrip _contextMenu;
+    private readonly Icon _trayIcon;
     private MainWindow? _mainWindow;
     private bool _exitRequested;
     private bool _disposed;
@@ -22,10 +27,11 @@ public sealed class TrayIconService : IDisposable
         _logger = logger;
 
         _contextMenu = new System.Windows.Forms.ContextMenuStrip();
+        _trayIcon = LoadTrayIconOrDefault();
         _notifyIcon = new System.Windows.Forms.NotifyIcon
         {
             Text = ClopStringCatalog.Get("tray.tooltip"),
-            Icon = SystemIcons.Application,
+            Icon = _trayIcon,
             Visible = false,
             ContextMenuStrip = _contextMenu
         };
@@ -181,5 +187,38 @@ public sealed class TrayIconService : IDisposable
         _notifyIcon.Visible = false;
         _notifyIcon.Dispose();
         _contextMenu.Dispose();
+        _trayIcon.Dispose();
+    }
+
+    private Icon LoadTrayIconOrDefault()
+    {
+        try
+        {
+            var resourceUri = new Uri(TrayIconPackUri, UriKind.RelativeOrAbsolute);
+            StreamResourceInfo? resource = System.Windows.Application.GetResourceStream(resourceUri);
+            if (resource?.Stream is null)
+            {
+                return (Icon)SystemIcons.Application.Clone();
+            }
+
+            using var bitmap = new Bitmap(resource.Stream);
+            var hIcon = bitmap.GetHicon();
+            var icon = Icon.FromHandle(hIcon);
+            var clone = (Icon)icon.Clone();
+            icon.Dispose();
+            NativeMethods.DestroyIcon(hIcon);
+            return clone;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to load tray icon from {PackUri}", TrayIconPackUri);
+            return (Icon)SystemIcons.Application.Clone();
+        }
+    }
+
+    private static class NativeMethods
+    {
+        [DllImport("user32.dll")]
+        public static extern bool DestroyIcon(IntPtr handle);
     }
 }

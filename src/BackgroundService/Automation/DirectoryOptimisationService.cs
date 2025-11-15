@@ -300,6 +300,8 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
                 ["watcher.root"] = fileEvent.RootDirectory.Value
             };
 
+            OutputBehaviourSettings.ApplyTo(metadata);
+
             var request = new OptimisationRequest(fileEvent.ItemType, path, metadata: metadata);
             _pending[request.RequestId] = new DirectoryRequestContext(fileEvent.ItemType, path);
 
@@ -539,6 +541,11 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
         if (context.Path.Exists)
         {
             _recentlyOptimised[context.Path.Value] = DateTimeOffset.UtcNow;
+        }
+
+        if (e.Result.OutputPath is { } outputPath)
+        {
+            _recentlyOptimised[outputPath.Value] = DateTimeOffset.UtcNow;
         }
 
         if (e.Result.Status == OptimisationStatus.Succeeded)

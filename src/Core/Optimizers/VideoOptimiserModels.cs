@@ -57,6 +57,100 @@ public sealed record AudioPlan(bool RemoveAudio, bool CopyStream, string? Encode
     public static AudioPlan Copy => new(false, true, null, null, null, false, new LoudnessProfile(-24, -2, 7));
 }
 
+public sealed record VideoProbeInfo(
+    string? FormatName,
+    string? FormatLongName,
+    double? DurationSeconds,
+    long? ContainerBitrate,
+    long? ContainerSize,
+    VideoStreamInfo? Video,
+    AudioStreamInfo? Audio)
+{
+    public string NormalizedVideoCodec => CodecVocabulary.NormalizeVideo(Video?.CodecName);
+    public string NormalizedAudioCodec => CodecVocabulary.NormalizeAudio(Audio?.CodecName);
+}
+
+public sealed record VideoStreamInfo(
+    string? CodecName,
+    string? Profile,
+    string? PixelFormat,
+    string? ColorSpace,
+    int? Width,
+    int? Height,
+    long? Bitrate,
+    double? FrameRate,
+    bool IsHdr,
+    bool IsInterlaced);
+
+public sealed record AudioStreamInfo(
+    string? CodecName,
+    string? Profile,
+    int? Channels,
+    int? SampleRate,
+    long? Bitrate);
+
+public sealed record RemuxPlan(bool Enabled, RemuxReason Reason)
+{
+    public static RemuxPlan Disabled { get; } = new(false, RemuxReason.None);
+}
+
+public enum RemuxReason
+{
+    None,
+    ContainerNormalisation,
+    MinimalSavings
+}
+
+internal static class CodecVocabulary
+{
+    public static string NormalizeVideo(string? codec)
+    {
+        if (string.IsNullOrWhiteSpace(codec))
+        {
+            return string.Empty;
+        }
+
+        var value = codec.Trim().ToLowerInvariant();
+        return value switch
+        {
+            "h264" or "avc1" or "avc" => "h264",
+            "h265" or "hevc" => "hevc",
+            "av1" or "av01" => "av1",
+            "vp9" or "vp09" => "vp9",
+            "vp8" or "vp08" => "vp8",
+            var name when name.Contains("prores", StringComparison.OrdinalIgnoreCase) => "prores",
+            var name when name.Contains("dnx", StringComparison.OrdinalIgnoreCase) => "dnx",
+            _ => value
+        };
+    }
+
+    public static string NormalizeVideo(VideoCodec codec) => codec switch
+    {
+        VideoCodec.H264 => "h264",
+        VideoCodec.Hevc => "hevc",
+        VideoCodec.Av1 => "av1",
+        VideoCodec.Vp9 => "vp9",
+        _ => "h264"
+    };
+
+    public static string NormalizeAudio(string? codec)
+    {
+        if (string.IsNullOrWhiteSpace(codec))
+        {
+            return string.Empty;
+        }
+
+        var value = codec.Trim().ToLowerInvariant();
+        return value switch
+        {
+            "aac" or "mp4a" or "aac_latm" => "aac",
+            "opus" => "opus",
+            "vorbis" => "vorbis",
+            _ => value
+        };
+    }
+}
+
 public enum AnimatedExportFormat
 {
     Gif,

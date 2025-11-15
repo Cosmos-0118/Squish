@@ -24,6 +24,8 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     private bool _enableAutomaticImageOptimisations;
     private bool _enableAutomaticVideoOptimisations;
     private bool _enableAutomaticPdfOptimisations;
+    private bool _replaceOptimisedFilesInPlace;
+    private bool _deleteOriginalAfterConversion;
     private bool _suppressStoreUpdates;
     private readonly Dictionary<ShortcutId, ShortcutPreferenceViewModel> _shortcutLookup;
     private readonly FloatingHudController _hudController;
@@ -227,6 +229,36 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         }
     }
 
+    public bool ReplaceOptimisedFilesInPlace
+    {
+        get => _replaceOptimisedFilesInPlace;
+        set
+        {
+            if (SetProperty(ref _replaceOptimisedFilesInPlace, value) && !_suppressStoreUpdates)
+            {
+                SettingsHost.Set(SettingsRegistry.ReplaceOptimisedFilesInPlace, value);
+            }
+
+            if (!value && DeleteOriginalAfterConversion)
+            {
+                DeleteOriginalAfterConversion = false;
+            }
+        }
+    }
+
+    public bool DeleteOriginalAfterConversion
+    {
+        get => _deleteOriginalAfterConversion;
+        set
+        {
+            var coercedValue = ReplaceOptimisedFilesInPlace ? value : false;
+            if (SetProperty(ref _deleteOriginalAfterConversion, coercedValue) && !_suppressStoreUpdates)
+            {
+                SettingsHost.Set(SettingsRegistry.DeleteOriginalAfterConversion, coercedValue);
+            }
+        }
+    }
+
     public bool EnableAutomaticImageOptimisations
     {
         get => _enableAutomaticImageOptimisations;
@@ -295,6 +327,8 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         OptimisePdfClipboard = SettingsHost.Get(SettingsRegistry.OptimisePdfClipboard);
         PreserveDates = SettingsHost.Get(SettingsRegistry.PreserveDates);
         StripMetadata = SettingsHost.Get(SettingsRegistry.StripMetadata);
+        ReplaceOptimisedFilesInPlace = SettingsHost.Get(SettingsRegistry.ReplaceOptimisedFilesInPlace);
+        DeleteOriginalAfterConversion = SettingsHost.Get(SettingsRegistry.DeleteOriginalAfterConversion);
         EnableAutomaticImageOptimisations = SettingsHost.Get(SettingsRegistry.EnableAutomaticImageOptimisations);
         EnableAutomaticVideoOptimisations = SettingsHost.Get(SettingsRegistry.EnableAutomaticVideoOptimisations);
         EnableAutomaticPdfOptimisations = SettingsHost.Get(SettingsRegistry.EnableAutomaticPdfOptimisations);
@@ -342,6 +376,12 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
                 break;
             case var name when name == SettingsRegistry.StripMetadata.Name:
                 StripMetadata = SettingsHost.Get(SettingsRegistry.StripMetadata);
+                break;
+            case var name when name == SettingsRegistry.ReplaceOptimisedFilesInPlace.Name:
+                ReplaceOptimisedFilesInPlace = SettingsHost.Get(SettingsRegistry.ReplaceOptimisedFilesInPlace);
+                break;
+            case var name when name == SettingsRegistry.DeleteOriginalAfterConversion.Name:
+                DeleteOriginalAfterConversion = SettingsHost.Get(SettingsRegistry.DeleteOriginalAfterConversion);
                 break;
             case var name when name == SettingsRegistry.EnableAutomaticImageOptimisations.Name:
                 EnableAutomaticImageOptimisations = SettingsHost.Get(SettingsRegistry.EnableAutomaticImageOptimisations);

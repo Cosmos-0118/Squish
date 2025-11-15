@@ -21,11 +21,13 @@ public sealed class VideoOptimiser : IOptimiser
 {
     private readonly VideoOptimiserOptions _options;
     private readonly IVideoToolchain _toolchain;
+    private readonly IVideoMetadataProbe _metadataProbe;
 
-    public VideoOptimiser(VideoOptimiserOptions? options = null, IVideoToolchain? toolchain = null)
+    public VideoOptimiser(VideoOptimiserOptions? options = null, IVideoToolchain? toolchain = null, IVideoMetadataProbe? metadataProbe = null)
     {
         _options = options ?? VideoOptimiserOptions.Default;
         _toolchain = toolchain ?? new ExternalVideoToolchain(_options);
+        _metadataProbe = metadataProbe ?? new FfprobeMetadataProbe(_options);
     }
 
     public ItemType ItemType => ItemType.Video;
@@ -46,7 +48,8 @@ public sealed class VideoOptimiser : IOptimiser
             return OptimisationResult.Unsupported(request.RequestId);
         }
 
-        var plan = BuildPlan(request, _options);
+        var probe = await _metadataProbe.ProbeAsync(source, cancellationToken).ConfigureAwait(false);
+        var plan = BuildPlan(request, _options, probe);
         return plan.Mode switch
         {
             VideoOptimiserMode.Gif when !_options.EnableGifExport
@@ -58,6 +61,11 @@ public sealed class VideoOptimiser : IOptimiser
 
     private async Task<OptimisationResult> RunVideoOptimisationAsync(OptimisationRequest request, VideoOptimiserPlan plan, OptimiserExecutionContext context, CancellationToken cancellationToken)
     {
+        if (plan.ShouldRemux)
+        {
+            return await RunRemuxOptimisationAsync(request, plan, context, cancellationToken).ConfigureAwait(false);
+        }
+
         context.ReportProgress(5, "Preparing encoder");
         var tempOutput = FilePath.TempFile("clop-video", plan.OutputExtension, addUniqueSuffix: true);
         tempOutput.EnsureParentDirectoryExists();
@@ -75,12 +83,14 @@ public sealed class VideoOptimiser : IOptimiser
                 return OptimisationResult.Failure(request.RequestId, "Video optimiser produced no output file");
             }
 
-            var finalOutput = BuildOutputPath(plan);
+            var outputPlan = OptimisedOutputPlanner.Plan(plan.SourcePath, plan.OutputExtension, request.Metadata, BuildCopyOutputPath);
+            var finalOutput = outputPlan.Destination;
             finalOutput.EnsureParentDirectoryExists();
             var originalSize = SafeFileSize(plan.SourcePath);
             var optimisedSize = SafeFileSize(tempOutput);
 
-            if (plan.RequireSizeReduction && !plan.ForceMp4 && optimisedSize >= originalSize)
+            var requireSizeCheck = plan.RequireSizeReduction && !plan.ForceMp4;
+            if (requireSizeCheck && optimisedSize >= originalSize)
             {
                 context.ReportProgress(100, "Original already optimal");
                 return new OptimisationResult(request.RequestId, OptimisationStatus.Succeeded, plan.SourcePath, "Original already optimal");
@@ -88,6 +98,11 @@ public sealed class VideoOptimiser : IOptimiser
 
             File.Copy(tempOutput.Value, finalOutput.Value, overwrite: true);
             CopyTimestamps(plan.SourcePath, finalOutput, plan.PreserveTimestamps);
+
+            if (outputPlan.RequiresSourceDeletion(plan.SourcePath))
+            {
+                TryDelete(plan.SourcePath);
+            }
 
             var message = DescribeImprovement(originalSize, optimisedSize, plan);
             context.ReportProgress(100, message);
@@ -101,6 +116,43 @@ public sealed class VideoOptimiser : IOptimiser
         {
             Log.Error($"Video optimisation failed: {ex.Message}");
             return OptimisationResult.Failure(request.RequestId, ex.Message);
+        }
+        finally
+        {
+            TryDelete(tempOutput);
+        }
+    }
+
+    private async Task<OptimisationResult> RunRemuxOptimisationAsync(OptimisationRequest request, VideoOptimiserPlan plan, OptimiserExecutionContext context, CancellationToken cancellationToken)
+    {
+        context.ReportProgress(5, "Preparing remux");
+        var tempOutput = FilePath.TempFile("clop-remux", plan.OutputExtension, addUniqueSuffix: true);
+        tempOutput.EnsureParentDirectoryExists();
+
+        try
+        {
+            var toolchainResult = await _toolchain.RemuxAsync(plan, tempOutput, context, cancellationToken).ConfigureAwait(false);
+            if (!toolchainResult.Success)
+            {
+                return OptimisationResult.Failure(request.RequestId, toolchainResult.ErrorMessage ?? "Remux failed");
+            }
+
+            var outputPlan = OptimisedOutputPlanner.Plan(plan.SourcePath, plan.OutputExtension, request.Metadata, BuildCopyOutputPath);
+            var finalOutput = outputPlan.Destination;
+            finalOutput.EnsureParentDirectoryExists();
+            File.Copy(tempOutput.Value, finalOutput.Value, overwrite: true);
+            CopyTimestamps(plan.SourcePath, finalOutput, plan.PreserveTimestamps);
+
+            if (outputPlan.RequiresSourceDeletion(plan.SourcePath))
+            {
+                TryDelete(plan.SourcePath);
+            }
+
+            var message = plan.Remux.Reason == RemuxReason.ContainerNormalisation
+                ? $"Remuxed to .{plan.OutputExtension}"
+                : "Skipped transcode (already optimal)";
+            context.ReportProgress(100, message);
+            return new OptimisationResult(request.RequestId, OptimisationStatus.Succeeded, finalOutput, message);
         }
         finally
         {
@@ -134,13 +186,19 @@ public sealed class VideoOptimiser : IOptimiser
                 return OptimisationResult.Failure(request.RequestId, "Animated export produced no output file");
             }
 
-            var finalOutput = BuildOutputPath(plan);
+            var outputPlan = OptimisedOutputPlanner.Plan(plan.SourcePath, plan.OutputExtension, request.Metadata, BuildCopyOutputPath);
+            var finalOutput = outputPlan.Destination;
             finalOutput.EnsureParentDirectoryExists();
             var originalSize = SafeFileSize(plan.SourcePath);
             var optimisedSize = SafeFileSize(tempOutput);
 
             File.Copy(tempOutput.Value, finalOutput.Value, overwrite: true);
             CopyTimestamps(plan.SourcePath, finalOutput, plan.PreserveTimestamps);
+
+            if (outputPlan.RequiresSourceDeletion(plan.SourcePath))
+            {
+                TryDelete(plan.SourcePath);
+            }
 
             var message = DescribeImprovement(originalSize, optimisedSize, plan, isGif: plan.AnimatedFormat == AnimatedExportFormat.Gif);
             context.ReportProgress(100, message);
@@ -161,15 +219,18 @@ public sealed class VideoOptimiser : IOptimiser
         }
     }
 
-    private static FilePath BuildOutputPath(VideoOptimiserPlan plan)
+    private static FilePath BuildOutputPath(VideoOptimiserPlan plan) => BuildCopyOutputPath(plan.SourcePath, plan.OutputExtension);
+
+    private static FilePath BuildCopyOutputPath(FilePath source, string extension)
     {
-        var stem = plan.SourcePath.Stem;
+        var stem = source.Stem;
         if (!stem.EndsWith(".clop", StringComparison.OrdinalIgnoreCase))
         {
             stem += ".clop";
         }
-        var fileName = $"{stem}.{plan.OutputExtension}";
-        return plan.SourcePath.Parent.Append(fileName);
+
+        var fileName = $"{stem}.{extension}";
+        return source.Parent.Append(fileName);
     }
 
     private static string DescribeImprovement(long originalSize, long optimisedSize, VideoOptimiserPlan plan, bool isGif = false)
@@ -247,7 +308,7 @@ public sealed class VideoOptimiser : IOptimiser
         }
     }
 
-    private static VideoOptimiserPlan BuildPlan(OptimisationRequest request, VideoOptimiserOptions options)
+    private static VideoOptimiserPlan BuildPlan(OptimisationRequest request, VideoOptimiserOptions options, VideoProbeInfo? probeInfo)
     {
         var metadata = request.Metadata;
         var mode = ParseMode(metadata, options);
@@ -268,6 +329,11 @@ public sealed class VideoOptimiser : IOptimiser
             : requestedExtension.Trim().TrimStart('.');
 
         var codecOverride = ParseCodec(ReadString(metadata, "video.codec"));
+
+        if (options.EnableFormatSpecificTuning && probeInfo?.Video is not null)
+        {
+            ApplyFormatSpecificHeuristics(request, probeInfo, options, ref forceMp4, ref requestedExtension, ref codecOverride, aggressive);
+        }
 
         var animatedFormat = DetermineAnimatedFormat(mode, metadata, options);
         var hardware = options.HardwareOverride ?? VideoHardwareDetector.Detect(options.FfmpegPath, options.ProbeHardwareCapabilities);
@@ -290,7 +356,7 @@ public sealed class VideoOptimiser : IOptimiser
 
         var videoCodecArgs = BuildVideoCodecArguments(options, encoderSelection, aggressive, lookahead);
 
-        return new VideoOptimiserPlan(
+        var plan = new VideoOptimiserPlan(
             request.SourcePath,
             mode,
             outputExtension,
@@ -318,7 +384,111 @@ public sealed class VideoOptimiser : IOptimiser
             animatedFormat,
             useTwoPass,
             lookahead,
-            options.EnableSceneCutAwareBitrate && encoderSelection.SceneCutAware);
+            options.EnableSceneCutAwareBitrate && encoderSelection.SceneCutAware,
+            probeInfo,
+            RemuxPlan.Disabled);
+
+        if (options.EnableContainerAwareRemux)
+        {
+            var remux = DetermineRemuxPlan(plan, options, probeInfo);
+            plan = plan with { Remux = remux };
+        }
+
+        return plan;
+    }
+
+    private static void ApplyFormatSpecificHeuristics(OptimisationRequest request, VideoProbeInfo probeInfo, VideoOptimiserOptions options, ref bool forceMp4, ref string requestedExtension, ref VideoCodec? codecOverride, bool aggressive)
+    {
+        var sourceExtension = request.SourcePath.Extension?.TrimStart('.').ToLowerInvariant() ?? string.Empty;
+        var codec = probeInfo.NormalizedVideoCodec;
+
+        if (string.Equals(sourceExtension, "webm", StringComparison.OrdinalIgnoreCase) || codec == "vp9")
+        {
+            forceMp4 = false;
+            requestedExtension = "webm";
+            codecOverride ??= VideoCodec.Vp9;
+            return;
+        }
+
+        if (codec is "prores" or "dnx")
+        {
+            forceMp4 = false;
+            if (!string.IsNullOrWhiteSpace(sourceExtension))
+            {
+                requestedExtension = sourceExtension;
+            }
+            codecOverride ??= aggressive ? VideoCodec.Av1 : VideoCodec.Hevc;
+        }
+    }
+
+    private static RemuxPlan DetermineRemuxPlan(VideoOptimiserPlan plan, VideoOptimiserOptions options, VideoProbeInfo? probeInfo)
+    {
+        if (plan.Mode == VideoOptimiserMode.Gif || probeInfo?.Video is null)
+        {
+            return RemuxPlan.Disabled;
+        }
+
+        if (plan.RequiresFilters || plan.FrameDecimation.Enabled || plan.PlaybackSpeedFactor.HasValue)
+        {
+            return RemuxPlan.Disabled;
+        }
+
+        if (plan.RemoveAudio || !plan.Audio.CopyStream || plan.Audio.NormalizeLoudness)
+        {
+            return RemuxPlan.Disabled;
+        }
+
+        var targetExtension = plan.OutputExtension.Trim().ToLowerInvariant();
+        var sourceExtension = plan.SourcePath.Extension?.TrimStart('.').ToLowerInvariant() ?? string.Empty;
+        var videoCodec = probeInfo.NormalizedVideoCodec;
+        var audioCodec = probeInfo.NormalizedAudioCodec;
+
+        if (!IsCopyCompatible(targetExtension, videoCodec, audioCodec))
+        {
+            return RemuxPlan.Disabled;
+        }
+
+        var containerChanged = !string.Equals(targetExtension, sourceExtension, StringComparison.OrdinalIgnoreCase);
+        if (!containerChanged && !ShouldSkipTranscodeForSavings(plan, probeInfo, options))
+        {
+            return RemuxPlan.Disabled;
+        }
+
+        return new RemuxPlan(true, containerChanged ? RemuxReason.ContainerNormalisation : RemuxReason.MinimalSavings);
+    }
+
+    private static bool ShouldSkipTranscodeForSavings(VideoOptimiserPlan plan, VideoProbeInfo probeInfo, VideoOptimiserOptions options)
+    {
+        if (options.MinimumSavingsPercentBeforeReencode <= 0)
+        {
+            return false;
+        }
+
+        var targetCodec = CodecVocabulary.NormalizeVideo(plan.Encoder.Codec);
+        var sameCodec = string.Equals(targetCodec, probeInfo.NormalizedVideoCodec, StringComparison.OrdinalIgnoreCase);
+        if (!sameCodec)
+        {
+            return false;
+        }
+
+        return !plan.RequiresFilters
+            && !plan.FrameDecimation.Enabled
+            && !plan.PlaybackSpeedFactor.HasValue
+            && !plan.RemoveAudio
+            && plan.Audio.CopyStream
+            && !plan.Audio.NormalizeLoudness;
+    }
+
+    private static bool IsCopyCompatible(string container, string videoCodec, string audioCodec)
+    {
+        return container switch
+        {
+            "mp4" or "m4v" => (videoCodec is "h264" or "hevc") && (string.IsNullOrEmpty(audioCodec) || audioCodec == "aac"),
+            "mov" => videoCodec is "h264" or "hevc" or "prores" or "dnx",
+            "mkv" => !string.IsNullOrEmpty(videoCodec),
+            "webm" => (videoCodec is "vp9" or "vp8") && (string.IsNullOrEmpty(audioCodec) || audioCodec is "opus" or "vorbis"),
+            _ => false
+        };
     }
 
     private static IReadOnlyList<string> BuildFilters(int? maxWidth, int? maxHeight, double? playbackSpeed, bool enforceEven, bool capFps, int targetFps, FrameDecimationPlan frameDecimation)
@@ -948,9 +1118,12 @@ public sealed record VideoOptimiserPlan(
     AnimatedExportFormat AnimatedFormat,
     bool UseTwoPass,
     int? LookaheadFrames,
-    bool SceneCutAware)
+    bool SceneCutAware,
+    VideoProbeInfo? SourceProbe,
+    RemuxPlan Remux)
 {
     public bool RequiresFilters => Filters.Count > 0;
+    public bool ShouldRemux => Remux.Enabled;
 }
 
 public interface IVideoToolchain
@@ -958,6 +1131,8 @@ public interface IVideoToolchain
     Task<ToolchainResult> TranscodeAsync(VideoOptimiserPlan plan, FilePath tempOutput, OptimiserExecutionContext context, CancellationToken cancellationToken);
 
     Task<ToolchainResult> ConvertToAnimatedAsync(VideoOptimiserPlan plan, FilePath tempOutput, OptimiserExecutionContext context, CancellationToken cancellationToken);
+
+    Task<ToolchainResult> RemuxAsync(VideoOptimiserPlan plan, FilePath tempOutput, OptimiserExecutionContext context, CancellationToken cancellationToken);
 }
 
 public sealed record ToolchainResult(bool Success, string? ErrorMessage = null)
@@ -990,6 +1165,13 @@ internal sealed class ExternalVideoToolchain : IVideoToolchain
             AnimatedExportFormat.AnimatedWebp => await ConvertToWebpAsync(plan, tempOutput, context, cancellationToken).ConfigureAwait(false),
             _ => ToolchainResult.Failure("Unsupported animated format")
         };
+    }
+
+    public async Task<ToolchainResult> RemuxAsync(VideoOptimiserPlan plan, FilePath tempOutput, OptimiserExecutionContext context, CancellationToken cancellationToken)
+    {
+        var tracker = new FfmpegProgressTracker("Remuxing");
+        var args = BuildRemuxArguments(plan, tempOutput);
+        return await RunProcessAsync(_options.FfmpegPath, args, context, cancellationToken, line => tracker.Process(line, context)).ConfigureAwait(false);
     }
 
     private async Task<ToolchainResult> RunTranscodeAsync(VideoOptimiserPlan plan, FilePath tempOutput, OptimiserExecutionContext context, CancellationToken cancellationToken)
@@ -1157,6 +1339,30 @@ internal sealed class ExternalVideoToolchain : IVideoToolchain
         }
 
         args.AddRange(new[] { "-movflags", "+faststart", "-progress", "pipe:2", "-nostats", "-hide_banner", "-stats_period", "0.2", output.Value });
+        return args;
+    }
+
+    private List<string> BuildRemuxArguments(VideoOptimiserPlan plan, FilePath output)
+    {
+        var args = new List<string>
+        {
+            "-y",
+            "-i", plan.SourcePath.Value,
+            "-c", "copy",
+            "-map", "0"
+        };
+
+        if (plan.StripMetadata)
+        {
+            args.AddRange(new[] { "-map_metadata", "-1" });
+        }
+
+        if (plan.OutputExtension.Equals("mp4", StringComparison.OrdinalIgnoreCase) || plan.OutputExtension.Equals("m4v", StringComparison.OrdinalIgnoreCase) || plan.OutputExtension.Equals("mov", StringComparison.OrdinalIgnoreCase))
+        {
+            args.AddRange(new[] { "-movflags", "+faststart" });
+        }
+
+        args.AddRange(new[] { "-progress", "pipe:2", "-nostats", "-hide_banner", "-stats_period", "0.2", output.Value });
         return args;
     }
 

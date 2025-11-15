@@ -420,6 +420,8 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
             ["clipboard.origin"] = item.Origin.ToString()
         };
 
+        OutputBehaviourSettings.ApplyTo(metadata);
+
         var request = new OptimisationRequest(item.ItemType, item.SourcePath, metadata: metadata);
         _pending[request.RequestId] = new ClipboardRequestContext(item, DateTimeOffset.UtcNow);
         var ticket = _coordinator.Enqueue(request);

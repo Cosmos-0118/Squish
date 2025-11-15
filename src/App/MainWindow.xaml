@@ -4,6 +4,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:loc="clr-namespace:ClopWindows.App.Localization"
     Title="Clop for Windows"
+        Icon="pack://application:,,,/ClopWindows;component/Assets/Brand/Assets.xcassets/AppIcon.appiconset/icon_256x256.png"
         Width="980"
         Height="640"
         MinWidth="820"

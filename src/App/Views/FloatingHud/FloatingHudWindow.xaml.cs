@@ -19,13 +19,16 @@ public partial class FloatingHudWindow : Window
     public static readonly DependencyProperty IsResizeModeProperty = DependencyProperty.Register(
         nameof(IsResizeMode), typeof(bool), typeof(FloatingHudWindow), new PropertyMetadata(false));
 
-    public static readonly DependencyProperty ResizeScaleProperty = DependencyProperty.Register(
-        nameof(ResizeScale), typeof(double), typeof(FloatingHudWindow), new PropertyMetadata(1d));
+    public static readonly DependencyProperty ResizeWidthScaleProperty = DependencyProperty.Register(
+        nameof(ResizeWidthScale), typeof(double), typeof(FloatingHudWindow), new PropertyMetadata(1d, OnResizeWidthScalePropertyChanged));
+
+    public static readonly DependencyProperty ResizeHeightScaleProperty = DependencyProperty.Register(
+        nameof(ResizeHeightScale), typeof(double), typeof(FloatingHudWindow), new PropertyMetadata(1d, OnResizeHeightScalePropertyChanged));
 
     public event EventHandler? PlacementConfirmed;
     public event EventHandler? PlacementCancelled;
-    public event EventHandler<double>? ResizeScaleChanged;
-    public event EventHandler<double>? ResizeConfirmed;
+    public event EventHandler<ResizeScalesEventArgs>? ResizeScalesChanged;
+    public event EventHandler<ResizeScalesEventArgs>? ResizeScalesConfirmed;
     public event EventHandler? ResizeCancelled;
 
     public bool IsPlacementMode
@@ -40,10 +43,16 @@ public partial class FloatingHudWindow : Window
         set => SetValue(IsResizeModeProperty, value);
     }
 
-    public double ResizeScale
+    public double ResizeWidthScale
     {
-        get => (double)GetValue(ResizeScaleProperty);
-        set => SetValue(ResizeScaleProperty, value);
+        get => (double)GetValue(ResizeWidthScaleProperty);
+        set => SetValue(ResizeWidthScaleProperty, value);
+    }
+
+    public double ResizeHeightScale
+    {
+        get => (double)GetValue(ResizeHeightScaleProperty);
+        set => SetValue(ResizeHeightScaleProperty, value);
     }
 
     public bool IsPinnedPosition { get; private set; }
@@ -140,10 +149,11 @@ public partial class FloatingHudWindow : Window
         IsPlacementMode = false;
     }
 
-    public void EnterResizeMode(double initialScale)
+    public void EnterResizeMode(double initialWidthScale, double initialHeightScale)
     {
         IsResizeMode = true;
-        ResizeScale = initialScale;
+        ResizeWidthScale = initialWidthScale;
+        ResizeHeightScale = initialHeightScale;
         BringToFront();
     }
 
@@ -216,14 +226,9 @@ public partial class FloatingHudWindow : Window
         PlacementCancelled?.Invoke(this, EventArgs.Empty);
     }
 
-    private void OnResizeScaleChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-    {
-        ResizeScaleChanged?.Invoke(this, e.NewValue);
-    }
-
     private void OnResizeConfirmClicked(object sender, RoutedEventArgs e)
     {
-        ResizeConfirmed?.Invoke(this, ResizeScale);
+        ResizeScalesConfirmed?.Invoke(this, new ResizeScalesEventArgs(ResizeWidthScale, ResizeHeightScale));
     }
 
     private void OnResizeCancelClicked(object sender, RoutedEventArgs e)
@@ -238,13 +243,60 @@ public partial class FloatingHudWindow : Window
             return;
         }
 
+        double? parsedPreset = null;
+
         if (element.Tag is double preset)
         {
-            ResizeScale = preset;
+            parsedPreset = preset;
         }
         else if (element.Tag is string raw && double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed))
         {
-            ResizeScale = parsed;
+            parsedPreset = parsed;
         }
+
+        if (parsedPreset is double value)
+        {
+            ResizeWidthScale = value;
+            ResizeHeightScale = value;
+        }
+    }
+
+    private static void OnResizeWidthScalePropertyChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is FloatingHudWindow window)
+        {
+            window.RaiseResizeScalesChanged();
+        }
+    }
+
+    private static void OnResizeHeightScalePropertyChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is FloatingHudWindow window)
+        {
+            window.RaiseResizeScalesChanged();
+        }
+    }
+
+    private void RaiseResizeScalesChanged()
+    {
+        if (!IsResizeMode)
+        {
+            return;
+        }
+
+        ResizeScalesChanged?.Invoke(this, new ResizeScalesEventArgs(ResizeWidthScale, ResizeHeightScale));
+    }
+
+    public sealed class ResizeScalesEventArgs : EventArgs
+    {
+        public ResizeScalesEventArgs(double widthScale, double heightScale)
+        {
+            WidthScale = widthScale;
+            HeightScale = heightScale;
+        }
+
+        public double WidthScale { get; }
+
+        public double HeightScale { get; }
     }
 }

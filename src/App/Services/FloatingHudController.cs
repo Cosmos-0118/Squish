@@ -128,10 +128,10 @@ public sealed class FloatingHudController : IDisposable
 
             _isResizeMode = true;
             EnsureVisible(forceShow: true);
-            _window.ResizeScaleChanged += OnResizeScaleChanged;
-            _window.ResizeConfirmed += OnResizeConfirmed;
+            _window.ResizeScalesChanged += OnResizeScalesChanged;
+            _window.ResizeScalesConfirmed += OnResizeScalesConfirmed;
             _window.ResizeCancelled += OnResizeCancelled;
-            _window.EnterResizeMode(_viewModel.SizeScale);
+            _window.EnterResizeMode(_viewModel.WidthScale, _viewModel.HeightScale);
         });
     }
 
@@ -521,8 +521,8 @@ public sealed class FloatingHudController : IDisposable
 
     private void EndResizeMode()
     {
-        _window.ResizeScaleChanged -= OnResizeScaleChanged;
-        _window.ResizeConfirmed -= OnResizeConfirmed;
+        _window.ResizeScalesChanged -= OnResizeScalesChanged;
+        _window.ResizeScalesConfirmed -= OnResizeScalesConfirmed;
         _window.ResizeCancelled -= OnResizeCancelled;
         _window.ExitResizeMode();
         _isResizeMode = false;
@@ -537,21 +537,23 @@ public sealed class FloatingHudController : IDisposable
         }
     }
 
-    private void OnResizeScaleChanged(object? sender, double scale)
+    private void OnResizeScalesChanged(object? sender, FloatingHudWindow.ResizeScalesEventArgs e)
     {
-        _viewModel.PreviewScale(scale);
+        _viewModel.PreviewWidthScale(e.WidthScale);
+        _viewModel.PreviewHeightScale(e.HeightScale);
     }
 
-    private void OnResizeConfirmed(object? sender, double scale)
+    private void OnResizeScalesConfirmed(object? sender, FloatingHudWindow.ResizeScalesEventArgs e)
     {
-        _viewModel.PreviewScale(scale);
-        _viewModel.CommitScale();
+        _viewModel.PreviewWidthScale(e.WidthScale);
+        _viewModel.PreviewHeightScale(e.HeightScale);
+        _viewModel.CommitScales();
         EndResizeMode();
     }
 
     private void OnResizeCancelled(object? sender, EventArgs e)
     {
-        _viewModel.RevertScale();
+        _viewModel.RevertScales();
         EndResizeMode();
     }
 

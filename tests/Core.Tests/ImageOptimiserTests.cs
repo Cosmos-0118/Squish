@@ -9,6 +9,7 @@ using ClopWindows.Core.Shared;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Advanced;
 using SixLabors.ImageSharp.Formats;
+using SixLabors.ImageSharp.Formats.Bmp;
 using SixLabors.ImageSharp.Formats.Jpeg;
 using SixLabors.ImageSharp.Formats.Png;
 using SixLabors.ImageSharp.Metadata.Profiles.Exif;
@@ -104,11 +105,186 @@ public sealed class ImageOptimiserTests
         }
     }
 
-    private static async Task<OptimisationResult> RunOptimiserAsync(ImageOptimiser optimiser, FilePath source)
+    [Fact]
+    public async Task FastPathRemovesMetadataWhenSavingsThresholdMet()
+    {
+        var source = CreateSampleImage("jpg", width: 1024, height: 768, includeAlpha: false, includeMetadata: true);
+        var outputs = new List<FilePath>();
+        try
+        {
+            var options = new ImageOptimiserOptions
+            {
+                DownscaleRetina = false,
+                AdvancedCodecs = AdvancedCodecPreferences.Disabled,
+                CropSuggestions = CropSuggestionOptions.Disabled,
+                WicFastPath = new WicFastPathOptions
+                {
+                    Enabled = true,
+                    StripMetadata = true,
+                    MinimumSavingsPercent = 0,
+                    SkipLosslessWhenBelowThreshold = false,
+                    OverrideJpegQuality = 80
+                }
+            };
+
+            var optimiser = new ImageOptimiser(options);
+            var result = await RunOptimiserAsync(optimiser, source);
+
+            Assert.Equal(OptimisationStatus.Succeeded, result.Status);
+            Assert.Contains("fast path", result.Message, StringComparison.OrdinalIgnoreCase);
+
+            var output = EnsureOutputPath(result);
+            outputs.Add(output);
+
+            var originalSize = new FileInfo(source.Value).Length;
+            var newSize = new FileInfo(output.Value).Length;
+            Assert.True(newSize < originalSize, "Fast path should reduce file size when metadata is stripped.");
+
+            using var optimisedImage = Image.Load<Rgba32>(output.Value);
+            Assert.Null(optimisedImage.Metadata.ExifProfile);
+        }
+        finally
+        {
+            CleanupFiles(source, outputs);
+        }
+    }
+
+    [Fact]
+    public async Task FastPathSkipsWhenSavingsBelowThreshold()
+    {
+        var source = CreateSampleImage("png", width: 256, height: 256, includeAlpha: false, includeMetadata: false);
+        var outputs = new List<FilePath>();
+        try
+        {
+            var options = new ImageOptimiserOptions
+            {
+                DownscaleRetina = false,
+                AdvancedCodecs = AdvancedCodecPreferences.Disabled,
+                CropSuggestions = CropSuggestionOptions.Disabled,
+                WicFastPath = new WicFastPathOptions
+                {
+                    Enabled = true,
+                    MinimumSavingsPercent = 50,
+                    SkipLosslessWhenBelowThreshold = true
+                }
+            };
+
+            var optimiser = new ImageOptimiser(options);
+            var result = await RunOptimiserAsync(optimiser, source);
+
+            Assert.Equal(OptimisationStatus.Succeeded, result.Status);
+            Assert.Equal(source.Value, result.OutputPath?.Value);
+            Assert.Equal("Original already optimal (fast path)", result.Message);
+        }
+        finally
+        {
+            CleanupFiles(source, outputs);
+        }
+    }
+
+    [Fact]
+    public async Task ReplacesOriginalWhenMetadataRequestsInPlace()
+    {
+        var source = CreateSampleImage("jpg", width: 1200, height: 800, includeAlpha: false, includeMetadata: false);
+        var outputs = new List<FilePath>();
+        try
+        {
+            var metadata = new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                [OptimisationMetadata.OutputReplaceOriginal] = true
+            };
+
+            var optimiser = CreateMetadataOptimiser();
+            var result = await RunOptimiserAsync(optimiser, source, metadata);
+
+            Assert.True(result.Status == OptimisationStatus.Succeeded, $"Optimisation failed: {result.Message}");
+            Assert.Equal(source.Value, result.OutputPath?.Value);
+
+            var clopCopy = source.Parent.Append($"{source.Stem}.clop.jpg");
+            Assert.False(File.Exists(clopCopy.Value));
+
+        }
+        finally
+        {
+            CleanupFiles(source, outputs);
+        }
+    }
+
+    [Fact]
+    public async Task ConversionKeepsOriginalWhenDeleteFlagNotSet()
+    {
+        var source = CreateSampleImage("bmp", width: 1024, height: 768, includeAlpha: false, includeMetadata: false);
+        var outputs = new List<FilePath>();
+        try
+        {
+            var metadata = new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                [OptimisationMetadata.OutputReplaceOriginal] = true
+            };
+
+            var optimiser = CreateMetadataOptimiser();
+            var result = await RunOptimiserAsync(optimiser, source, metadata);
+            Assert.True(result.Status == OptimisationStatus.Succeeded, $"Optimisation failed: {result.Message}");
+
+            var expectedOutput = source.Parent.Append($"{source.Stem}.jpg");
+            outputs.Add(expectedOutput);
+            Assert.Equal(expectedOutput.Value, result.OutputPath?.Value);
+            Assert.True(File.Exists(source.Value));
+        }
+        finally
+        {
+            CleanupFiles(source, outputs);
+        }
+    }
+
+    [Fact]
+    public async Task ConversionDeletesOriginalWhenDeleteFlagSet()
+    {
+        var source = CreateSampleImage("bmp", width: 1024, height: 768, includeAlpha: false, includeMetadata: false);
+        var outputs = new List<FilePath>();
+        try
+        {
+            var metadata = new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                [OptimisationMetadata.OutputReplaceOriginal] = true,
+                [OptimisationMetadata.OutputDeleteConvertedSource] = true
+            };
+
+            var optimiser = CreateMetadataOptimiser();
+            var result = await RunOptimiserAsync(optimiser, source, metadata);
+            Assert.True(result.Status == OptimisationStatus.Succeeded, $"Optimisation failed: {result.Message}");
+
+            var expectedOutput = source.Parent.Append($"{source.Stem}.jpg");
+            outputs.Add(expectedOutput);
+            Assert.Equal(expectedOutput.Value, result.OutputPath?.Value);
+            Assert.False(File.Exists(source.Value));
+        }
+        finally
+        {
+            CleanupFiles(source, outputs);
+        }
+    }
+
+    private static async Task<OptimisationResult> RunOptimiserAsync(ImageOptimiser optimiser, FilePath source, IReadOnlyDictionary<string, object?>? metadata = null)
     {
         await using var coordinator = new OptimisationCoordinator(new IOptimiser[] { optimiser });
-        var ticket = coordinator.Enqueue(new OptimisationRequest(ItemType.Image, source));
+        var ticket = coordinator.Enqueue(new OptimisationRequest(ItemType.Image, source, metadata: metadata));
         return await ticket.Completion.WaitAsync(TimeSpan.FromSeconds(15));
+    }
+
+    private static ImageOptimiser CreateMetadataOptimiser()
+    {
+        var options = new ImageOptimiserOptions
+        {
+            TargetJpegQuality = 70,
+            RequireSizeImprovement = false,
+            DownscaleRetina = false,
+            AdvancedCodecs = AdvancedCodecPreferences.Disabled,
+            CropSuggestions = CropSuggestionOptions.Disabled,
+            WicFastPath = new WicFastPathOptions { Enabled = false }
+        };
+
+        return new ImageOptimiser(options);
     }
 
     private static FilePath EnsureOutputPath(OptimisationResult result)
@@ -153,6 +329,7 @@ public sealed class ImageOptimiserTests
         return extension.ToLowerInvariant() switch
         {
             "png" => new PngEncoder(),
+            "bmp" => new BmpEncoder(),
             _ => new JpegEncoder { Quality = 85 }
         };
     }

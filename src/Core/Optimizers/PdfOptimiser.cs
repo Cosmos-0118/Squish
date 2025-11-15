@@ -76,7 +76,8 @@ public sealed class PdfOptimiser : IOptimiser
                 return OptimisationResult.Failure(request.RequestId, "Ghostscript produced no output");
             }
 
-            var finalOutput = BuildOutputPath(source);
+            var outputPlan = OptimisedOutputPlanner.Plan(source, "pdf", request.Metadata, BuildCopyOutputPath);
+            var finalOutput = outputPlan.Destination;
             finalOutput.EnsureParentDirectoryExists();
 
             var originalSize = SafeFileSize(source);
@@ -92,6 +93,11 @@ public sealed class PdfOptimiser : IOptimiser
             if (plan.PreserveTimestamps)
             {
                 CopyTimestamps(source, finalOutput);
+            }
+
+            if (outputPlan.RequiresSourceDeletion(source))
+            {
+                TryDelete(source);
             }
 
             var message = DescribeImprovement(originalSize, optimisedSize);
@@ -132,6 +138,15 @@ public sealed class PdfOptimiser : IOptimiser
 
         var gsLib = ReadString(metadata, "pdf.gsResourcePath") ?? options.GhostscriptResourceDirectory;
 
+        var insights = PdfDocumentProbe.GetInsights(request.SourcePath, options.ProbeSizeBytes);
+        var preset = DeterminePresetProfile(insights, aggressive, options);
+        if (TryParsePresetProfile(ReadString(metadata, "pdf.preset"), out var overridePreset))
+        {
+            preset = overridePreset;
+        }
+
+        var linearise = ReadBool(metadata, "pdf.linearize") ?? options.EnableLinearisation;
+
         return new PdfOptimiserPlan(
             request.SourcePath,
             aggressive,
@@ -139,18 +154,61 @@ public sealed class PdfOptimiser : IOptimiser
             preserveTimestamps,
             requireSizeReduction,
             fontPath!,
-            gsLib);
+            gsLib,
+            preset,
+            insights,
+            linearise);
     }
 
-    private static FilePath BuildOutputPath(FilePath source)
+    private static FilePath BuildOutputPath(FilePath source) => BuildCopyOutputPath(source, "pdf");
+
+    private static FilePath BuildCopyOutputPath(FilePath source, string extension)
     {
         var stem = source.Stem;
         if (!stem.EndsWith(".clop", StringComparison.OrdinalIgnoreCase))
         {
             stem += ".clop";
         }
-        var fileName = $"{stem}.pdf";
+
+        var finalExtension = string.IsNullOrWhiteSpace(extension) ? "pdf" : extension;
+        var fileName = $"{stem}.{finalExtension}";
         return source.Parent.Append(fileName);
+    }
+
+    private static PdfPresetProfile DeterminePresetProfile(PdfDocumentInsights insights, bool aggressive, PdfOptimiserOptions options)
+    {
+        if (!insights.HasData)
+        {
+            return aggressive ? PdfPresetProfile.Graphics : PdfPresetProfile.Mixed;
+        }
+
+        var looksGraphicsHeavy = insights.EstimatedMaxImageDpi >= options.HighImageDpiThreshold
+            || insights.ImageDensity >= options.ImageDensityThreshold
+            || insights.MaxImagePixels >= 3200;
+
+        if (looksGraphicsHeavy)
+        {
+            return PdfPresetProfile.Graphics;
+        }
+
+        var looksTextHeavy = insights.PageCount >= options.LongDocumentPageThreshold && insights.ImageDensity < 0.4d;
+        if (looksTextHeavy)
+        {
+            return PdfPresetProfile.Text;
+        }
+
+        return aggressive ? PdfPresetProfile.Graphics : PdfPresetProfile.Mixed;
+    }
+
+    private static bool TryParsePresetProfile(string? value, out PdfPresetProfile preset)
+    {
+        if (!string.IsNullOrWhiteSpace(value) && Enum.TryParse(value, ignoreCase: true, out preset))
+        {
+            return true;
+        }
+
+        preset = PdfPresetProfile.Mixed;
+        return false;
     }
 
     private static bool LooksLikePdf(FilePath path)
@@ -327,9 +385,14 @@ public sealed record PdfOptimiserPlan(
     bool PreserveTimestamps,
     bool RequireSmallerSize,
     string FontPath,
-    string? GhostscriptResourcePath)
+    string? GhostscriptResourcePath,
+    PdfPresetProfile PresetProfile,
+    PdfDocumentInsights Insights,
+    bool EnableLinearisation)
 {
     public bool HasCustomFontPath => !string.IsNullOrWhiteSpace(FontPath);
+
+    public bool HasInsights => Insights.HasData;
 }
 
 public interface IPdfToolchain
@@ -341,6 +404,13 @@ public sealed record PdfToolchainResult(bool Success, string? ErrorMessage = nul
 {
     public static PdfToolchainResult Successful() => new(true, null);
     public static PdfToolchainResult Failure(string message) => new(false, message);
+}
+
+public enum PdfPresetProfile
+{
+    Text,
+    Mixed,
+    Graphics
 }
 
 internal sealed class ExternalPdfToolchain : IPdfToolchain
@@ -375,10 +445,244 @@ internal sealed class ExternalPdfToolchain : IPdfToolchain
             return PdfToolchainResult.Failure($"Ghostscript not found at '{executable}'");
         }
 
-        var args = BuildArguments(options, plan, tempOutput);
-        var tracker = new GhostscriptProgressTracker();
+        var effectiveSource = plan.SourcePath;
+        FilePath? linearisedSource = null;
 
-        var startInfo = new ProcessStartInfo(executable)
+        if (plan.EnableLinearisation)
+        {
+            linearisedSource = await TryLinearizeAsync(plan, cancellationToken).ConfigureAwait(false);
+            if (linearisedSource.HasValue)
+            {
+                effectiveSource = linearisedSource.Value;
+            }
+        }
+
+        var args = BuildArguments(options, plan, tempOutput, effectiveSource);
+        try
+        {
+            var tracker = new GhostscriptProgressTracker();
+
+            var startInfo = new ProcessStartInfo(executable)
+            {
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            };
+
+            foreach (var arg in args)
+            {
+                startInfo.ArgumentList.Add(arg);
+            }
+
+            var gsLib = plan.GhostscriptResourcePath ?? options.GhostscriptResourceDirectory;
+            if (!string.IsNullOrWhiteSpace(gsLib))
+            {
+                startInfo.Environment["GS_LIB"] = gsLib;
+            }
+
+            using var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
+            var stdout = new StringBuilder();
+            var stderr = new StringBuilder();
+            var stdoutCompletion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var stderrCompletion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            process.OutputDataReceived += (_, e) =>
+            {
+                if (e.Data is null)
+                {
+                    stdoutCompletion.TrySetResult();
+                    return;
+                }
+
+                stdout.AppendLine(e.Data);
+                tracker.Process(e.Data, context);
+            };
+
+            process.ErrorDataReceived += (_, e) =>
+            {
+                if (e.Data is null)
+                {
+                    stderrCompletion.TrySetResult();
+                    return;
+                }
+
+                stderr.AppendLine(e.Data);
+            };
+
+            try
+            {
+                if (!process.Start())
+                {
+                    return PdfToolchainResult.Failure($"Unable to start Ghostscript at '{executable}'.");
+                }
+            }
+            catch (Win32Exception win32) when (win32.NativeErrorCode == 2)
+            {
+                lock (_sync)
+                {
+                    _options = _options.RefreshGhostscript();
+                }
+
+                return await OptimiseInternalAsync(plan, tempOutput, context, cancellationToken, attempt + 1).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                return PdfToolchainResult.Failure($"Unable to start Ghostscript: {ex.Message}");
+            }
+
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+
+            using var registration = cancellationToken.Register(() =>
+            {
+                try
+                {
+                    if (!process.HasExited)
+                    {
+                        process.Kill(entireProcessTree: true);
+                    }
+                }
+                catch
+                {
+                    // ignored
+                }
+            });
+
+            await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+            await Task.WhenAll(stdoutCompletion.Task, stderrCompletion.Task).ConfigureAwait(false);
+
+            if (process.ExitCode != 0)
+            {
+                var error = stderr.Length > 0 ? stderr.ToString().Trim() : stdout.ToString().Trim();
+                if (string.IsNullOrWhiteSpace(error))
+                {
+                    error = $"Ghostscript exited with code {process.ExitCode}";
+                }
+                Log.Error($"Ghostscript failed: {error}");
+                return PdfToolchainResult.Failure(error);
+            }
+
+            tracker.Complete(context);
+            return PdfToolchainResult.Successful();
+        }
+        finally
+        {
+            if (linearisedSource.HasValue)
+            {
+                TryDeleteFile(linearisedSource.Value);
+            }
+        }
+    }
+
+    private IReadOnlyList<string> BuildArguments(PdfOptimiserOptions options, PdfOptimiserPlan plan, FilePath output, FilePath input)
+    {
+        var args = new List<string>();
+        args.AddRange(options.BaseArguments);
+        args.AddRange(plan.AggressiveCompression ? options.LossyArguments : options.LosslessArguments);
+        args.AddRange(GetPresetArguments(options, plan.PresetProfile));
+        args.Add("-sDEVICE=pdfwrite");
+        args.Add($"-sFONTPATH={plan.FontPath}");
+        args.Add("-o");
+        args.Add(output.Value);
+
+        if (plan.StripMetadata)
+        {
+            args.AddRange(options.MetadataPreArguments);
+        }
+
+        var colorProfiles = WindowsColorProfileHelper.GetProfiles(options.UseWindowsColorProfiles);
+        if (!string.IsNullOrWhiteSpace(colorProfiles.DefaultRgbProfile))
+        {
+            var formatted = FormatPathForArgument(colorProfiles.DefaultRgbProfile);
+            args.Add($"-sDefaultRGBProfile={formatted}");
+            args.Add($"-sOutputICCProfile={formatted}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(colorProfiles.DefaultCmykProfile))
+        {
+            args.Add($"-sDefaultCMYKProfile={FormatPathForArgument(colorProfiles.DefaultCmykProfile)}");
+        }
+
+        args.Add(input.Value);
+
+        if (plan.StripMetadata)
+        {
+            args.AddRange(options.MetadataPostArguments);
+        }
+
+        return args;
+    }
+
+    private static IEnumerable<string> GetPresetArguments(PdfOptimiserOptions options, PdfPresetProfile preset)
+    {
+        return preset switch
+        {
+            PdfPresetProfile.Text => options.TextPresetArguments,
+            PdfPresetProfile.Graphics => options.GraphicsPresetArguments,
+            _ => options.MixedPresetArguments
+        };
+    }
+
+    private PdfOptimiserOptions EnsureGhostscriptOptions()
+    {
+        lock (_sync)
+        {
+            if (IsExecutableMissing(_options.GhostscriptPath))
+            {
+                _options = _options.RefreshGhostscript();
+            }
+
+            return _options;
+        }
+    }
+
+    private string? EnsureQpdfPath()
+    {
+        lock (_sync)
+        {
+            if (string.IsNullOrWhiteSpace(_options.QpdfPath) || IsExecutableMissing(_options.QpdfPath))
+            {
+                _options = _options.RefreshGhostscript();
+            }
+
+            return _options.QpdfPath;
+        }
+    }
+
+    private static bool IsExecutableMissing(string? executable)
+    {
+        if (string.IsNullOrWhiteSpace(executable))
+        {
+            return true;
+        }
+
+        if (!Path.IsPathRooted(executable))
+        {
+            return true;
+        }
+
+        return !File.Exists(executable);
+    }
+
+    private async Task<FilePath?> TryLinearizeAsync(PdfOptimiserPlan plan, CancellationToken cancellationToken)
+    {
+        var qpdf = EnsureQpdfPath();
+        if (string.IsNullOrWhiteSpace(qpdf))
+        {
+            return null;
+        }
+
+        if (Path.IsPathRooted(qpdf) && !File.Exists(qpdf))
+        {
+            Log.Warning($"qpdf not found at '{qpdf}'");
+            return null;
+        }
+
+        var output = FilePath.TempFile("clop-qpdf", ".pdf", addUniqueSuffix: true);
+        output.EnsureParentDirectoryExists();
+
+        var startInfo = new ProcessStartInfo(qpdf)
         {
             UseShellExecute = false,
             RedirectStandardOutput = true,
@@ -386,51 +690,37 @@ internal sealed class ExternalPdfToolchain : IPdfToolchain
             CreateNoWindow = true
         };
 
-        foreach (var arg in args)
-        {
-            startInfo.ArgumentList.Add(arg);
-        }
-
-        var gsLib = plan.GhostscriptResourcePath ?? options.GhostscriptResourceDirectory;
-        if (!string.IsNullOrWhiteSpace(gsLib))
-        {
-            startInfo.Environment["GS_LIB"] = gsLib;
-        }
+        startInfo.ArgumentList.Add("--linearize");
+        startInfo.ArgumentList.Add("--object-streams=generate");
+        startInfo.ArgumentList.Add("--stream-data=compress");
+        startInfo.ArgumentList.Add(plan.SourcePath.Value);
+        startInfo.ArgumentList.Add(output.Value);
 
         using var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
         var stdout = new StringBuilder();
         var stderr = new StringBuilder();
-        var stdoutCompletion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var stderrCompletion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         process.OutputDataReceived += (_, e) =>
         {
-            if (e.Data is null)
+            if (e.Data is not null)
             {
-                stdoutCompletion.TrySetResult();
-                return;
+                stdout.AppendLine(e.Data);
             }
-
-            stdout.AppendLine(e.Data);
-            tracker.Process(e.Data, context);
         };
 
         process.ErrorDataReceived += (_, e) =>
         {
-            if (e.Data is null)
+            if (e.Data is not null)
             {
-                stderrCompletion.TrySetResult();
-                return;
+                stderr.AppendLine(e.Data);
             }
-
-            stderr.AppendLine(e.Data);
         };
 
         try
         {
             if (!process.Start())
             {
-                return PdfToolchainResult.Failure($"Unable to start Ghostscript at '{executable}'.");
+                return null;
             }
         }
         catch (Win32Exception win32) when (win32.NativeErrorCode == 2)
@@ -440,11 +730,12 @@ internal sealed class ExternalPdfToolchain : IPdfToolchain
                 _options = _options.RefreshGhostscript();
             }
 
-            return await OptimiseInternalAsync(plan, tempOutput, context, cancellationToken, attempt + 1).ConfigureAwait(false);
+            return null;
         }
         catch (Exception ex)
         {
-            return PdfToolchainResult.Failure($"Unable to start Ghostscript: {ex.Message}");
+            Log.Warning($"Unable to start qpdf: {ex.Message}");
+            return null;
         }
 
         process.BeginOutputReadLine();
@@ -466,74 +757,44 @@ internal sealed class ExternalPdfToolchain : IPdfToolchain
         });
 
         await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
-        await Task.WhenAll(stdoutCompletion.Task, stderrCompletion.Task).ConfigureAwait(false);
 
         if (process.ExitCode != 0)
         {
-            var error = stderr.Length > 0 ? stderr.ToString().Trim() : stdout.ToString().Trim();
-            if (string.IsNullOrWhiteSpace(error))
+            var message = stderr.Length > 0 ? stderr.ToString().Trim() : stdout.ToString().Trim();
+            if (!string.IsNullOrWhiteSpace(message))
             {
-                error = $"Ghostscript exited with code {process.ExitCode}";
+                Log.Warning($"qpdf linearisation failed: {message}");
             }
-            Log.Error($"Ghostscript failed: {error}");
-            return PdfToolchainResult.Failure(error);
+            TryDeleteFile(output);
+            return null;
         }
 
-        tracker.Complete(context);
-        return PdfToolchainResult.Successful();
+        return output;
     }
 
-    private IReadOnlyList<string> BuildArguments(PdfOptimiserOptions options, PdfOptimiserPlan plan, FilePath output)
+    private static void TryDeleteFile(FilePath path)
     {
-        var args = new List<string>();
-        args.AddRange(options.BaseArguments);
-        args.AddRange(plan.AggressiveCompression ? options.LossyArguments : options.LosslessArguments);
-        args.Add("-sDEVICE=pdfwrite");
-        args.Add($"-sFONTPATH={plan.FontPath}");
-        args.Add("-o");
-        args.Add(output.Value);
-
-        if (plan.StripMetadata)
+        try
         {
-            args.AddRange(options.MetadataPreArguments);
-        }
-
-        args.Add(plan.SourcePath.Value);
-
-        if (plan.StripMetadata)
-        {
-            args.AddRange(options.MetadataPostArguments);
-        }
-
-        return args;
-    }
-
-    private PdfOptimiserOptions EnsureGhostscriptOptions()
-    {
-        lock (_sync)
-        {
-            if (IsExecutableMissing(_options.GhostscriptPath))
+            if (File.Exists(path.Value))
             {
-                _options = _options.RefreshGhostscript();
+                File.Delete(path.Value);
             }
-
-            return _options;
+        }
+        catch
+        {
+            // ignore cleanup
         }
     }
 
-    private static bool IsExecutableMissing(string? executable)
+    private static string FormatPathForArgument(string path)
     {
-        if (string.IsNullOrWhiteSpace(executable))
+        if (string.IsNullOrWhiteSpace(path))
         {
-            return true;
+            return string.Empty;
         }
 
-        if (!Path.IsPathRooted(executable))
-        {
-            return true;
-        }
-
-        return !File.Exists(executable);
+        return path.IndexOf(' ') >= 0 ? $"\"{path}\"" : path;
     }
 }
 

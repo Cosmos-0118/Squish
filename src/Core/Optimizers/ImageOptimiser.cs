@@ -67,11 +67,16 @@ public sealed class ImageOptimiser : IOptimiser
             return OptimisationResult.Unsupported(request.RequestId);
         }
 
+        var fastPathResult = await TryFastPathAsync(request, extension, context, cancellationToken).ConfigureAwait(false);
+        if (fastPathResult is not null)
+        {
+            return fastPathResult;
+        }
+
         context.ReportProgress(5, "Analysing image");
         var started = DateTime.UtcNow;
 
-        await using var stream = File.OpenRead(sourcePath.Value);
-        using var originalImage = await Image.LoadAsync<Rgba32>(stream, cancellationToken).ConfigureAwait(false);
+        using var originalImage = await Image.LoadAsync<Rgba32>(sourcePath.Value, cancellationToken).ConfigureAwait(false);
         using var processedImage = originalImage.Clone();
 
         var hasAlpha = HasVisibleAlpha(originalImage);
@@ -160,16 +165,94 @@ public sealed class ImageOptimiser : IOptimiser
         }
 
         var finalExtension = candidate.Extension ?? saveProfile.Extension;
-        var outputPath = BuildOutputPath(sourcePath, finalExtension);
+        var outputPlan = OptimisedOutputPlanner.Plan(sourcePath, finalExtension, request.Metadata, BuildOutputPath);
+        var outputPath = outputPlan.Destination;
         outputPath.EnsureParentDirectoryExists();
         File.Copy(candidate.Value, outputPath.Value, overwrite: true);
 
         CleanupTempFiles(tempOutput, advancedResult, stagingForCodecs);
 
+        if (outputPlan.RequiresSourceDeletion(sourcePath))
+        {
+            TryDelete(sourcePath);
+        }
+
         var message = DescribeImprovement(originalSize, candidateSize, candidateMessage, ssim);
         context.ReportProgress(100, message);
 
         return new OptimisationResult(request.RequestId, OptimisationStatus.Succeeded, outputPath, message, DateTime.UtcNow - started);
+    }
+
+    private async Task<OptimisationResult?> TryFastPathAsync(OptimisationRequest request, string extension, OptimiserExecutionContext context, CancellationToken token)
+    {
+        if (!_options.WicFastPath.Enabled || !WicImageTranscoder.IsSupported(extension))
+        {
+            return null;
+        }
+
+        if (ShouldSkipFastPath(request.SourcePath, extension))
+        {
+            return null;
+        }
+
+        var outcome = await WicImageTranscoder.TryTranscodeAsync(request.SourcePath, extension, _options.WicFastPath, _options.TargetJpegQuality, token).ConfigureAwait(false);
+        if (outcome is null)
+        {
+            return null;
+        }
+
+        return outcome.Status switch
+        {
+            WicTranscodeStatus.Success => CompleteFastPathSuccess(request, context, outcome),
+            WicTranscodeStatus.NoSavings => new OptimisationResult(request.RequestId, OptimisationStatus.Succeeded, request.SourcePath, "Original already optimal (fast path)"),
+            _ => null
+        };
+    }
+
+    private bool ShouldSkipFastPath(FilePath sourcePath, string extension)
+    {
+        var imageInfo = IdentifyImageInfo(sourcePath);
+
+        if (NeedsRetinaDownscale(imageInfo))
+        {
+            return true;
+        }
+
+        if (ShouldPreferFormatConversion(extension, imageInfo))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private OptimisationResult CompleteFastPathSuccess(OptimisationRequest request, OptimiserExecutionContext context, WicTranscodeOutcome outcome)
+    {
+        if (outcome.OutputPath is null)
+        {
+            return new OptimisationResult(request.RequestId, OptimisationStatus.Succeeded, request.SourcePath, "Original already optimal (fast path)");
+        }
+
+        var finalExtension = string.IsNullOrWhiteSpace(outcome.Extension)
+            ? request.SourcePath.Extension ?? "png"
+            : outcome.Extension;
+
+        var outputPlan = OptimisedOutputPlanner.Plan(request.SourcePath, finalExtension, request.Metadata, BuildOutputPath);
+        var finalOutput = outputPlan.Destination;
+        finalOutput.EnsureParentDirectoryExists();
+
+        var fastPathOutput = outcome.OutputPath.Value;
+        File.Copy(fastPathOutput.Value, finalOutput.Value, overwrite: true);
+        TryDelete(fastPathOutput);
+
+        if (outputPlan.RequiresSourceDeletion(request.SourcePath))
+        {
+            TryDelete(request.SourcePath);
+        }
+
+        var message = $"Fast path saved {outcome.SavingsPercent:0.0}% ({outcome.OriginalBytes.HumanSize()} → {outcome.OutputBytes.HumanSize()})";
+        context.ReportProgress(95, message);
+        return new OptimisationResult(request.RequestId, OptimisationStatus.Succeeded, finalOutput, message);
     }
 
     private ImageSaveProfile DetermineSaveProfile(string sourceExtension, ImageContentProfile contentProfile, bool hasAlpha, bool isAnimated)
@@ -208,6 +291,57 @@ public sealed class ImageOptimiser : IOptimiser
 
         var longestEdge = Math.Max(image.Width, image.Height);
         return longestEdge > _options.RetinaLongEdgePixels;
+    }
+
+    private bool NeedsRetinaDownscale(ImageInfo? info)
+    {
+        if (!_options.DownscaleRetina || _options.RetinaLongEdgePixels <= 0 || info is null)
+        {
+            return false;
+        }
+
+        var longestEdge = Math.Max(info.Width, info.Height);
+        return longestEdge > _options.RetinaLongEdgePixels;
+    }
+
+    private bool ShouldPreferFormatConversion(string extension, ImageInfo? info)
+    {
+        if (info is null)
+        {
+            return false;
+        }
+
+        if (!_options.FormatsToConvertToJpeg.Contains(extension))
+        {
+            return false;
+        }
+
+        if (HasAlphaChannel(info))
+        {
+            return false;
+        }
+
+        const long PhotographicPixelThreshold = 1_000_000;
+        var pixelCount = (long)info.Width * info.Height;
+        return pixelCount >= PhotographicPixelThreshold;
+    }
+
+    private static bool HasAlphaChannel(ImageInfo info)
+    {
+        var alphaRepresentation = info.PixelType.AlphaRepresentation;
+        return alphaRepresentation is PixelAlphaRepresentation.Associated or PixelAlphaRepresentation.Unassociated;
+    }
+
+    private static ImageInfo? IdentifyImageInfo(FilePath sourcePath)
+    {
+        try
+        {
+            return Image.Identify(sourcePath.Value) as ImageInfo;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static bool HasVisibleAlpha(Image<Rgba32> image)

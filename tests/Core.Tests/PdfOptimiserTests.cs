@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using ClopWindows.Core.Optimizers;
@@ -45,7 +46,9 @@ public sealed class PdfOptimiserTests : IDisposable
             ["pdf.allowLarger"] = true,
             ["pdf.stripMetadata"] = false,
             ["pdf.fontPath"] = "C:/temp/fonts",
-            ["pdf.gsResourcePath"] = "C:/temp/gs"
+            ["pdf.gsResourcePath"] = "C:/temp/gs",
+            ["pdf.linearize"] = false,
+            ["pdf.preset"] = "text"
         };
 
         await using var coordinator = new OptimisationCoordinator(new IOptimiser[] { optimiser });
@@ -61,6 +64,29 @@ public sealed class PdfOptimiserTests : IDisposable
         Assert.False(plan.StripMetadata);
         Assert.Equal("C:/temp/fonts", plan.FontPath);
         Assert.Equal("C:/temp/gs", plan.GhostscriptResourcePath);
+        Assert.False(plan.EnableLinearisation);
+        Assert.Equal(PdfPresetProfile.Text, plan.PresetProfile);
+    }
+
+    [Fact]
+    public async Task ChoosesGraphicsPresetForImageHeavyPdf()
+    {
+        var source = Track(CreateImageHeavyPdf());
+        var toolchain = new FakePdfToolchain();
+        var optimiser = new PdfOptimiser(PdfOptimiserOptions.Default, toolchain);
+
+        await using var coordinator = new OptimisationCoordinator(new IOptimiser[] { optimiser });
+        var ticket = coordinator.Enqueue(new OptimisationRequest(ItemType.Pdf, source));
+        var result = await ticket.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(OptimisationStatus.Succeeded, result.Status);
+        Track(result.OutputPath ?? source);
+
+        var plan = Assert.Single(toolchain.Plans);
+        Assert.Equal(PdfPresetProfile.Graphics, plan.PresetProfile);
+        Assert.True(plan.EnableLinearisation);
+        Assert.True(plan.Insights.ImageCount >= 1);
+        Assert.True(plan.Insights.EstimatedMaxImageDpi > 200);
     }
 
     [Fact]
@@ -103,6 +129,40 @@ public sealed class PdfOptimiserTests : IDisposable
                       "4 0 obj\n<</Length 44>>\nstream\nBT /F1 12 Tf 50 150 Td (Hello Clop) Tj ET\nendstream\nendobj\n" +
                       "trailer\n<</Root 1 0 R>>\n%%EOF";
         File.WriteAllText(path.Value, content);
+        return path;
+    }
+
+    private static FilePath CreateImageHeavyPdf()
+    {
+        var path = FilePath.TempFile("pdf-optimiser-image", ".pdf", addUniqueSuffix: true);
+        path.EnsureParentDirectoryExists();
+        var builder = new StringBuilder();
+        builder.AppendLine("%PDF-1.4");
+        builder.AppendLine("1 0 obj");
+        builder.AppendLine("<</Type /Catalog /Pages 2 0 R>>");
+        builder.AppendLine("endobj");
+        builder.AppendLine("2 0 obj");
+        builder.AppendLine("<</Type /Pages /Kids [3 0 R] /Count 2>>");
+        builder.AppendLine("endobj");
+        builder.AppendLine("3 0 obj");
+        builder.AppendLine("<</Type /Page /Parent 2 0 R /Resources << /XObject << /Im0 4 0 R >> >> /MediaBox [0 0 612 792] /Contents 5 0 R>>");
+        builder.AppendLine("endobj");
+        builder.AppendLine("4 0 obj");
+        builder.AppendLine("<</Type /XObject /Subtype /Image /Width 4000 /Height 4000 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length 12>>");
+        builder.AppendLine("stream");
+        builder.AppendLine("AAAAAAAAAAAA");
+        builder.AppendLine("endstream");
+        builder.AppendLine("endobj");
+        builder.AppendLine("5 0 obj");
+        builder.AppendLine("<</Length 44>>");
+        builder.AppendLine("stream");
+        builder.AppendLine("BT /F1 12 Tf 50 500 Td (Hello Clop Image) Tj ET");
+        builder.AppendLine("endstream");
+        builder.AppendLine("endobj");
+        builder.AppendLine("trailer");
+        builder.AppendLine("<</Root 1 0 R>>");
+        builder.AppendLine("%%EOF");
+        File.WriteAllText(path.Value, builder.ToString());
         return path;
     }
 

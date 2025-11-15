@@ -29,6 +29,8 @@ public sealed record ImageOptimiserOptions
 
     public CropSuggestionOptions CropSuggestions { get; init; } = CropSuggestionOptions.Disabled;
 
+    public WicFastPathOptions WicFastPath { get; init; } = WicFastPathOptions.Default;
+
     public MetadataPolicyOptions MetadataPolicy
     {
         get => _metadataPolicy;
@@ -110,4 +112,19 @@ public sealed record MetadataPolicyOptions
     public bool StripGpsMetadata { get; init; } = true;
 
     public IReadOnlySet<int> AdditionalExifTagsToStrip { get; init; } = new HashSet<int>();
+}
+
+public sealed record WicFastPathOptions
+{
+    public static WicFastPathOptions Default { get; } = new();
+
+    public bool Enabled { get; init; } = true;
+
+    public double MinimumSavingsPercent { get; init; } = 2d;
+
+    public bool StripMetadata { get; init; }
+
+    public bool SkipLosslessWhenBelowThreshold { get; init; } = true;
+
+    public int? OverrideJpegQuality { get; init; }
 }

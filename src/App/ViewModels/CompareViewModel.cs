@@ -8,6 +8,7 @@ using ClopWindows.App.Localization;
 using ClopWindows.App.Infrastructure;
 using ClopWindows.App.Services;
 using ClopWindows.Core.Optimizers;
+using ClopWindows.Core.Settings;
 using ClopWindows.Core.Shared;
 using Microsoft.Extensions.Logging;
 
@@ -105,6 +106,8 @@ public sealed class CompareViewModel : ObservableObject, IDisposable
                 {
                     ["source"] = "manual"
                 };
+
+                OutputBehaviourSettings.ApplyTo(metadata);
 
                 var request = new OptimisationRequest(itemType.Value, filePath, metadata: metadata);
                 _trackedRequests[request.RequestId] = request;
