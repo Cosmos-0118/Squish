@@ -61,6 +61,10 @@
                                     Command="{Binding ClearHudPlacementCommand}"
                                     Margin="8,0,0,0"
                                     Padding="18,6"/>
+                            <Button Content="{loc:Loc settings.floatingHud.adjustSize}"
+                                Command="{Binding BeginHudResizeCommand}"
+                                Margin="8,0,0,0"
+                                Padding="18,6"/>
                         </StackPanel>
                         <TextBlock Text="{Binding FloatingHudPlacementStatus}"
                                    Margin="0,8,0,0"

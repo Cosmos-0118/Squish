@@ -80,6 +80,8 @@ public static class SettingsRegistry
     public static readonly SettingKey<string> CustomNameTemplateForClipboardImages = new("customNameTemplateForClipboardImages", string.Empty);
     public static readonly SettingKey<int> LastAutoIncrementingNumber = Int("lastAutoIncrementingNumber", 0);
 
+    public static readonly SettingKey<float> FloatingHudScale = Float("floatingHudScale", 1f);
+
     public static readonly SettingKey<bool> EnableDragAndDrop = Bool("enableDragAndDrop", true);
     public static readonly SettingKey<bool> OnlyShowDropZoneOnOption = Bool("onlyShowDropZoneOnOption", false);
     public static readonly SettingKey<bool> OnlyShowPresetZonesOnControlTapped = Bool("onlyShowPresetZonesOnControlTapped", false);
@@ -186,6 +188,7 @@ public static class SettingsRegistry
         FloatingHudPinned,
         FloatingHudPinnedLeft,
         FloatingHudPinnedTop,
+        FloatingHudScale,
         AutoCopyToClipboard,
         CliInstalled,
         EnableCrossAppAutomation,

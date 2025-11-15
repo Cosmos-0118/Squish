@@ -101,7 +101,6 @@ public partial class App : System.Windows.Application
 
         var hudController = _host.Services.GetRequiredService<FloatingHudController>();
         hudController.Initialize();
-        hudController.Show();
 
         var mainWindow = _host.Services.GetRequiredService<MainWindow>();
         _trayIconService = _host.Services.GetRequiredService<TrayIconService>();

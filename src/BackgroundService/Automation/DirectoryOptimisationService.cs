@@ -33,6 +33,7 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
     private readonly ConcurrentDictionary<string, DateTimeOffset> _recentlyOptimised = new(StringComparer.OrdinalIgnoreCase);
 
     private Task? _processingTask;
+    private const int MaxRetryAttempts = 24;
 
     private volatile bool _paused;
     private volatile bool _autoImages;
@@ -260,6 +261,7 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
 
         var enqueued = false;
         var reservedSlot = false;
+        var retryRequested = false;
 
         try
         {
@@ -272,7 +274,8 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
             var info = await WaitForFileReadyAsync(path, token).ConfigureAwait(false);
             if (info is null)
             {
-                _logger.LogDebug("File {Path} was not ready for optimisation.", path.Value);
+                _logger.LogDebug("File {Path} was not ready for optimisation (attempt {Attempt}).", path.Value, fileEvent.Attempts + 1);
+                retryRequested = true;
                 return;
             }
 
@@ -312,6 +315,11 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
                 {
                     ReleaseSlot(fileEvent.ItemType);
                 }
+            }
+
+            if (retryRequested)
+            {
+                ScheduleRetry(fileEvent);
             }
         }
     }
@@ -706,6 +714,34 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
         }
     }
 
+    private void ScheduleRetry(FileEvent fileEvent)
+    {
+        if (fileEvent.Attempts >= MaxRetryAttempts)
+        {
+            _logger.LogWarning("Skipping {Path}; file remained busy after {Attempts} attempts.", fileEvent.Path.Value, fileEvent.Attempts);
+            return;
+        }
+
+        var next = fileEvent with { Attempts = fileEvent.Attempts + 1 };
+        var delay = TimeSpan.FromMilliseconds(Math.Min(5000, 250 * next.Attempts));
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(delay).ConfigureAwait(false);
+                if (!_channel.Writer.TryWrite(next))
+                {
+                    _logger.LogWarning("Failed to requeue watcher event for {Path}; channel unavailable.", next.Path.Value);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Retry scheduling failed for {Path}.", next.Path.Value);
+            }
+        });
+    }
+
     private bool TryCreateDescriptor(string? candidate, ItemType type, out WatchDescriptor descriptor)
     {
         descriptor = default;
@@ -740,7 +776,7 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
 
     private readonly record struct DirectoryRequestContext(ItemType ItemType, FilePath Path);
 
-    private readonly record struct FileEvent(ItemType ItemType, FilePath Path, FilePath RootDirectory, DateTimeOffset ObservedAt);
+    private readonly record struct FileEvent(ItemType ItemType, FilePath Path, FilePath RootDirectory, DateTimeOffset ObservedAt, int Attempts = 0);
 
     private readonly record struct ScheduledFileEvent(FileEvent Event, long? SizeBytes, DateTimeOffset EnqueuedAt, string BucketKey, string DirectoryPath, double SizeMb, bool IsLarge);
 

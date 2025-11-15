@@ -227,6 +227,43 @@
                     </StackPanel>
                 </StackPanel>
             </Border>
+
+            <Border Background="#BF050505"
+                    CornerRadius="10"
+                    Padding="12"
+                    Visibility="{Binding IsResizeMode, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <StackPanel>
+                    <TextBlock Text="{loc:Loc hud.resize.title}" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Brush.HudTextPrimary}"/>
+                    <TextBlock Text="{loc:Loc hud.resize.instructions}" Margin="0,4,0,10" Foreground="{DynamicResource Brush.HudTextSecondary}" TextWrapping="Wrap" FontSize="11"/>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,0,6">
+                        <TextBlock Text="{loc:Loc hud.resize.scaleLabel}" Foreground="{DynamicResource Brush.HudTextPrimary}" FontWeight="SemiBold"/>
+                        <TextBlock Text="{Binding ResizeScale, RelativeSource={RelativeSource AncestorType=Window}, StringFormat={}{0:0.0}x}" Margin="8,0,0,0" Foreground="{DynamicResource Brush.HudTextSecondary}"/>
+                    </StackPanel>
+                    <Slider Minimum="{x:Static viewModels:FloatingHudViewModel.MinScaleValue}"
+                            Maximum="{x:Static viewModels:FloatingHudViewModel.MaxScaleValue}"
+                            Value="{Binding ResizeScale, RelativeSource={RelativeSource AncestorType=Window}, Mode=TwoWay}"
+                            TickFrequency="0.05"
+                            IsSnapToTickEnabled="False"
+                            ValueChanged="OnResizeScaleChanged"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,12,0,0" VerticalAlignment="Center">
+                        <TextBlock Text="{loc:Loc hud.resize.manual}" Foreground="{DynamicResource Brush.HudTextPrimary}" FontWeight="SemiBold"/>
+                        <TextBox Width="60"
+                                 Margin="8,0,0,0"
+                                 Text="{Binding ResizeScale, RelativeSource={RelativeSource AncestorType=Window}, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, StringFormat={}{0:0.00}}"
+                                 VerticalContentAlignment="Center"/>
+                        <TextBlock Text="x" Margin="6,0,0,0" Foreground="{DynamicResource Brush.HudTextSecondary}"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,12,0,0" HorizontalAlignment="Left">
+                        <Button Content="{loc:Loc hud.resize.presetSmall}" Padding="12,4" Tag="0.75" Margin="0,0,8,0" Click="OnResizePresetClicked"/>
+                        <Button Content="{loc:Loc hud.resize.presetDefault}" Padding="12,4" Tag="1.0" Margin="0,0,8,0" Click="OnResizePresetClicked"/>
+                        <Button Content="{loc:Loc hud.resize.presetLarge}" Padding="12,4" Tag="1.35" Click="OnResizePresetClicked"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,12,0,0" HorizontalAlignment="Right">
+                        <Button Content="{loc:Loc hud.resize.cancel}" Margin="0,0,6,0" Padding="12,4" Click="OnResizeCancelClicked"/>
+                        <Button Content="{loc:Loc hud.resize.save}" Padding="14,4" Click="OnResizeConfirmClicked"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
         </Grid>
     </Border>
 </Window>

@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -15,13 +16,34 @@ public partial class FloatingHudWindow : Window
     public static readonly DependencyProperty IsPlacementModeProperty = DependencyProperty.Register(
         nameof(IsPlacementMode), typeof(bool), typeof(FloatingHudWindow), new PropertyMetadata(false));
 
+    public static readonly DependencyProperty IsResizeModeProperty = DependencyProperty.Register(
+        nameof(IsResizeMode), typeof(bool), typeof(FloatingHudWindow), new PropertyMetadata(false));
+
+    public static readonly DependencyProperty ResizeScaleProperty = DependencyProperty.Register(
+        nameof(ResizeScale), typeof(double), typeof(FloatingHudWindow), new PropertyMetadata(1d));
+
     public event EventHandler? PlacementConfirmed;
     public event EventHandler? PlacementCancelled;
+    public event EventHandler<double>? ResizeScaleChanged;
+    public event EventHandler<double>? ResizeConfirmed;
+    public event EventHandler? ResizeCancelled;
 
     public bool IsPlacementMode
     {
         get => (bool)GetValue(IsPlacementModeProperty);
         set => SetValue(IsPlacementModeProperty, value);
+    }
+
+    public bool IsResizeMode
+    {
+        get => (bool)GetValue(IsResizeModeProperty);
+        set => SetValue(IsResizeModeProperty, value);
+    }
+
+    public double ResizeScale
+    {
+        get => (double)GetValue(ResizeScaleProperty);
+        set => SetValue(ResizeScaleProperty, value);
     }
 
     public bool IsPinnedPosition { get; private set; }
@@ -42,7 +64,7 @@ public partial class FloatingHudWindow : Window
 
     private void OnSizeChanged(object sender, SizeChangedEventArgs e)
     {
-        if (!IsPinnedPosition && !IsPlacementMode)
+        if (!IsPinnedPosition && !IsPlacementMode && !IsResizeMode)
         {
             MoveToTopRight();
         }
@@ -118,6 +140,18 @@ public partial class FloatingHudWindow : Window
         IsPlacementMode = false;
     }
 
+    public void EnterResizeMode(double initialScale)
+    {
+        IsResizeMode = true;
+        ResizeScale = initialScale;
+        BringToFront();
+    }
+
+    public void ExitResizeMode()
+    {
+        IsResizeMode = false;
+    }
+
     public bool TryAnimateDismissal(FloatingResultViewModel viewModel, Action onCompleted)
     {
         if (viewModel is null)
@@ -180,5 +214,37 @@ public partial class FloatingHudWindow : Window
     private void OnPlacementCancelClicked(object sender, RoutedEventArgs e)
     {
         PlacementCancelled?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void OnResizeScaleChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        ResizeScaleChanged?.Invoke(this, e.NewValue);
+    }
+
+    private void OnResizeConfirmClicked(object sender, RoutedEventArgs e)
+    {
+        ResizeConfirmed?.Invoke(this, ResizeScale);
+    }
+
+    private void OnResizeCancelClicked(object sender, RoutedEventArgs e)
+    {
+        ResizeCancelled?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void OnResizePresetClicked(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement element)
+        {
+            return;
+        }
+
+        if (element.Tag is double preset)
+        {
+            ResizeScale = preset;
+        }
+        else if (element.Tag is string raw && double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed))
+        {
+            ResizeScale = parsed;
+        }
     }
 }

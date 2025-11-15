@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Text.Json.Nodes;
+using System.Threading.Tasks;
 using ClopWindows.Core.Settings;
 using ClopWindows.Core.Shared;
 using Xunit;
@@ -15,8 +16,7 @@ public sealed class SettingsStoreTests : IDisposable
     public void LoadsDefaultsWhenConfigIsMissing()
     {
         using var temp = new TempDirectory();
-
-        var store = new SettingsStore(temp.Path);
+        using var store = new SettingsStore(temp.Path);
         var defaultValue = store.Get(SettingsRegistry.EnableFloatingResults);
 
         Assert.True(defaultValue);
@@ -27,11 +27,11 @@ public sealed class SettingsStoreTests : IDisposable
     public void PersistsValuesAcrossInstances()
     {
         using var temp = new TempDirectory();
-        var store = new SettingsStore(temp.Path);
+        using var store = new SettingsStore(temp.Path);
 
         store.Set(SettingsRegistry.EnableFloatingResults, false);
 
-        var rehydrated = new SettingsStore(temp.Path);
+        using var rehydrated = new SettingsStore(temp.Path);
         Assert.False(rehydrated.Get(SettingsRegistry.EnableFloatingResults));
     }
 
@@ -54,11 +54,37 @@ public sealed class SettingsStoreTests : IDisposable
         };
         File.WriteAllText(Path.Combine(temp.Path, "config.json"), root.ToJsonString());
 
-        _ = new SettingsStore(temp.Path);
+        using var _ = new SettingsStore(temp.Path);
 
         Assert.False(File.Exists(originalIgnore));
         Assert.True(File.Exists(Path.Combine(watchDir.FullName, ".clopignore-images")));
         Assert.True(File.Exists(Path.Combine(watchDir.FullName, ".clopignore-videos")));
+    }
+
+    [Fact]
+    public async Task NotifiesWhenConfigChangesExternally()
+    {
+        using var temp = new TempDirectory();
+        using var background = new SettingsStore(temp.Path);
+        using var ui = new SettingsStore(temp.Path);
+
+        var tcs = new TaskCompletionSource<string[]>(TaskCreationOptions.RunContinuationsAsynchronously);
+        background.SettingChanged += (sender, args) =>
+        {
+            if (args.Name == SettingsRegistry.PdfDirs.Name && args.Value is string[] paths)
+            {
+                tcs.TrySetResult(paths);
+            }
+        };
+
+        var downloads = Path.Combine(temp.Path, "downloads");
+        Directory.CreateDirectory(downloads);
+        ui.Set(SettingsRegistry.PdfDirs, new[] { downloads });
+
+        var completed = await Task.WhenAny(tcs.Task, Task.Delay(TimeSpan.FromSeconds(5)));
+        Assert.True(ReferenceEquals(completed, tcs.Task), "Background store did not observe external file change.");
+        var observed = await tcs.Task;
+        Assert.Contains(downloads, observed);
     }
 
     public void Dispose()
