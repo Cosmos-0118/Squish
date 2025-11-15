@@ -1,0 +1,161 @@
+using System.Collections.Generic;
+
+namespace ClopWindows.Core.Optimizers;
+
+/// <summary>
+/// Tunable switches for the video pipeline so callers can match macOS behaviour without
+/// hard-coding ffmpeg/gifski arguments inside the optimiser itself.
+/// </summary>
+public sealed record VideoOptimiserOptions
+{
+    public static VideoOptimiserOptions Default { get; } = new();
+
+    /// <summary>
+    /// Absolute path (or PATH-resolved executable name) for ffmpeg.
+    /// </summary>
+    public string FfmpegPath { get; init; } = "ffmpeg";
+
+    /// <summary>
+    /// Optional path to gifski. Required only when GIF export is requested.
+    /// </summary>
+    public string? GifskiPath { get; init; } = "gifski";
+
+    public bool ForceMp4 { get; init; } = true;
+
+    public bool RemoveAudio { get; init; }
+        = false;
+
+    public bool CapFps { get; init; } = true;
+
+    public int TargetFps { get; init; } = 60;
+
+    public int MinFps { get; init; } = 24;
+
+    public bool UseHardwareAcceleration { get; init; } = true;
+
+    public string HardwareAccelerationDevice { get; init; } = "d3d11va";
+
+    public string HardwareEncoder { get; init; } = "h264_amf";
+
+    public string SoftwareEncoder { get; init; } = "libx264";
+
+    public string HardwareEncoderHevc { get; init; } = "hevc_amf";
+
+    public string HardwareEncoderAv1 { get; init; } = "av1_amf";
+
+    public string HardwareEncoderVp9 { get; init; } = "vp9_amf";
+
+    public string SoftwareEncoderHevc { get; init; } = "libx265";
+
+    public string SoftwareEncoderAv1 { get; init; } = "svtav1";
+
+    public string SoftwareEncoderVp9 { get; init; } = "libvpx-vp9";
+
+    public bool AggressiveQuality { get; init; }
+        = false;
+
+    public int SoftwareCrf { get; init; } = 26;
+
+    public int SoftwareCrfHevc { get; init; } = 24;
+
+    public int SoftwareCrfAv1 { get; init; } = 32;
+
+    public int SoftwareCrfVp9 { get; init; } = 30;
+
+    public int HardwareQuality { get; init; } = 23;
+
+    public string SoftwarePresetGentle { get; init; } = "faster";
+
+    public string SoftwarePresetAggressive { get; init; } = "slower";
+
+    public string SoftwarePresetHevcGentle { get; init; } = "medium";
+
+    public string SoftwarePresetHevcAggressive { get; init; } = "slow";
+
+    public string SoftwarePresetAv1Gentle { get; init; } = "8";
+
+    public string SoftwarePresetAv1Aggressive { get; init; } = "5";
+
+    public string SoftwarePresetVp9Gentle { get; init; } = "3";
+
+    public string SoftwarePresetVp9Aggressive { get; init; } = "1";
+    public int HardwareQualityHevc { get; init; } = 24;
+
+    public int HardwareQualityAv1 { get; init; } = 28;
+
+    public int HardwareQualityVp9 { get; init; } = 28;
+
+    public bool PreferAv1WhenAggressive { get; init; } = true;
+
+    public bool PreferVp9ForWebm { get; init; } = true;
+
+    public bool EnableTwoPassEncoding { get; init; } = true;
+
+    public bool EnableSceneCutAwareBitrate { get; init; } = true;
+
+    public int SoftwareLookaheadFrames { get; init; } = 32;
+
+    public int HardwareLookaheadFrames { get; init; } = 16;
+
+    public int SceneCutThreshold { get; init; } = 35;
+
+    public bool EnableFrameDecimation { get; init; } = true;
+
+    public double FrameDecimationHighThreshold { get; init; } = 64;
+
+    public double FrameDecimationLowThreshold { get; init; } = 15;
+
+    public double FrameDecimationMaxDifference { get; init; } = 15;
+
+    public bool EnableAudioNormalization { get; init; } = true;
+
+    public int AudioTargetBitrateKbps { get; init; } = 160;
+
+    public string AudioEncoderAac { get; init; } = "aac";
+
+    public string AudioEncoderOpus { get; init; } = "libopus";
+
+    public int AudioDownmixChannels { get; init; } = 2;
+
+    public double LoudnessTargetIntegrated { get; init; } = -16.0;
+
+    public double LoudnessTargetTruePeak { get; init; } = -1.5;
+
+    public double LoudnessTargetLra { get; init; } = 11.0;
+
+    public AnimatedExportFormat PreferredAnimatedExport { get; init; } = AnimatedExportFormat.Gif;
+
+    public bool PreferAnimatedWebpForHighQuality { get; init; } = true;
+
+    public VideoHardwareCapabilities? HardwareOverride { get; init; }
+        = null;
+
+    public bool ProbeHardwareCapabilities { get; init; } = true;
+
+    public bool PreserveTimestamps { get; init; } = true;
+
+    public bool RequireSmallerSize { get; init; } = true;
+
+    public bool StripMetadata { get; init; }
+        = false;
+
+    public string DefaultVideoExtension { get; init; } = "mp4";
+
+    public bool EnableGifExport { get; init; } = true;
+
+    public int GifMaxWidth { get; init; } = 720;
+
+    public int GifFps { get; init; } = 18;
+
+    public int GifQuality { get; init; } = 85;
+
+    /// <summary>
+    /// Ensures resize filters keep dimensions divisible by two (required by many codecs).
+    /// </summary>
+    public bool EnforceEvenDimensions { get; init; } = true;
+
+    /// <summary>
+    /// Allows feature flags (CLI, UI, automation) to request GIF export via metadata.
+    /// </summary>
+    public IReadOnlyCollection<string> GifTriggers { get; init; } = new[] { "gif", "animated" };
+}

@@ -1,24 +1,77 @@
-Clop/bin/*
-Clop/bin-*/*
-Clop/bin.zip
-Clop/bin.tar.lrz
-*.dmg
-*.delta
-*.bkp
-Releases/*.html
-required.swift
-Releases/old_updates/
+# Build directories
+bin/
+obj/
+[Bb]uild/
+artifacts/
+**/bin/
+**/obj/
+**/GeneratedFiles/
+
+# VS tooling
+.vs/
+*.user
+*.rsuser
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Logs and local data
+*.log
+*.tlog
+*.cache
+*.ide/
+*.pyc
+
+# Dotnet tooling
+project.lock.json
+project.fragment.lock.json
+artifacts/
+_TestResults/
+TestResults/
+.nuget/
+.packages/
+*.nupkg
+*.snupkg
+
+# Rider / JetBrains
+.idea/
+*.sln.iml
+
+# OS junk
+Thumbs.db
+.DS_Store
+*.swp
+
+# Temporary
 *.tmp
-build/
+*.temp
+*.pid
+*.seed
+*.pidb
+*.svclog
+*.pfx
+_ReSharper*/
+stylecop.cache
 
-# Dotnet build outputs for the Windows port
-Clop-Windows/**/bin/
-Clop-Windows/**/obj/
-Clop-Windows/**/TestResults/
-Clop-Windows/**/publish/
+# Local publish profiles
+tmp/
+*.pubxml
+*.publish.xml
 
-# External tool bundles (downloaded binaries, not source-controlled)
-Clop-Windows/tools/**
-!Clop-Windows/tools/
-!Clop-Windows/tools/.gitkeep
-!Clop-Windows/tools/README.md
+# WPF generated
+*wpftmp.csproj*
+**/*.g.cs
+**/*.g.i.cs
+**/*.baml
+**/*.g.resources
+
+# Coverage
+coverage*
+*.coverage
+*.coveragexml
+
+# Packaging
+*.msi
+*.msix
+*.msixupload
+*.zip
