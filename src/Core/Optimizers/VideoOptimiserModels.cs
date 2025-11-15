@@ -1,0 +1,157 @@
+using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Diagnostics;
+using System.Linq;
+using System.Threading;
+using ClopWindows.Core.Processes;
+using ClopWindows.Core.Shared;
+
+namespace ClopWindows.Core.Optimizers;
+
+/// <summary>
+/// Represents the final encoder settings chosen for a video optimisation run.
+/// </summary>
+public sealed record VideoEncoderSelection(
+    VideoCodec Codec,
+    string ContainerExtension,
+    string VideoEncoder,
+    string PixelFormat,
+    bool UseHardwareEncoder,
+    string? HardwareAcceleration,
+    string? HardwareOutputFormat,
+    int Quality,
+    int? TargetBitrateKbps,
+    IReadOnlyList<string> AdditionalArguments,
+    bool SupportsTwoPass,
+    bool SuggestTwoPass,
+    int SuggestedLookaheadFrames,
+    bool SceneCutAware,
+    string RateControlFlag)
+{
+    public static VideoEncoderSelection Software(VideoCodec codec, string encoder, string container, string pixelFormat, int quality, IReadOnlyList<string>? additionalArgs = null, bool supportsTwoPass = true, bool suggestTwoPass = true, int suggestedLookahead = 24, bool sceneCutAware = true, string rateControlFlag = "-crf")
+        => new(codec, container, encoder, pixelFormat, false, null, null, quality, null, additionalArgs ?? Array.Empty<string>(), supportsTwoPass, suggestTwoPass, suggestedLookahead, sceneCutAware, rateControlFlag);
+
+    public static VideoEncoderSelection Hardware(VideoCodec codec, string encoder, string container, string pixelFormat, string acceleration, string? outputFormat, int quality, IReadOnlyList<string>? additionalArgs, bool supportsTwoPass, int suggestedLookahead, bool sceneCutAware, string rateControlFlag = "-cq")
+        => new(codec, container, encoder, pixelFormat, true, acceleration, outputFormat, quality, null, additionalArgs ?? Array.Empty<string>(), supportsTwoPass, false, suggestedLookahead, sceneCutAware, rateControlFlag);
+}
+
+public enum VideoCodec
+{
+    H264,
+    Hevc,
+    Av1,
+    Vp9
+}
+
+public sealed record FrameDecimationPlan(bool Enabled, double HighThreshold, double LowThreshold, double MaxDurationDifference)
+{
+    public static FrameDecimationPlan Disabled { get; } = new(false, 0.0, 0.0, 0.0);
+}
+
+public sealed record LoudnessProfile(double Integrated, double TruePeak, double LoudnessRange);
+
+public sealed record AudioPlan(bool RemoveAudio, bool CopyStream, string? Encoder, int? BitrateKbps, int? Channels, bool NormalizeLoudness, LoudnessProfile Loudness)
+{
+    public static AudioPlan Remove => new(true, false, null, null, null, false, new LoudnessProfile(-24, -2, 7));
+    public static AudioPlan Copy => new(false, true, null, null, null, false, new LoudnessProfile(-24, -2, 7));
+}
+
+public enum AnimatedExportFormat
+{
+    Gif,
+    Apng,
+    AnimatedWebp
+}
+
+public sealed record VideoHardwareCapabilities(
+    bool SupportsNvenc,
+    bool SupportsAmf,
+    bool SupportsQsv,
+    bool SupportsDxva,
+    bool SupportsAv1Nvenc,
+    bool SupportsAv1Amf,
+    bool SupportsAv1Qsv,
+    bool SupportsHevcNvenc,
+    bool SupportsHevcAmf,
+    bool SupportsHevcQsv)
+{
+    public static VideoHardwareCapabilities CpuOnly { get; } = new(false, false, false, false, false, false, false, false, false, false);
+
+    public bool HasAnyHardware => SupportsNvenc || SupportsAmf || SupportsQsv || SupportsDxva;
+
+    public bool SupportsAv1Hardware => SupportsAv1Nvenc || SupportsAv1Amf || SupportsAv1Qsv;
+
+    public bool SupportsHevcHardware => SupportsHevcNvenc || SupportsHevcAmf || SupportsHevcQsv;
+}
+
+public static class VideoHardwareDetector
+{
+    private static readonly object Gate = new();
+    private static VideoHardwareCapabilities? _cached;
+
+    public static VideoHardwareCapabilities Detect(string ffmpegPath, bool probe)
+    {
+        if (!probe)
+        {
+            return VideoHardwareCapabilities.CpuOnly;
+        }
+
+        lock (Gate)
+        {
+            if (_cached is not null)
+            {
+                return _cached;
+            }
+
+            try
+            {
+                var encoderResult = ProcessRunner.Run(ffmpegPath, new[] { "-hide_banner", "-encoders" }, ProcessRunnerOptions.Create(throwOnError: false));
+                var encoders = encoderResult.ExitCode == 0
+                    ? ParseLines(encoderResult.StandardOutput)
+                    : Array.Empty<string>();
+
+                var hwAccelResult = ProcessRunner.Run(ffmpegPath, new[] { "-hide_banner", "-hwaccels" }, ProcessRunnerOptions.Create(throwOnError: false));
+                var hwAccels = hwAccelResult.ExitCode == 0
+                    ? ParseLines(hwAccelResult.StandardOutput)
+                    : Array.Empty<string>();
+
+                var caps = new VideoHardwareCapabilities(
+                    SupportsNvenc: encoders.Any(line => line.Contains("nvenc", StringComparison.OrdinalIgnoreCase)),
+                    SupportsAmf: encoders.Any(line => line.Contains("_amf", StringComparison.OrdinalIgnoreCase)),
+                    SupportsQsv: encoders.Any(line => line.Contains("_qsv", StringComparison.OrdinalIgnoreCase)),
+                    SupportsDxva: hwAccels.Any(line => line.Contains("d3d11", StringComparison.OrdinalIgnoreCase) || line.Contains("dxva2", StringComparison.OrdinalIgnoreCase)),
+                    SupportsAv1Nvenc: encoders.Any(line => line.Contains("av1_nvenc", StringComparison.OrdinalIgnoreCase)),
+                    SupportsAv1Amf: encoders.Any(line => line.Contains("av1_amf", StringComparison.OrdinalIgnoreCase)),
+                    SupportsAv1Qsv: encoders.Any(line => line.Contains("av1_qsv", StringComparison.OrdinalIgnoreCase)),
+                    SupportsHevcNvenc: encoders.Any(line => line.Contains("hevc_nvenc", StringComparison.OrdinalIgnoreCase)),
+                    SupportsHevcAmf: encoders.Any(line => line.Contains("hevc_amf", StringComparison.OrdinalIgnoreCase)),
+                    SupportsHevcQsv: encoders.Any(line => line.Contains("hevc_qsv", StringComparison.OrdinalIgnoreCase)));
+
+                _cached = caps;
+                return caps;
+            }
+            catch (Exception ex)
+            {
+                Log.Warning($"Failed to probe ffmpeg hardware capabilities: {ex.Message}");
+                _cached = VideoHardwareCapabilities.CpuOnly;
+                return _cached;
+            }
+        }
+    }
+
+    private static IReadOnlyCollection<string> ParseLines(string stdout)
+    {
+        if (string.IsNullOrWhiteSpace(stdout))
+        {
+            return Array.Empty<string>();
+        }
+
+        var lines = stdout
+            .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => line.Trim())
+            .Where(line => !string.IsNullOrWhiteSpace(line))
+            .ToArray();
+        return new ReadOnlyCollection<string>(lines);
+    }
+}

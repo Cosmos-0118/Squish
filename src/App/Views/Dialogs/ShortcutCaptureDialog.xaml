@@ -1,0 +1,31 @@
+<Window x:Class="ClopWindows.App.Views.Dialogs.ShortcutCaptureDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:loc="clr-namespace:ClopWindows.App.Localization"
+        Title="{loc:Loc shortcuts.capture.windowTitle}"
+        SizeToContent="WidthAndHeight"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        WindowStyle="ToolWindow"
+        ShowInTaskbar="False"
+        PreviewKeyDown="OnPreviewKeyDown">
+    <Border Background="{DynamicResource Brush.SurfaceBackground}" Padding="24">
+        <StackPanel>
+            <TextBlock Text="{loc:Loc shortcuts.capture.title}" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}"/>
+            <TextBlock x:Name="ScopeText" Margin="0,8,0,0" Foreground="{DynamicResource Brush.SecondaryText}"/>
+
+            <Border Margin="0,16,0,0" Background="{DynamicResource Brush.CardBackground}" BorderBrush="{DynamicResource Brush.SurfaceAltBorder}" BorderThickness="1" CornerRadius="8" Padding="12">
+                <StackPanel>
+                    <TextBlock x:Name="CurrentText" Foreground="{DynamicResource Brush.PrimaryText}"/>
+                    <TextBlock x:Name="DefaultText" Margin="0,4,0,0" Foreground="{DynamicResource Brush.MutedText}"/>
+                    <TextBlock Text="{loc:Loc shortcuts.capture.instructions}" Margin="0,8,0,0" Foreground="{DynamicResource Brush.PlaceholderText}" FontSize="12"/>
+                </StackPanel>
+            </Border>
+
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,24,0,0">
+                <Button Content="{loc:Loc shortcuts.capture.disable}" Padding="16,6" Click="OnDisableClick"/>
+                <Button Content="{loc:Loc shortcuts.capture.cancel}" Padding="16,6" Click="OnCancelClick" Margin="8,0,0,0"/>
+            </StackPanel>
+        </StackPanel>
+    </Border>
+</Window>
