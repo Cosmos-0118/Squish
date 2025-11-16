@@ -23,12 +23,12 @@ image/video/PDF optimisation. These binaries remain under their respective
 licenses. Their original LICENSE/NOTICE files can be found inside the
 installation directory at `tools/<name>/`. A summary is provided below:
 
-  • pngquant — GPL v3.0, https://pngquant.org/
   • ffmpeg — GPL/LGPL (build-dependent), https://ffmpeg.org/
-  • gifski — AGPL v3.0, https://github.com/ImageOptim/gifski
-  • libvips (vipsthumbnail) — LGPL v2.1, https://libvips.github.io/libvips/
+  • mozjpeg — IJG/BSD license, https://github.com/mozilla/mozjpeg
+  • libwebp (`cwebp`) — BSD 3-Clause, https://developers.google.com/speed/webp
+  • libavif (`avifenc`) — BSD 2-Clause, https://github.com/AOMediaCodec/libavif
   • Ghostscript — AGPL v3.0, https://www.ghostscript.com/
-  • ExifTool — GPL v3.0, https://exiftool.org/
+  • qpdf — Apache License 2.0, https://github.com/qpdf/qpdf
 
 If you plan to distribute proprietary builds that include any of the
 above GPL/AGPL components, you must either comply with their copyleft

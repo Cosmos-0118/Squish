@@ -5,24 +5,16 @@ This folder lists the upstream licenses for the third-party utilities that
 are redistributed verbatim from their original publishers; no source
 changes are applied.
 
-| Component               | Upstream URL                         | License                                       | Notes                                                                     |
-| ----------------------- | ------------------------------------ | --------------------------------------------- | ------------------------------------------------------------------------- |
-| pngquant                | https://pngquant.org/                | GNU GPL v3.0                                  | Commercial license required if you do not comply with GPL/AGPL terms.     |
-| ffmpeg                  | https://ffmpeg.org/                  | GNU GPL/LGPL (depending on configured codecs) | The Windows “release essentials” package from gyan.dev contains GPL code. |
-| gifski                  | https://github.com/ImageOptim/gifski | GNU AGPL v3.0                                 | ImageOptim offers commercial relicensing.                                 |
-| libvips (vipsthumbnail) | https://libvips.github.io/libvips/   | LGPL v2.1                                     | Re-linking permitted so long as LGPL terms are met.                       |
-| Ghostscript             | https://www.ghostscript.com/         | GNU AGPL v3.0                                 | Commercial licenses available from Artifex.                               |
-| ExifTool                | https://exiftool.org/                | GNU GPL v3.0                                  | Authored by Phil Harvey; do not remove attribution.                       |
+| Component   | Upstream URL                             | License                                       | Notes                                                                                  |
+| ----------- | ---------------------------------------- | --------------------------------------------- | -------------------------------------------------------------------------------------- |
+| ffmpeg      | https://ffmpeg.org/                      | GNU GPL/LGPL (depending on configured codecs) | The "release essentials" package from gyan.dev includes GPL code; retain full notices. |
+| mozjpeg     | https://github.com/mozilla/mozjpeg       | IJG / BSD-style                               | Windows build sourced from `garyzyg/mozjpeg-windows` (`mozjpeg-x64.zip`).              |
+| libwebp     | https://developers.google.com/speed/webp | BSD 3-Clause                                  | Use Google's official `libwebp-1.4.0-windows-x64` distribution.                        |
+| libavif     | https://github.com/AOMediaCodec/libavif  | BSD 2-Clause                                  | Alliance for Open Media's `windows-artifacts.zip` provides `avifenc.exe`.              |
+| Ghostscript | https://www.ghostscript.com/             | GNU AGPL v3.0                                 | Commercial licenses available from Artifex.                                            |
+| qpdf        | https://github.com/qpdf/qpdf             | Apache License 2.0                            | Official `qpdf-12.2.0-msvc64` archives include NOTICE + DLL dependencies.              |
 
 Each entry below reproduces the text required by the upstream license.
-
----
-
-## pngquant — GNU GPL v3.0
-
-The pngquant Windows package is distributed under the GNU General Public
-License version 3.0. See the top-level `LICENSE` file for the full text or
-visit <https://www.gnu.org/licenses/gpl-3.0.txt>.
 
 ---
 
@@ -36,18 +28,31 @@ the entire binary under the GNU General Public License version 2 or later. The
 
 ---
 
-## gifski — GNU Affero General Public License v3.0
+## mozjpeg — IJG / BSD-style License
 
-Gifski is licensed under the GNU AGPL v3.0. Full text available at
-<https://www.gnu.org/licenses/agpl-3.0.txt>. Commercial licensing is available
-from ImageOptim (<https://gif.ski/>).
+mozjpeg inherits the Independent JPEG Group license with BSD-style terms. The
+source is available at <https://github.com/mozilla/mozjpeg>. The Windows build
+used here is an unmodified binary from <https://github.com/garyzyg/mozjpeg-windows>.
+Redistributions must retain copyright notices from IJG, the Mozilla project,
+and the libjpeg-turbo contributors.
 
 ---
 
-## libvips / vipsthumbnail — GNU Lesser General Public License v2.1
+## libwebp — BSD 3-Clause License
 
-Libvips (including the `vipsthumbnail` utility) is licensed under the LGPL v2.1.
-The license text is published at <https://www.gnu.org/licenses/old-licenses/lgpl-2.1.txt>.
+libwebp is distributed under the BSD 3-Clause license. The official Windows
+prebuilt archives, including `cwebp.exe`, are published at
+<https://developers.google.com/speed/webp/download>. Keep the LICENSE and NOTICE
+files that ship with the archive.
+
+---
+
+## libavif — BSD 2-Clause License
+
+libavif is licensed under the BSD 2-Clause license by the Alliance for Open Media.
+Releases (including `windows-artifacts.zip`) are available at
+<https://github.com/AOMediaCodec/libavif>. Redistributions must retain the
+copyright notice and license text.
 
 ---
 
@@ -59,8 +64,8 @@ from Artifex (<https://artifex.com/licensing/>).
 
 ---
 
-## ExifTool — GNU General Public License v3.0
+## qpdf — Apache License 2.0
 
-ExifTool is licensed under the GNU GPL v3.0. Source code and documentation are
-available at <https://exiftool.org/>. Redistributions must retain the copyright
-notice and this license statement.
+qpdf is licensed under the Apache License 2.0. Source code and Windows binaries
+are published at <https://github.com/qpdf/qpdf>. Redistributions must include the
+Apache 2.0 license text and the upstream NOTICE file.
