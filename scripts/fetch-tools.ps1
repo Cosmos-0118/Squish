@@ -12,6 +12,8 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$ScriptRoot = Split-Path -Parent $PSCommandPath
+$RepoRoot = (Resolve-Path (Join-Path $ScriptRoot '..')).Path
 
 function New-TemporaryDirectory {
     $path = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath ([System.Guid]::NewGuid().ToString())
@@ -21,6 +23,12 @@ function New-TemporaryDirectory {
 
 function Get-Checksum([string]$Path) {
     return (Get-FileHash -Path $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+
+function Resolve-RepoPath([string]$Path) {
+    if ([string]::IsNullOrWhiteSpace($Path)) { return $null }
+    if ([System.IO.Path]::IsPathRooted($Path)) { return $Path }
+    return Join-Path -Path $RepoRoot -ChildPath $Path
 }
 
 function Test-HasChildItems([string]$Path) {
@@ -69,6 +77,7 @@ foreach ($tool in $tools) {
     if ($tool.PSObject.Properties['contentRoot']) {
         $contentRoot = $tool.contentRoot
     }
+    $effectiveContentRoot = $contentRoot
 
     Write-Host "==> $($tool.name) v$($tool.version)" -ForegroundColor Cyan
     Write-Host "    Source: $($tool.url)"
@@ -107,23 +116,46 @@ foreach ($tool in $tools) {
 
     $tempDir = New-TemporaryDirectory
     try {
-        $downloadPath = Join-Path -Path $tempDir -ChildPath (Split-Path -Path $tool.url -Leaf)
-        Write-Host "    Downloading..."
-        Invoke-WebRequest -Uri $tool.url -OutFile $downloadPath -UseBasicParsing
-
-        $computedSha = Get-Checksum -Path $downloadPath
-        Write-Host "    SHA256: $computedSha"
-
-        if ($tool.sha256 -and -not $SkipChecksum) {
-            if ($computedSha -ne $tool.sha256.ToLowerInvariant()) {
-                throw "Checksum mismatch for $($tool.name). Expected $($tool.sha256)"
+        $localArchivePath = $null
+        if ($tool.PSObject.Properties['localArchive']) {
+            $candidate = Resolve-RepoPath -Path $tool.localArchive
+            if ($candidate -and (Test-Path -LiteralPath $candidate)) {
+                $localArchivePath = $candidate
+                Write-Host "    Using prebuilt archive: $localArchivePath"
+            }
+            else {
+                Write-Warning "    Local archive '$($tool.localArchive)' not found. Falling back to download."
             }
         }
-        elseif (-not $SkipChecksum) {
-            Write-Warning "    Manifest missing SHA256. Add '$computedSha' for $($tool.name) or run with -WriteMissingChecksums."
-            if ($WriteMissingChecksums) {
-                $tool.sha256 = $computedSha
-                $manifestChanged = $true
+
+        $usingLocalArchive = $localArchivePath -ne $null
+        if ($usingLocalArchive) {
+            $downloadPath = $localArchivePath
+            $computedSha = Get-Checksum -Path $downloadPath
+            Write-Host "    SHA256: $computedSha"
+            if ($tool.PSObject.Properties['localContentRoot']) {
+                $effectiveContentRoot = $tool.localContentRoot
+            }
+        }
+        else {
+            $downloadPath = Join-Path -Path $tempDir -ChildPath (Split-Path -Path $tool.url -Leaf)
+            Write-Host "    Downloading..."
+            Invoke-WebRequest -Uri $tool.url -OutFile $downloadPath -UseBasicParsing
+
+            $computedSha = Get-Checksum -Path $downloadPath
+            Write-Host "    SHA256: $computedSha"
+
+            if ($tool.sha256 -and -not $SkipChecksum) {
+                if ($computedSha -ne $tool.sha256.ToLowerInvariant()) {
+                    throw "Checksum mismatch for $($tool.name). Expected $($tool.sha256)"
+                }
+            }
+            elseif (-not $SkipChecksum) {
+                Write-Warning "    Manifest missing SHA256. Add '$computedSha' for $($tool.name) or run with -WriteMissingChecksums."
+                if ($WriteMissingChecksums) {
+                    $tool.sha256 = $computedSha
+                    $manifestChanged = $true
+                }
             }
         }
 
@@ -132,12 +164,20 @@ foreach ($tool in $tools) {
         }
         New-Item -ItemType Directory -Path $dest -Force | Out-Null
 
-        switch ($tool.archiveType) {
+        $archiveType = $tool.archiveType
+        if ($usingLocalArchive -and $tool.PSObject.Properties['localArchiveType']) {
+            $archiveType = $tool.localArchiveType
+        }
+        elseif ($usingLocalArchive -and $archiveType -eq 'inno') {
+            $archiveType = 'zip'
+        }
+
+        switch ($archiveType) {
             'zip' {
                 $expandDir = New-TemporaryDirectory
                 Expand-Archive -LiteralPath $downloadPath -DestinationPath $expandDir -Force
-                if ($contentRoot) {
-                    $sourcePath = Join-Path -Path $expandDir -ChildPath $contentRoot
+                if ($effectiveContentRoot) {
+                    $sourcePath = Join-Path -Path $expandDir -ChildPath $effectiveContentRoot
                 }
                 else {
                     $items = @(Get-ChildItem -LiteralPath $expandDir)
@@ -170,8 +210,8 @@ foreach ($tool in $tools) {
                     throw "Installer for $($tool.name) exited with code $($process.ExitCode)"
                 }
                 $sourcePath = $null
-                if ($contentRoot) {
-                    $candidate = Join-Path -Path $expandDir -ChildPath $contentRoot
+                if ($effectiveContentRoot) {
+                    $candidate = Join-Path -Path $expandDir -ChildPath $effectiveContentRoot
                     if (Test-Path -LiteralPath $candidate) {
                         $sourcePath = $candidate
                     }
@@ -223,8 +263,8 @@ foreach ($tool in $tools) {
                 if ($process.ExitCode -ne 0) {
                     throw "MSI extraction for $($tool.name) failed with code $($process.ExitCode)"
                 }
-                if ($contentRoot) {
-                    $sourcePath = Join-Path -Path $expandDir -ChildPath $contentRoot
+                if ($effectiveContentRoot) {
+                    $sourcePath = Join-Path -Path $expandDir -ChildPath $effectiveContentRoot
                 }
                 else {
                     $msiItems = @(Get-ChildItem -LiteralPath $expandDir)
@@ -239,14 +279,15 @@ foreach ($tool in $tools) {
                 Remove-Item -Recurse -Force -LiteralPath $expandDir
             }
             default {
-                throw "Unsupported archiveType '$($tool.archiveType)' for $($tool.name)."
+                throw "Unsupported archiveType '$archiveType' for $($tool.name)."
             }
         }
 
+        $source = if ($usingLocalArchive) { $tool.localArchive } else { $tool.url }
         $metadata = [ordered]@{
             name      = $tool.name
             version   = $tool.version
-            source    = $tool.url
+            source    = $source
             sha256    = $computedSha
             fetchedAt = (Get-Date).ToString('o')
         }
