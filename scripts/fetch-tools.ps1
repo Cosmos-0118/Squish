@@ -3,6 +3,7 @@ param(
     [string]$ManifestPath = "tools/tools-manifest.json",
     [string]$DestinationRoot = "tools",
     [string[]]$Name,
+    [string[]]$Exclude,
     [switch]$ListOnly,
     [switch]$Force,
     [switch]$SkipChecksum,
@@ -22,6 +23,14 @@ function Get-Checksum([string]$Path) {
     return (Get-FileHash -Path $Path -Algorithm SHA256).Hash.ToLowerInvariant()
 }
 
+function Test-HasChildItems([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return $false
+    }
+    $child = Get-ChildItem -LiteralPath $Path -Force -ErrorAction SilentlyContinue | Select-Object -First 1
+    return $null -ne $child
+}
+
 if (-not (Test-Path -LiteralPath $ManifestPath)) {
     throw "Manifest not found: $ManifestPath"
 }
@@ -38,6 +47,16 @@ if ($Name) {
     $tools = $tools | Where-Object { $nameSet.Contains($_.name) }
     if (-not $tools) {
         throw "No manifest entries match the provided -Name filters."
+    }
+}
+
+if ($Exclude) {
+    $excludeSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    $Exclude | ForEach-Object { [void]$excludeSet.Add($_) }
+    $tools = $tools | Where-Object { -not $excludeSet.Contains($_.name) }
+    if (-not $tools) {
+        Write-Warning "All manifest entries were excluded. Nothing to do."
+        return
     }
 }
 
@@ -146,7 +165,7 @@ foreach ($tool in $tools) {
                     $arguments = $arguments.Replace('{ExtractDir}', $expandDir)
                 }
                 Write-Host "    Running installer extraction..."
-                $process = Start-Process -FilePath $downloadPath -ArgumentList $arguments -Wait -PassThru
+                $process = Start-Process -FilePath $downloadPath -ArgumentList $arguments -WindowStyle Hidden -Wait -PassThru
                 if ($process.ExitCode -ne 0) {
                     throw "Installer for $($tool.name) exited with code $($process.ExitCode)"
                 }
@@ -169,6 +188,30 @@ foreach ($tool in $tools) {
                         $sourcePath = $expandDir
                     }
                 }
+
+                $payloadHasContent = Test-HasChildItems -Path $sourcePath
+                if (-not $payloadHasContent -and $tool.PSObject.Properties['programFilesFallback']) {
+                    $fallbacks = @()
+                    if ($env:ProgramFiles) {
+                        $fallbacks += Join-Path -Path $env:ProgramFiles -ChildPath $tool.programFilesFallback
+                    }
+                    if (${env:ProgramFiles(x86)}) {
+                        $fallbacks += Join-Path -Path ${env:ProgramFiles(x86)} -ChildPath $tool.programFilesFallback
+                    }
+                    foreach ($candidate in $fallbacks) {
+                        if (Test-HasChildItems -Path $candidate) {
+                            Write-Warning "    Extraction directory was empty. Using fallback '$candidate'."
+                            $sourcePath = $candidate
+                            $payloadHasContent = $true
+                            break
+                        }
+                    }
+                }
+
+                if (-not $payloadHasContent) {
+                    throw "Installer for $($tool.name) did not produce any files."
+                }
+
                 Copy-Item -Path (Join-Path $sourcePath '*') -Destination $dest -Recurse -Force
                 Remove-Item -Recurse -Force -LiteralPath $expandDir
             }

@@ -2,7 +2,7 @@
 bin/
 obj/
 [Bb]uild/
-artifacts/
+artifacts/*
 **/bin/
 **/obj/
 **/GeneratedFiles/
@@ -25,7 +25,7 @@ artifacts/
 # Dotnet tooling
 project.lock.json
 project.fragment.lock.json
-artifacts/
+artifacts/*
 _TestResults/
 TestResults/
 .nuget/
@@ -75,3 +75,4 @@ coverage*
 *.msix
 *.msixupload
 *.zip
+!artifacts/ghostscript-10.05.0.zip

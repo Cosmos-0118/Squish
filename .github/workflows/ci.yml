@@ -41,9 +41,14 @@ jobs:
       - name: Run tests
         run: dotnet test src/ClopWindows.sln --configuration Release --no-build
 
+      - name: Cache third-party tools
+        uses: actions/cache@v4
+        with:
+          path: tools
+          key: tools-${{ runner.os }}-${{ hashFiles('tools/tools-manifest.json') }}
       - name: Stage third-party tools
         shell: pwsh
-        run: ./scripts/fetch-tools.ps1
+        run: ./scripts/fetch-tools.ps1 -Exclude ghostscript
 
       - name: Publish artifacts
         shell: pwsh

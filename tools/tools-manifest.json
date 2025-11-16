@@ -16,7 +16,8 @@
       "archiveType": "inno",
       "destination": "ghostscript",
       "contentRoot": "gs10.05.0",
-      "installArgs": "/SP- /VERYSILENT /NORESTART /SUPPRESSMSGBOXES /DIR=\"{ExtractDir}\""
+      "installArgs": "/SP- /VERYSILENT /NORESTART /SUPPRESSMSGBOXES /DIR=\"{ExtractDir}\"",
+      "programFilesFallback": "gs\\gs10.05.0"
     },
     {
       "name": "mozjpeg",
