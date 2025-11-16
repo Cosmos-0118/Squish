@@ -13,14 +13,9 @@
       "version": "10.05.0",
       "url": "https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10050/gs10050w64.exe",
       "sha256": "11fcfb85b14ada095946bcfc39a3a3ef96a72fee8bdfa673ed7500e9e83c3648",
-      "archiveType": "inno",
+      "archiveType": "7zip",
       "destination": "ghostscript",
-      "contentRoot": "gs10.05.0",
-      "installArgs": "/SP- /VERYSILENT /NORESTART /SUPPRESSMSGBOXES /DIR=\"{ExtractDir}\"",
-      "programFilesFallback": "gs\\gs10.05.0",
-      "localArchive": "artifacts/ghostscript-10.05.0.zip",
-      "localArchiveType": "zip",
-      "localContentRoot": ""
+      "programFilesFallback": "gs\\gs10.05.0"
     },
     {
       "name": "mozjpeg",
