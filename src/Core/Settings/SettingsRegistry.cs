@@ -16,11 +16,14 @@ public static class SettingsRegistry
     public static readonly SettingKey<bool> OptimiseTiff = Bool("optimiseTIFF", true);
     public static readonly SettingKey<bool> EnableClipboardOptimiser = Bool("enableClipboardOptimiser", true);
     public static readonly SettingKey<bool> OptimiseVideoClipboard = Bool("optimiseVideoClipboard", true);
+    public static readonly SettingKey<bool> OptimiseClipboardFileDrops = Bool("optimiseClipboardFileDrops", false);
     public static readonly SettingKey<bool> OptimiseImagePathClipboard = Bool("optimiseImagePathClipboard", false);
     public static readonly SettingKey<bool> OptimisePdfClipboard = Bool("optimisePdfClipboard", true);
     public static readonly SettingKey<bool> StripMetadata = Bool("stripMetadata", true);
     public static readonly SettingKey<bool> PreserveDates = Bool("preserveDates", true);
     public static readonly SettingKey<bool> PreserveColorMetadata = Bool("preserveColorMetadata", true);
+    public static readonly SettingKey<bool> ReplaceOptimisedFilesInPlace = Bool("replaceOptimisedFilesInPlace", false);
+    public static readonly SettingKey<bool> DeleteOriginalAfterConversion = Bool("deleteOriginalAfterConversion", false);
 
     public static readonly SettingKey<string> Workdir = new("workdir", ClopPaths.WorkRoot.Value);
     public static readonly SettingKey<CleanupInterval> WorkdirCleanupInterval = new("workdirCleanupInterval", CleanupInterval.Every3Days);
@@ -79,6 +82,10 @@ public static class SettingsRegistry
     public static readonly SettingKey<string> CustomNameTemplateForClipboardImages = new("customNameTemplateForClipboardImages", string.Empty);
     public static readonly SettingKey<int> LastAutoIncrementingNumber = Int("lastAutoIncrementingNumber", 0);
 
+    public static readonly SettingKey<float> FloatingHudScale = Float("floatingHudScale", 1f);
+    public static readonly SettingKey<float> FloatingHudWidthScale = Float("floatingHudWidthScale", 1f);
+    public static readonly SettingKey<float> FloatingHudHeightScale = Float("floatingHudHeightScale", 1f);
+
     public static readonly SettingKey<bool> EnableDragAndDrop = Bool("enableDragAndDrop", true);
     public static readonly SettingKey<bool> OnlyShowDropZoneOnOption = Bool("onlyShowDropZoneOnOption", false);
     public static readonly SettingKey<bool> OnlyShowPresetZonesOnControlTapped = Bool("onlyShowPresetZonesOnControlTapped", false);
@@ -121,11 +128,14 @@ public static class SettingsRegistry
         OptimiseTiff,
         EnableClipboardOptimiser,
         OptimiseVideoClipboard,
+        OptimiseClipboardFileDrops,
         OptimisePdfClipboard,
         OptimiseImagePathClipboard,
         StripMetadata,
         PreserveDates,
         PreserveColorMetadata,
+        ReplaceOptimisedFilesInPlace,
+        DeleteOriginalAfterConversion,
         Workdir,
         WorkdirCleanupInterval,
         FormatsToConvertToJpeg,
@@ -184,6 +194,9 @@ public static class SettingsRegistry
         FloatingHudPinned,
         FloatingHudPinnedLeft,
         FloatingHudPinnedTop,
+        FloatingHudScale,
+        FloatingHudWidthScale,
+        FloatingHudHeightScale,
         AutoCopyToClipboard,
         CliInstalled,
         EnableCrossAppAutomation,

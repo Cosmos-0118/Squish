@@ -75,6 +75,7 @@ public partial class App : System.Windows.Application
                 services.AddSingleton<DirectoryOptimisationService>();
                 services.AddSingleton<ShortcutsBridge>();
                 services.AddSingleton<CrossAppAutomationHost>();
+                services.AddSingleton<IFolderPicker, FolderPicker>();
                 services.AddHostedService<Worker>();
 
                 services.AddSingleton<FloatingHudViewModel>();
@@ -100,7 +101,6 @@ public partial class App : System.Windows.Application
 
         var hudController = _host.Services.GetRequiredService<FloatingHudController>();
         hudController.Initialize();
-        hudController.Show();
 
         var mainWindow = _host.Services.GetRequiredService<MainWindow>();
         _trayIconService = _host.Services.GetRequiredService<TrayIconService>();

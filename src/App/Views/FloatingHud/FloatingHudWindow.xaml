@@ -11,12 +11,12 @@
         ShowInTaskbar="False"
         ShowActivated="False"
         Topmost="True"
-        MinHeight="100"
+        MinHeight="72"
         Focusable="False"
         SnapsToDevicePixels="True"
         SizeToContent="Height"
         MinWidth="280"
-        Width="{Binding PreferredWidth}"
+        Width="{Binding DisplayWidth, Mode=OneWay}"
         Loaded="OnLoaded"
         SizeChanged="OnSizeChanged"
         AutomationProperties.Name="{loc:Loc hud.title}">
@@ -57,10 +57,9 @@
             </Setter>
         </Style>
     </Window.Resources>
-
     <Border Background="{DynamicResource Brush.HudBackground}"
-            CornerRadius="14"
-            Padding="16"
+            CornerRadius="8"
+            Padding="10"
             Effect="{StaticResource HudShadow}"
             MouseLeftButtonDown="OnHudMouseDown">
 
@@ -73,20 +72,20 @@
 
             <TextBlock Grid.Row="0"
                        Text="{loc:Loc hud.title}"
-                       FontSize="14"
+                       FontSize="12"
                        FontWeight="SemiBold"
                        Foreground="{DynamicResource Brush.HudTextPrimary}"
-                       Margin="4,0,4,12"
+                       Margin="2,0,2,6"
                        Visibility="{Binding HasResults, Converter={StaticResource BooleanToVisibilityConverter}}" />
 
             <Border Grid.Row="1"
-                    CornerRadius="10"
+                    CornerRadius="6"
                     Background="{DynamicResource Brush.HudCardBorder}"
                     Padding="0"
                     Visibility="{Binding HasResults, Converter={StaticResource BooleanToVisibilityConverter}}">
                 <ScrollViewer VerticalScrollBarVisibility="Hidden"
                               HorizontalScrollBarVisibility="Disabled"
-                              MaxHeight="{Binding MaxResultsHeight}"
+                              MaxHeight="{Binding DisplayMaxResultsHeight, Mode=OneWay}"
                               AutomationProperties.LiveSetting="Polite"
                               AutomationProperties.Name="{loc:Loc hud.automation.name}"
                               AutomationProperties.HelpText="{loc:Loc hud.automation.help}">
@@ -100,9 +99,9 @@
                             <DataTemplate DataType="{x:Type viewModels:FloatingResultViewModel}">
                                 <Border x:Name="ResultCard"
                                     Background="{DynamicResource Brush.HudCardBackground}"
-                                        CornerRadius="10"
-                                        Padding="12"
-                                        Margin="0,0,0,10">
+                                        CornerRadius="6"
+                                        Padding="8"
+                                        Margin="0,0,0,6">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -117,18 +116,18 @@
                                         <TextBlock Grid.Row="0"
                                                    Grid.Column="0"
                                                    Text="{Binding DisplayName}"
-                                                   FontWeight="SemiBold"
+                                                   FontWeight="Medium"
                                                    Foreground="{DynamicResource Brush.HudTextPrimary}"
                                                    TextTrimming="CharacterEllipsis"
-                                                   Margin="0,0,24,2" />
+                                                   Margin="0,0,14,2" />
 
                                         <TextBlock Grid.Row="1"
                                                    Grid.Column="0"
                                                    Foreground="{DynamicResource Brush.HudTextSecondary}"
                                                    Text="{Binding Subtitle}"
-                                                   FontSize="12"
+                                                   FontSize="10.5"
                                                    TextTrimming="CharacterEllipsis"
-                                                   Margin="0,0,24,4">
+                                                   Margin="0,0,14,2">
                                             <TextBlock.Style>
                                                 <Style TargetType="TextBlock">
                                                     <Setter Property="Visibility" Value="Visible" />
@@ -146,15 +145,15 @@
 
                                         <TextBlock Grid.Row="2"
                                                    Grid.Column="0"
-                                                   Foreground="{Binding StatusBrush}"
-                                                   Text="{Binding StatusText}"
-                                                   FontSize="12"
-                                                   Margin="0,0,24,4" />
+                                                                                                       Foreground="{Binding StatusBrush}"
+                                                                                                       Text="{Binding StatusText}"
+                                                                                                       FontSize="10.5"
+                                                                                                       Margin="0,0,14,2" />
 
                                         <ProgressBar Grid.Row="2"
                                                      Grid.Column="0"
-                                                     Height="4"
-                                                     Margin="0,24,24,0"
+                                                                                                         Height="2.5"
+                                                                                                         Margin="0,16,14,0"
                                                      VerticalAlignment="Top"
                                                      Value="{Binding Progress, Mode=OneWay}"
                                                      Maximum="100"
@@ -165,8 +164,8 @@
                                         <Button Grid.Row="0"
                                                 Grid.Column="1"
                                                 Grid.RowSpan="3"
-                                                Width="24"
-                                                Height="24"
+                                            Width="18"
+                                            Height="18"
                                                 Margin="0,0,0,0"
                                                 Padding="0"
                                                 Command="{Binding DismissCommand}"
@@ -185,7 +184,7 @@
                 </ScrollViewer>
             </Border>
 
-            <Border Grid.Row="1" Padding="12" Background="{DynamicResource Brush.HudCardBorder}" CornerRadius="10">
+            <Border Grid.Row="1" Padding="8" Background="{DynamicResource Brush.HudCardBorder}" CornerRadius="6">
                 <Border.Style>
                     <Style TargetType="Border">
                         <Setter Property="Visibility" Value="Collapsed" />
@@ -197,33 +196,131 @@
                     </Style>
                 </Border.Style>
                 <StackPanel>
-                    <TextBlock Text="{loc:Loc hud.empty.title}" Foreground="{DynamicResource Brush.HudTextPrimary}" FontWeight="SemiBold" />
-                    <TextBlock Text="{loc:Loc hud.empty.description}" Foreground="{DynamicResource Brush.HudTextSecondary}" TextWrapping="Wrap" Margin="0,4,0,0" FontSize="12" />
+                    <TextBlock Text="{loc:Loc hud.empty.title}" Foreground="{DynamicResource Brush.HudTextPrimary}" FontWeight="SemiBold" FontSize="12" />
+                    <TextBlock Text="{loc:Loc hud.empty.description}" Foreground="{DynamicResource Brush.HudTextSecondary}" TextWrapping="Wrap" Margin="0,4,0,0" FontSize="10.5" />
                 </StackPanel>
             </Border>
             </Grid>
 
             <Border Background="#BF050505"
-                    CornerRadius="14"
-                    Padding="20"
+                    CornerRadius="10"
+                    Padding="12"
                     Visibility="{Binding IsPlacementMode, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BooleanToVisibilityConverter}}">
                 <StackPanel>
-                    <TextBlock Text="{loc:Loc hud.placement.title}" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource Brush.HudTextPrimary}"/>
-                    <TextBlock Text="{loc:Loc hud.placement.instructions}" Margin="0,4,0,16" Foreground="{DynamicResource Brush.HudTextSecondary}" TextWrapping="Wrap"/>
-                    <Border Background="{DynamicResource Brush.HudCardBackground}" CornerRadius="10" Padding="12">
+                    <TextBlock Text="{loc:Loc hud.placement.title}" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Brush.HudTextPrimary}"/>
+                    <TextBlock Text="{loc:Loc hud.placement.instructions}" Margin="0,4,0,10" Foreground="{DynamicResource Brush.HudTextSecondary}" TextWrapping="Wrap" FontSize="11"/>
+                    <Border Background="{DynamicResource Brush.HudCardBackground}" CornerRadius="6" Padding="8">
                         <StackPanel>
-                            <TextBlock Text="{loc:Loc hud.placement.previewTitle}" FontWeight="SemiBold" Foreground="{DynamicResource Brush.HudTextPrimary}"/>
-                            <TextBlock Text="{loc:Loc hud.placement.previewSubtitle}" Foreground="{DynamicResource Brush.HudTextSecondary}" FontSize="12" Margin="0,4,0,0"/>
-                            <ProgressBar Height="4"
-                                         Margin="0,12,0,0"
+                            <TextBlock Text="{loc:Loc hud.placement.previewTitle}" FontWeight="SemiBold" Foreground="{DynamicResource Brush.HudTextPrimary}" FontSize="12"/>
+                            <TextBlock Text="{loc:Loc hud.placement.previewSubtitle}" Foreground="{DynamicResource Brush.HudTextSecondary}" FontSize="10.5" Margin="0,4,0,0"/>
+                            <ProgressBar Height="2.5"
+                                         Margin="0,8,0,0"
                                          Value="40"
                                          Maximum="100"
                                          Foreground="{DynamicResource Brush.HudProgress}"/>
                         </StackPanel>
                     </Border>
-                    <StackPanel Orientation="Horizontal" Margin="0,16,0,0" HorizontalAlignment="Right">
-                        <Button Content="{loc:Loc hud.placement.cancel}" Margin="0,0,8,0" Padding="16,6" Click="OnPlacementCancelClicked"/>
-                        <Button Content="{loc:Loc hud.placement.pin}" Padding="18,6" Click="OnPlacementConfirmClicked"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0" HorizontalAlignment="Right">
+                        <Button Content="{loc:Loc hud.placement.cancel}" Margin="0,0,6,0" Padding="12,4" Click="OnPlacementCancelClicked"/>
+                        <Button Content="{loc:Loc hud.placement.pin}" Padding="14,4" Click="OnPlacementConfirmClicked"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <Border Background="#BF050505"
+                    CornerRadius="10"
+                    Padding="12"
+                    Visibility="{Binding IsResizeMode, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <StackPanel>
+                    <TextBlock Text="{loc:Loc hud.resize.title}" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Brush.HudTextPrimary}"/>
+                    <TextBlock Text="{loc:Loc hud.resize.instructions}" Margin="0,4,0,10" Foreground="{DynamicResource Brush.HudTextSecondary}" TextWrapping="Wrap" FontSize="11"/>
+                    <StackPanel Margin="0,0,0,8">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="{loc:Loc hud.resize.scaleWidthLabel}" Foreground="{DynamicResource Brush.HudTextPrimary}" FontWeight="SemiBold"/>
+                            <TextBlock Text="{Binding ResizeWidthScale, RelativeSource={RelativeSource AncestorType=Window}, StringFormat={}{0:0.0}x}" Margin="8,0,0,0" Foreground="{DynamicResource Brush.HudTextSecondary}"/>
+                        </StackPanel>
+                        <Slider Minimum="{x:Static viewModels:FloatingHudViewModel.MinScaleValue}"
+                            Maximum="{x:Static viewModels:FloatingHudViewModel.MaxScaleValue}"
+                            Value="{Binding ResizeWidthScale, RelativeSource={RelativeSource AncestorType=Window}, Mode=TwoWay}"
+                            TickFrequency="0.05"
+                            IsSnapToTickEnabled="False"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,6,0,0" VerticalAlignment="Center">
+                            <TextBlock Text="{loc:Loc hud.resize.manualWidth}" Foreground="{DynamicResource Brush.HudTextPrimary}" FontWeight="SemiBold"/>
+                            <TextBox Width="60"
+                                     Margin="8,0,0,0"
+                                     Text="{Binding ResizeWidthScale, RelativeSource={RelativeSource AncestorType=Window}, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, StringFormat={}{0:0.00}}"
+                                     VerticalContentAlignment="Center"/>
+                            <TextBlock Text="x" Margin="6,0,0,0" Foreground="{DynamicResource Brush.HudTextSecondary}"/>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <StackPanel Margin="0,0,0,8">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="{loc:Loc hud.resize.scaleHeightLabel}" Foreground="{DynamicResource Brush.HudTextPrimary}" FontWeight="SemiBold"/>
+                            <TextBlock Text="{Binding ResizeHeightScale, RelativeSource={RelativeSource AncestorType=Window}, StringFormat={}{0:0.0}x}" Margin="8,0,0,0" Foreground="{DynamicResource Brush.HudTextSecondary}"/>
+                        </StackPanel>
+                        <Slider Minimum="{x:Static viewModels:FloatingHudViewModel.MinScaleValue}"
+                            Maximum="{x:Static viewModels:FloatingHudViewModel.MaxScaleValue}"
+                            Value="{Binding ResizeHeightScale, RelativeSource={RelativeSource AncestorType=Window}, Mode=TwoWay}"
+                            TickFrequency="0.05"
+                            IsSnapToTickEnabled="False"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,6,0,0" VerticalAlignment="Center">
+                            <TextBlock Text="{loc:Loc hud.resize.manualHeight}" Foreground="{DynamicResource Brush.HudTextPrimary}" FontWeight="SemiBold"/>
+                            <TextBox Width="60"
+                                     Margin="8,0,0,0"
+                                     Text="{Binding ResizeHeightScale, RelativeSource={RelativeSource AncestorType=Window}, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, StringFormat={}{0:0.00}}"
+                                     VerticalContentAlignment="Center"/>
+                            <TextBlock Text="x" Margin="6,0,0,0" Foreground="{DynamicResource Brush.HudTextSecondary}"/>
+                        </StackPanel>
+                    </StackPanel>
+                    <Border Background="{DynamicResource Brush.HudCardBorder}"
+                            CornerRadius="6"
+                            Padding="10"
+                            Margin="0,12,0,0">
+                        <StackPanel>
+                            <TextBlock Text="{loc:Loc hud.resize.previewTitle}" FontWeight="SemiBold" Foreground="{DynamicResource Brush.HudTextPrimary}"/>
+                            <TextBlock Text="{loc:Loc hud.resize.previewSubtitle}" Foreground="{DynamicResource Brush.HudTextSecondary}" FontSize="10.5" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                            <Border Background="{DynamicResource Brush.HudCardBackground}"
+                                    CornerRadius="6"
+                                    Padding="10"
+                                    Margin="0,8,0,0">
+                                <Border.LayoutTransform>
+                                    <ScaleTransform ScaleX="{Binding DataContext.WidthScale, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                    ScaleY="{Binding DataContext.HeightScale, RelativeSource={RelativeSource AncestorType=Window}}"/>
+                                </Border.LayoutTransform>
+                                <StackPanel>
+                                    <TextBlock Text="{loc:Loc hud.resize.previewSampleTitle}" Foreground="{DynamicResource Brush.HudTextPrimary}" FontWeight="SemiBold"/>
+                                    <TextBlock Text="{loc:Loc hud.resize.previewSampleSubtitle}"
+                                               Foreground="{DynamicResource Brush.HudTextSecondary}"
+                                               FontSize="10.5"
+                                               Margin="0,4,0,0"/>
+                                    <ProgressBar Height="3"
+                                                 Margin="0,10,0,0"
+                                                 Value="60"
+                                                 Maximum="100"
+                                                 Foreground="{DynamicResource Brush.HudProgress}"
+                                                 Background="{DynamicResource Brush.HudProgressBackground}"/>
+                                </StackPanel>
+                            </Border>
+                            <TextBlock Margin="0,8,0,0" FontSize="10.5" Foreground="{DynamicResource Brush.HudTextSecondary}">
+                                <Run Text="{loc:Loc hud.resize.previewWidthLabel}"/>
+                                <Run Text=": "/>
+                                <Run Text="{Binding DataContext.DisplayWidth, RelativeSource={RelativeSource AncestorType=Window}, Mode=OneWay, StringFormat={}{0:0}px}"/>
+                                <Run Text="   "/>
+                                <Run Text="{loc:Loc hud.resize.previewHeightLabel}"/>
+                                <Run Text=": "/>
+                                <Run Text="{Binding DataContext.DisplayMaxResultsHeight, RelativeSource={RelativeSource AncestorType=Window}, Mode=OneWay, StringFormat={}{0:0}px}"/>
+                            </TextBlock>
+                        </StackPanel>
+                    </Border>
+                    <StackPanel Orientation="Horizontal" Margin="0,12,0,0" HorizontalAlignment="Left">
+                        <Button Content="{loc:Loc hud.resize.presetSmall}" Padding="12,4" Tag="0.75" Margin="0,0,8,0" Click="OnResizePresetClicked"/>
+                        <Button Content="{loc:Loc hud.resize.presetDefault}" Padding="12,4" Tag="1.0" Margin="0,0,8,0" Click="OnResizePresetClicked"/>
+                        <Button Content="{loc:Loc hud.resize.presetLarge}" Padding="12,4" Tag="1.35" Click="OnResizePresetClicked"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,12,0,0" HorizontalAlignment="Right">
+                        <Button Content="{loc:Loc hud.resize.cancel}" Margin="0,0,6,0" Padding="12,4" Click="OnResizeCancelClicked"/>
+                        <Button Content="{loc:Loc hud.resize.save}" Padding="14,4" Click="OnResizeConfirmClicked"/>
                     </StackPanel>
                 </StackPanel>
             </Border>

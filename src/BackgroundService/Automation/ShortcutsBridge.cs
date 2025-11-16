@@ -263,6 +263,8 @@ public sealed class ShortcutsBridge : IAsyncDisposable
                 ["automation.targetType"] = target.Type.ToString()
             };
 
+            OutputBehaviourSettings.ApplyTo(metadata);
+
             var request = new OptimisationRequest(target.Type, target.Path, metadata: metadata);
             var ticket = _coordinator.Enqueue(request);
             tickets.Add((ticket, target));
@@ -285,6 +287,10 @@ public sealed class ShortcutsBridge : IAsyncDisposable
             if (result.Status == OptimisationStatus.Succeeded)
             {
                 _directoryOptimisations.RegisterExternalOptimisation(target.Path);
+                if (result.OutputPath is { } outputPath)
+                {
+                    _directoryOptimisations.RegisterExternalOptimisation(outputPath);
+                }
             }
 
             results.Add(new AutomationOptimiseResult(

@@ -37,6 +37,7 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
     private volatile bool _useCustomTemplate;
     private volatile bool _optimiseVideoClipboard;
     private volatile bool _optimisePdfClipboard;
+    private volatile bool _optimiseClipboardFileDrops;
     private volatile bool _optimiseImagePathClipboard;
     private string _customTemplate = string.Empty;
     private int _suppressNextNotification;
@@ -295,41 +296,44 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
         var results = new List<ClipboardItem>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var rawPath in snapshot.FilePaths)
+        if (_optimiseClipboardFileDrops)
         {
-            var pathText = rawPath.Trim().Trim('\"');
-            if (string.IsNullOrWhiteSpace(pathText))
+            foreach (var rawPath in snapshot.FilePaths)
             {
-                continue;
-            }
-
-            if (!File.Exists(pathText))
-            {
-                continue;
-            }
-
-            if (!seen.Add(pathText))
-            {
-                continue;
-            }
-
-            var filePath = FilePath.From(pathText);
-            if (MediaFormats.IsImage(filePath))
-            {
-                results.Add(new ClipboardItem(filePath, ItemType.Image, ClipboardOrigin.FileDrop, false, true));
-            }
-            else if (MediaFormats.IsVideo(filePath))
-            {
-                if (_optimiseVideoClipboard)
+                var pathText = rawPath.Trim().Trim('"');
+                if (string.IsNullOrWhiteSpace(pathText))
                 {
-                    results.Add(new ClipboardItem(filePath, ItemType.Video, ClipboardOrigin.FileDrop, false, false));
+                    continue;
                 }
-            }
-            else if (MediaFormats.IsPdf(filePath))
-            {
-                if (_optimisePdfClipboard)
+
+                if (!File.Exists(pathText))
                 {
-                    results.Add(new ClipboardItem(filePath, ItemType.Pdf, ClipboardOrigin.FileDrop, false, false));
+                    continue;
+                }
+
+                if (!seen.Add(pathText))
+                {
+                    continue;
+                }
+
+                var filePath = FilePath.From(pathText);
+                if (MediaFormats.IsImage(filePath))
+                {
+                    results.Add(new ClipboardItem(filePath, ItemType.Image, ClipboardOrigin.FileDrop, false, true));
+                }
+                else if (MediaFormats.IsVideo(filePath))
+                {
+                    if (_optimiseVideoClipboard)
+                    {
+                        results.Add(new ClipboardItem(filePath, ItemType.Video, ClipboardOrigin.FileDrop, false, false));
+                    }
+                }
+                else if (MediaFormats.IsPdf(filePath))
+                {
+                    if (_optimisePdfClipboard)
+                    {
+                        results.Add(new ClipboardItem(filePath, ItemType.Pdf, ClipboardOrigin.FileDrop, false, false));
+                    }
                 }
             }
         }
@@ -415,6 +419,8 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
             ["source"] = "clipboard",
             ["clipboard.origin"] = item.Origin.ToString()
         };
+
+        OutputBehaviourSettings.ApplyTo(metadata);
 
         var request = new OptimisationRequest(item.ItemType, item.SourcePath, metadata: metadata);
         _pending[request.RequestId] = new ClipboardRequestContext(item, DateTimeOffset.UtcNow);
@@ -613,14 +619,15 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
     private bool IsClipboardSetting(string name)
     {
         return string.Equals(name, SettingsRegistry.EnableClipboardOptimiser.Name, StringComparison.Ordinal) ||
-               string.Equals(name, SettingsRegistry.PauseAutomaticOptimisations.Name, StringComparison.Ordinal) ||
-               string.Equals(name, SettingsRegistry.AutoCopyToClipboard.Name, StringComparison.Ordinal) ||
-               string.Equals(name, SettingsRegistry.CopyImageFilePath.Name, StringComparison.Ordinal) ||
-               string.Equals(name, SettingsRegistry.UseCustomNameTemplateForClipboardImages.Name, StringComparison.Ordinal) ||
-               string.Equals(name, SettingsRegistry.CustomNameTemplateForClipboardImages.Name, StringComparison.Ordinal) ||
-               string.Equals(name, SettingsRegistry.OptimiseVideoClipboard.Name, StringComparison.Ordinal) ||
-             string.Equals(name, SettingsRegistry.OptimisePdfClipboard.Name, StringComparison.Ordinal) ||
-               string.Equals(name, SettingsRegistry.OptimiseImagePathClipboard.Name, StringComparison.Ordinal);
+              string.Equals(name, SettingsRegistry.PauseAutomaticOptimisations.Name, StringComparison.Ordinal) ||
+              string.Equals(name, SettingsRegistry.AutoCopyToClipboard.Name, StringComparison.Ordinal) ||
+              string.Equals(name, SettingsRegistry.CopyImageFilePath.Name, StringComparison.Ordinal) ||
+              string.Equals(name, SettingsRegistry.UseCustomNameTemplateForClipboardImages.Name, StringComparison.Ordinal) ||
+              string.Equals(name, SettingsRegistry.CustomNameTemplateForClipboardImages.Name, StringComparison.Ordinal) ||
+              string.Equals(name, SettingsRegistry.OptimiseVideoClipboard.Name, StringComparison.Ordinal) ||
+            string.Equals(name, SettingsRegistry.OptimiseClipboardFileDrops.Name, StringComparison.Ordinal) ||
+            string.Equals(name, SettingsRegistry.OptimisePdfClipboard.Name, StringComparison.Ordinal) ||
+              string.Equals(name, SettingsRegistry.OptimiseImagePathClipboard.Name, StringComparison.Ordinal);
     }
 
     private void RefreshSettings(bool updateMonitor)
@@ -635,6 +642,7 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
             _customTemplate = SettingsHost.Get(SettingsRegistry.CustomNameTemplateForClipboardImages) ?? string.Empty;
             _optimiseVideoClipboard = SettingsHost.Get(SettingsRegistry.OptimiseVideoClipboard);
             _optimisePdfClipboard = SettingsHost.Get(SettingsRegistry.OptimisePdfClipboard);
+            _optimiseClipboardFileDrops = SettingsHost.Get(SettingsRegistry.OptimiseClipboardFileDrops);
             _optimiseImagePathClipboard = SettingsHost.Get(SettingsRegistry.OptimiseImagePathClipboard);
         }
 

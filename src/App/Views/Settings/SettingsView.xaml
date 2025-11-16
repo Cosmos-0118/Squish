@@ -61,6 +61,10 @@
                                     Command="{Binding ClearHudPlacementCommand}"
                                     Margin="8,0,0,0"
                                     Padding="18,6"/>
+                            <Button Content="{loc:Loc settings.floatingHud.adjustSize}"
+                                Command="{Binding BeginHudResizeCommand}"
+                                Margin="8,0,0,0"
+                                Padding="18,6"/>
                         </StackPanel>
                         <TextBlock Text="{Binding FloatingHudPlacementStatus}"
                                    Margin="0,8,0,0"
@@ -77,6 +81,7 @@
                     <CheckBox Content="{loc:Loc settings.clipboard.copyBack}" Margin="0,8,0,0" IsChecked="{Binding AutoCopyToClipboard}"/>
                     <CheckBox Content="{loc:Loc settings.clipboard.optimiseVideos}" Margin="0,8,0,0" IsChecked="{Binding OptimiseVideoClipboard}"/>
                     <CheckBox Content="{loc:Loc settings.clipboard.optimisePdfs}" Margin="0,8,0,0" IsChecked="{Binding OptimisePdfClipboard}"/>
+                    <CheckBox Content="{loc:Loc settings.clipboard.optimiseFileDrops}" Margin="0,8,0,0" IsChecked="{Binding OptimiseClipboardFileDrops}"/>
                 </StackPanel>
             </Border>
 
@@ -86,6 +91,106 @@
                     <CheckBox Content="{loc:Loc settings.automation.watchImages}" Margin="0,12,0,0" IsChecked="{Binding EnableAutomaticImageOptimisations}"/>
                     <CheckBox Content="{loc:Loc settings.automation.watchVideos}" Margin="0,8,0,0" IsChecked="{Binding EnableAutomaticVideoOptimisations}"/>
                     <CheckBox Content="{loc:Loc settings.automation.watchPdfs}" Margin="0,8,0,0" IsChecked="{Binding EnableAutomaticPdfOptimisations}"/>
+
+                    <StackPanel Margin="0,16,0,0">
+                        <TextBlock Text="{loc:Loc settings.automation.imageFoldersTitle}" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}"/>
+                        <TextBlock Text="{loc:Loc settings.automation.folderSubtitle}" FontSize="12" Foreground="{DynamicResource Brush.SecondaryText}" Margin="0,4,0,8" TextWrapping="Wrap"/>
+                        <ItemsControl ItemsSource="{Binding ImageDirectories}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Padding="10" Margin="0,0,0,6" Background="{DynamicResource Brush.CardBackground}" BorderBrush="{DynamicResource Brush.CardBorder}" BorderThickness="1" CornerRadius="6">
+                                        <DockPanel>
+                                            <TextBlock Text="{Binding}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource Brush.PrimaryText}"/>
+                                            <Button Content="{loc:Loc settings.automation.removeFolder}" Command="{Binding DataContext.RemoveImageDirectoryCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" Padding="10,4" Margin="8,0,0,0" DockPanel.Dock="Right"/>
+                                        </DockPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Text="{loc:Loc settings.automation.imageFoldersEmpty}" Margin="0,4,0,0" FontSize="12" Foreground="{DynamicResource Brush.SecondaryText}">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding ImageDirectories.Count}" Value="0">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <Button Content="{loc:Loc settings.automation.addFolder}" Command="{Binding AddImageDirectoryCommand}" Margin="0,8,0,0" Padding="16,6" HorizontalAlignment="Left"/>
+                    </StackPanel>
+
+                    <StackPanel Margin="0,16,0,0">
+                        <TextBlock Text="{loc:Loc settings.automation.videoFoldersTitle}" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}"/>
+                        <TextBlock Text="{loc:Loc settings.automation.folderSubtitle}" FontSize="12" Foreground="{DynamicResource Brush.SecondaryText}" Margin="0,4,0,8" TextWrapping="Wrap"/>
+                        <ItemsControl ItemsSource="{Binding VideoDirectories}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Padding="10" Margin="0,0,0,6" Background="{DynamicResource Brush.CardBackground}" BorderBrush="{DynamicResource Brush.CardBorder}" BorderThickness="1" CornerRadius="6">
+                                        <DockPanel>
+                                            <TextBlock Text="{Binding}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource Brush.PrimaryText}"/>
+                                            <Button Content="{loc:Loc settings.automation.removeFolder}" Command="{Binding DataContext.RemoveVideoDirectoryCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" Padding="10,4" Margin="8,0,0,0" DockPanel.Dock="Right"/>
+                                        </DockPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Text="{loc:Loc settings.automation.videoFoldersEmpty}" Margin="0,4,0,0" FontSize="12" Foreground="{DynamicResource Brush.SecondaryText}">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding VideoDirectories.Count}" Value="0">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <Button Content="{loc:Loc settings.automation.addFolder}" Command="{Binding AddVideoDirectoryCommand}" Margin="0,8,0,0" Padding="16,6" HorizontalAlignment="Left"/>
+                    </StackPanel>
+
+                    <StackPanel Margin="0,16,0,0">
+                        <TextBlock Text="{loc:Loc settings.automation.pdfFoldersTitle}" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}"/>
+                        <TextBlock Text="{loc:Loc settings.automation.folderSubtitle}" FontSize="12" Foreground="{DynamicResource Brush.SecondaryText}" Margin="0,4,0,8" TextWrapping="Wrap"/>
+                        <ItemsControl ItemsSource="{Binding PdfDirectories}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Padding="10" Margin="0,0,0,6" Background="{DynamicResource Brush.CardBackground}" BorderBrush="{DynamicResource Brush.CardBorder}" BorderThickness="1" CornerRadius="6">
+                                        <DockPanel>
+                                            <TextBlock Text="{Binding}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource Brush.PrimaryText}"/>
+                                            <Button Content="{loc:Loc settings.automation.removeFolder}" Command="{Binding DataContext.RemovePdfDirectoryCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" Padding="10,4" Margin="8,0,0,0" DockPanel.Dock="Right"/>
+                                        </DockPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Text="{loc:Loc settings.automation.pdfFoldersEmpty}" Margin="0,4,0,0" FontSize="12" Foreground="{DynamicResource Brush.SecondaryText}">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding PdfDirectories.Count}" Value="0">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <Button Content="{loc:Loc settings.automation.addFolder}" Command="{Binding AddPdfDirectoryCommand}" Margin="0,8,0,0" Padding="16,6" HorizontalAlignment="Left"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <Border Margin="0,16,0,0" Padding="20" Background="{DynamicResource Brush.SurfaceBackground}" BorderBrush="{DynamicResource Brush.SurfaceBorder}" BorderThickness="1" CornerRadius="12">
+                <StackPanel>
+                    <TextBlock Text="{loc:Loc settings.section.output}" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}"/>
+                    <CheckBox Content="{loc:Loc settings.output.replaceInPlace}" Margin="0,12,0,0" IsChecked="{Binding ReplaceOptimisedFilesInPlace}"/>
+                    <TextBlock Text="{loc:Loc settings.output.replaceInPlace.subtitle}" FontSize="12" Margin="24,4,0,0" Foreground="{DynamicResource Brush.SecondaryText}" TextWrapping="Wrap"/>
+                    <CheckBox Content="{loc:Loc settings.output.deleteConverted}" Margin="0,12,0,0" IsChecked="{Binding DeleteOriginalAfterConversion}" IsEnabled="{Binding ReplaceOptimisedFilesInPlace}"/>
+                    <TextBlock Text="{loc:Loc settings.output.deleteConverted.subtitle}" FontSize="12" Margin="24,4,0,0" Foreground="{DynamicResource Brush.SecondaryText}" TextWrapping="Wrap"/>
                 </StackPanel>
             </Border>
 

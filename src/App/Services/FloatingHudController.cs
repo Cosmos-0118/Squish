@@ -28,6 +28,7 @@ public sealed class FloatingHudController : IDisposable
     private bool _isInitialized;
     private bool _isDisposed;
     private bool _isPlacementMode;
+    private bool _isResizeMode;
 
     public FloatingHudController(
         FloatingHudViewModel viewModel,
@@ -63,7 +64,7 @@ public sealed class FloatingHudController : IDisposable
             RegisterRequest(request);
         }
 
-        EnsureVisible(forceShow: true);
+        EnsureVisible();
         ApplyAutoHideSettings();
     }
 
@@ -102,7 +103,7 @@ public sealed class FloatingHudController : IDisposable
         ThrowIfDisposed();
         Dispatch(() =>
         {
-            if (_isPlacementMode)
+            if (_isPlacementMode || _isResizeMode)
             {
                 return;
             }
@@ -115,6 +116,25 @@ public sealed class FloatingHudController : IDisposable
         });
     }
 
+    public void BeginResizeMode()
+    {
+        ThrowIfDisposed();
+        Dispatch(() =>
+        {
+            if (_isResizeMode || _isPlacementMode)
+            {
+                return;
+            }
+
+            _isResizeMode = true;
+            EnsureVisible(forceShow: true);
+            _window.ResizeScalesChanged += OnResizeScalesChanged;
+            _window.ResizeScalesConfirmed += OnResizeScalesConfirmed;
+            _window.ResizeCancelled += OnResizeCancelled;
+            _window.EnterResizeMode(_viewModel.WidthScale, _viewModel.HeightScale);
+        });
+    }
+
     public void ClearPinnedPlacement()
     {
         SettingsHost.Set(SettingsRegistry.FloatingHudPinned, false);
@@ -124,7 +144,7 @@ public sealed class FloatingHudController : IDisposable
         Dispatch(() =>
         {
             _window.ClearPinnedPosition();
-            if (!_window.IsPlacementMode)
+            if (!_window.IsPlacementMode && !_window.IsResizeMode)
             {
                 PositionWindow();
             }
@@ -143,7 +163,7 @@ public sealed class FloatingHudController : IDisposable
             return;
         }
 
-        if (!_viewModel.HasResults && !forceShow && !_window.IsPlacementMode)
+        if (!_viewModel.HasResults && !forceShow && !_window.IsPlacementMode && !_window.IsResizeMode)
         {
             return;
         }
@@ -159,7 +179,7 @@ public sealed class FloatingHudController : IDisposable
 
     private void PositionWindow()
     {
-        if (_window.IsPlacementMode)
+        if (_window.IsPlacementMode || _window.IsResizeMode)
         {
             return;
         }
@@ -497,6 +517,44 @@ public sealed class FloatingHudController : IDisposable
         {
             PositionWindow();
         }
+    }
+
+    private void EndResizeMode()
+    {
+        _window.ResizeScalesChanged -= OnResizeScalesChanged;
+        _window.ResizeScalesConfirmed -= OnResizeScalesConfirmed;
+        _window.ResizeCancelled -= OnResizeCancelled;
+        _window.ExitResizeMode();
+        _isResizeMode = false;
+
+        if (!_viewModel.HasResults && SettingsHost.Get(SettingsRegistry.AutoHideFloatingResults))
+        {
+            _window.Hide();
+        }
+        else
+        {
+            PositionWindow();
+        }
+    }
+
+    private void OnResizeScalesChanged(object? sender, FloatingHudWindow.ResizeScalesEventArgs e)
+    {
+        _viewModel.PreviewWidthScale(e.WidthScale);
+        _viewModel.PreviewHeightScale(e.HeightScale);
+    }
+
+    private void OnResizeScalesConfirmed(object? sender, FloatingHudWindow.ResizeScalesEventArgs e)
+    {
+        _viewModel.PreviewWidthScale(e.WidthScale);
+        _viewModel.PreviewHeightScale(e.HeightScale);
+        _viewModel.CommitScales();
+        EndResizeMode();
+    }
+
+    private void OnResizeCancelled(object? sender, EventArgs e)
+    {
+        _viewModel.RevertScales();
+        EndResizeMode();
     }
 
     private void Dispatch(Action action)

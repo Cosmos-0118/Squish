@@ -106,6 +106,7 @@ Clop-Windows/
 - [x] **P9.3 – Perceptual quality guards**: Use SSIM/MS-SSIM thresholds to reject outputs that fall below visual targets when `RequireSizeImprovement` is true. Pipe quality metrics back into the floating HUD so users know when aggressive mode trades fidelity for size.
 - [x] **P9.4 – Smart segmentation & crop presets**: Port macOS `PresetZones.swift` logic and add ONNX/WinML-powered foreground segmentation (e.g., document edge detection, human subject isolation) to automate crop suggestions. Cache masks so repeated files avoid reprocessing.
 - [x] **P9.5 – Metadata policy refinements**: Align with macOS EXIF/xmp rules, add per-profile toggles (retain colour profiles, GPS stripping), and write tests covering ICC preservation to avoid washed colours when using high-end monitors.
+- [x] **P9.6 – WIC-assisted fast paths**: Detect when an input already uses a Windows-native codec (JPEG, PNG, BMP, GIF, TIFF) and short-circuit `ImageOptimiser` to a WIC decode/re-encode pipeline so we can leverage hardware colour conversion, progressive JPEG copy, and PNG chunk stripping without re-rendering pixels through ImageSharp. Surface heuristics that skip recompressing lossless formats when the delta would be <2 % to avoid wasting encode time on assets that are already compact.
 
 ### Phase 10 – Video Optimiser Enhancements
 
@@ -114,6 +115,14 @@ Clop-Windows/
 - [x] **P10.3 – Intelligent frame decimation**: Implement motion-based frame culling using ffmpeg `mpdecimate`/`vidstab` filters to trim redundant frames while keeping output smooth, gated behind benchmark validation from Phase 8.
 - [x] **P10.4 – Audio pipeline parity**: Support AAC/Opus re-encode, loudness normalisation, and channel down-mix options surfaced in the UI, matching macOS advanced toggles.
 - [x] **P10.5 – GIF modernisation**: Replace the manual png frame staging with gifski library bindings or libimagequant to reduce artefacts, and offer APNG/WebP animated exports when quality thresholds demand it.
+- [x] **P10.6 – Container-aware remuxing**: Extend `VideoOptimiser` to probe codec/container pairs up front and, when the source is already H.264/H.265 + AAC, remux MOV/MKV/AVI/WebM inputs straight to MP4/Matroska via `ffmpeg -c copy` instead of forcing a full transcode. Fall back to the current re-encode path only when filters (fps cap, resize, audio removal) are requested or when the target truly needs a different codec, dramatically speeding up non-MP4 workflows.
+- [x] **P10.7 – Format-specific encoder tuning**: Add presets for VP9/WebM and DNx/ProRes footage that keep their native containers but switch to the most compatible Windows encoders (libvpx-vp9, AMF HEVC, or software x265) with bitrate targets derived from the existing `VideoOptimiserPlan`. Include heuristics that downshift to mezzanine-quality encodes when size savings would be <5 % so we stop wasting time on long GOP sources that already meet the constraints.
+
+### Phase 11 – PDF Optimiser Enhancements
+
+- [x] **P11.1 – Ghostscript preset matrix**: Layer additional Ghostscript switches (`-dDetectDuplicateImages`, `-dColorConversionStrategy=/sRGB`, adaptive downsampling) into `PdfOptimiser` based on page count and embedded image DPI so we squeeze more savings from graphics-heavy PDFs without introducing custom native code.
+- [x] **P11.2 – Linearisation & structure clean-up**: Chain `qpdf --linearize` (Windows builds already available) ahead of Ghostscript to deduplicate objects, remove unused form XObjects, and prime files for fast web view before we run the existing size/metadata pass.
+- [x] **P11.3 – Windows colour management parity**: Use the built-in `WindowsColorSystem` ICC APIs to preserve/convert document profiles post-optimisation, mirroring macOS’s ColorSync path so PDFs viewed in Edge/Reader keep their appearance while still benefiting from Ghostscript compression.
 
 ### Phase 12 – Automation, Watchers, and Batch Intelligence
 
@@ -142,7 +151,6 @@ Map these into `Brush.*` resources with light/dark variants and ensure High Cont
 - [x] **P13.3 – Layout & typography polish**: Adopt responsive grids, dynamic spacing, and typography scale from macOS (SF Pro equivalents → Segoe Fluent, Inter). Revisit `FloatingHud` to better match macOS translucency and depth using WPF MVVM patterns.
 - [x] **P13.4 – Accessibility & localisation sweep**: Revalidate contrast, keyboard focus cues, and screen reader labels in the new theme. Sync translations with macOS `Localization/` strings and add RTL testing matrix.
 - [x] **P13.5 – Brand collateral refresh**: Update `assets/` with new screenshots, hero images, and tray icons that reflect the updated colour direction and WPF visuals. Document usage guidelines in `docs/brand.md`.
-
 
 ### Phase 5 – Telemetry & Packaging
 

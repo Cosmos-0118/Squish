@@ -428,6 +428,8 @@ public sealed class CrossAppAutomationHost : IAsyncDisposable
                 ["automation.targetType"] = target.Type.ToString()
             };
 
+            OutputBehaviourSettings.ApplyTo(metadata);
+
             var request = new OptimisationRequest(target.Type, target.Path, metadata: metadata);
             tickets.Add((_coordinator.Enqueue(request, token), target));
         }
@@ -449,6 +451,10 @@ public sealed class CrossAppAutomationHost : IAsyncDisposable
             if (result.Status == OptimisationStatus.Succeeded)
             {
                 _directoryOptimisations.RegisterExternalOptimisation(target.Path);
+                if (result.OutputPath is { } outputPath)
+                {
+                    _directoryOptimisations.RegisterExternalOptimisation(outputPath);
+                }
             }
             else
             {

@@ -1,0 +1,8 @@
+# Binaries downloaded by scripts/fetch-tools.ps1
+# Keep only documentation and the manifest in source control.
+*
+!/README.md
+!/tools-manifest.json
+!/.gitignore
+!/licenses/
+!/licenses/**

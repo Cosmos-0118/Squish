@@ -29,6 +29,18 @@ public sealed record PdfOptimiserOptions
 
     public bool RequireSmallerSize { get; init; } = true;
 
+    public bool EnableLinearisation { get; init; } = true;
+
+    public bool UseWindowsColorProfiles { get; init; } = true;
+
+    public int ProbeSizeBytes { get; init; } = 1_500_000;
+
+    public int LongDocumentPageThreshold { get; init; } = 60;
+
+    public double ImageDensityThreshold { get; init; } = 1.1d;
+
+    public double HighImageDpiThreshold { get; init; } = 220d;
+
     public IReadOnlyList<string> BaseArguments { get; init; } = DefaultGhostscriptArguments.Base;
 
     public IReadOnlyList<string> LossyArguments { get; init; } = DefaultGhostscriptArguments.Lossy;
@@ -39,11 +51,25 @@ public sealed record PdfOptimiserOptions
 
     public IReadOnlyList<string> MetadataPostArguments { get; init; } = DefaultGhostscriptArguments.MetadataPost;
 
+    public IReadOnlyList<string> TextPresetArguments { get; init; } = PdfPresetArguments.Text;
+
+    public IReadOnlyList<string> MixedPresetArguments { get; init; } = PdfPresetArguments.Mixed;
+
+    public IReadOnlyList<string> GraphicsPresetArguments { get; init; } = PdfPresetArguments.Graphics;
+
+    public string? QpdfPath { get; init; } = ResolveQpdfPath();
+
     public PdfOptimiserOptions RefreshGhostscript()
     {
         var refreshedPath = ResolveGhostscriptPath(forceRefresh: true);
         var refreshedResource = ResolveGhostscriptResourceDirectory(forceRefresh: true);
-        return this with { GhostscriptPath = refreshedPath, GhostscriptResourceDirectory = refreshedResource };
+        var refreshedQpdf = ResolveQpdfPath(forceRefresh: true);
+        return this with
+        {
+            GhostscriptPath = refreshedPath,
+            GhostscriptResourceDirectory = refreshedResource,
+            QpdfPath = refreshedQpdf
+        };
     }
 
     private static string ResolveGhostscriptPath(bool forceRefresh = false)
@@ -131,6 +157,43 @@ public sealed record PdfOptimiserOptions
 
         var fallback = Environment.GetFolderPath(Environment.SpecialFolder.Fonts);
         return string.IsNullOrWhiteSpace(fallback) ? "C:/Windows/Fonts" : fallback;
+    }
+
+    private static string? ResolveQpdfPath(bool forceRefresh = false)
+    {
+        try
+        {
+            var env = Environment.GetEnvironmentVariable("CLOP_QPDF") ?? Environment.GetEnvironmentVariable("QPDF_EXECUTABLE");
+            if (!string.IsNullOrWhiteSpace(env))
+            {
+                return env!;
+            }
+
+            var baseDir = GetBaseDirectory();
+            foreach (var path in EnumeratePossibleFiles(baseDir, new[] { "tools", "qpdf", "qpdf.exe" }))
+            {
+                if (!string.IsNullOrWhiteSpace(path))
+                {
+                    return path!;
+                }
+            }
+
+            var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+            if (!string.IsNullOrWhiteSpace(programFiles))
+            {
+                var exe = Path.Combine(programFiles!, "qpdf", "bin", "qpdf.exe");
+                if (File.Exists(exe))
+                {
+                    return exe;
+                }
+            }
+        }
+        catch
+        {
+            // fall through to default executable name
+        }
+
+        return "qpdf.exe";
     }
 
     private static string? CombineSafe(string? root, params string[] segments)
@@ -489,3 +552,52 @@ internal static class DefaultGhostscriptArguments
 }
 
 internal sealed record GhostscriptInstallation(string ExecutablePath, string? ResourceDirectory);
+
+internal static class PdfPresetArguments
+{
+    public static readonly string[] Text =
+    {
+        "-dDownsampleColorImages=false",
+        "-dDownsampleGrayImages=false",
+        "-dDownsampleMonoImages=false",
+        "-dColorImageResolution=225",
+        "-dGrayImageResolution=225",
+        "-dMonoImageResolution=300",
+        "-dFastWebView=true",
+        "-dDetectDuplicateImages=true",
+        "-dColorConversionStrategy=/LeaveColorUnchanged"
+    };
+
+    public static readonly string[] Mixed =
+    {
+        "-dDownsampleColorImages=true",
+        "-dDownsampleGrayImages=true",
+        "-dDownsampleMonoImages=true",
+        "-dColorImageResolution=150",
+        "-dGrayImageResolution=150",
+        "-dMonoImageResolution=300",
+        "-dColorImageDownsampleThreshold=1.1",
+        "-dGrayImageDownsampleThreshold=1.1",
+        "-dMonoImageDownsampleThreshold=1.1",
+        "-dFastWebView=true",
+        "-dDetectDuplicateImages=true",
+        "-dColorConversionStrategy=/sRGB"
+    };
+
+    public static readonly string[] Graphics =
+    {
+        "-dDownsampleColorImages=true",
+        "-dDownsampleGrayImages=true",
+        "-dDownsampleMonoImages=true",
+        "-dColorImageResolution=110",
+        "-dGrayImageResolution=110",
+        "-dMonoImageResolution=240",
+        "-dColorImageDownsampleThreshold=1.5",
+        "-dGrayImageDownsampleThreshold=1.5",
+        "-dMonoImageDownsampleThreshold=1.5",
+        "-dAutoFilterColorImages=false",
+        "-dAutoFilterGrayImages=false",
+        "-dColorConversionStrategy=/sRGB",
+        "-dDetectDuplicateImages=true"
+    };
+}

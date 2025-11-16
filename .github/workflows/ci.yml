@@ -1,0 +1,111 @@
+name: ci
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      note:
+        description: Optional note for manual runs
+        required: false
+
+jobs:
+  build-test:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Restore dependencies
+        run: dotnet restore src/ClopWindows.sln
+
+      - name: Build solution
+        run: dotnet build src/ClopWindows.sln --configuration Release --no-restore
+
+      - name: Run tests
+        run: dotnet test src/ClopWindows.sln --configuration Release --no-build
+
+      - name: Cache third-party tools
+        uses: actions/cache@v4
+        with:
+          path: tools
+          key: tools-${{ runner.os }}-${{ hashFiles('tools/tools-manifest.json') }}
+      - name: Unpack prebuilt Ghostscript
+        shell: pwsh
+        run: |
+          $archive = 'artifacts/ghostscript-10.05.0.zip'
+          if (-not (Test-Path $archive)) {
+            throw "Ghostscript archive not found at $archive"
+          }
+
+          $ghostscriptDir = 'tools/ghostscript'
+          if (Test-Path $ghostscriptDir) {
+            Remove-Item -LiteralPath $ghostscriptDir -Recurse -Force
+          }
+          New-Item -ItemType Directory -Path $ghostscriptDir -Force | Out-Null
+          Expand-Archive -LiteralPath $archive -DestinationPath $ghostscriptDir -Force
+
+      - name: Stage third-party tools
+        shell: pwsh
+        run: ./scripts/fetch-tools.ps1 -Exclude ghostscript
+
+      - name: Publish artifacts
+        shell: pwsh
+        run: |
+          $rid = 'win-x64'
+          $publishRoot = 'out/publish'
+          if (Test-Path $publishRoot) { Remove-Item $publishRoot -Recurse -Force }
+          New-Item -ItemType Directory -Path $publishRoot | Out-Null
+
+          dotnet publish src/App/ClopWindows.App.csproj --configuration Release --runtime $rid --self-contained:$false --output "$publishRoot/app"
+          dotnet publish src/CliBridge/ClopWindows.CliBridge.csproj --configuration Release --runtime $rid --self-contained:$true --output "$publishRoot/cli"
+          dotnet publish src/Integrations/Explorer/ClopWindows.Integrations.Explorer.csproj --configuration Release --runtime $rid --self-contained:$false --output "$publishRoot/explorer"
+
+          $docsTarget = Join-Path $publishRoot 'docs'
+          New-Item -ItemType Directory -Path $docsTarget -Force | Out-Null
+          Copy-Item docs/windows-deps.md $docsTarget -Force
+          Copy-Item docs/cli.md $docsTarget -Force
+          Copy-Item docs/automation-samples.md $docsTarget -Force
+          Copy-Item installer/CLOP_LICENSE.txt $publishRoot -Force
+          $toolsTarget = Join-Path $publishRoot 'tools'
+          if (Test-Path $toolsTarget) { Remove-Item $toolsTarget -Recurse -Force }
+          New-Item -ItemType Directory -Path $toolsTarget | Out-Null
+          Copy-Item "tools/*" $toolsTarget -Recurse -Force
+
+      - name: Validate publish layout
+        shell: pwsh
+        run: |
+          $paths = @(
+            'out/publish/app/ClopWindows.exe',
+            'out/publish/cli/ClopWindows.CliBridge.exe',
+            'out/publish/explorer/ClopWindows.Integrations.Explorer.comhost.dll',
+            'out/publish/tools/pngquant',
+            'out/publish/docs/windows-deps.md',
+            'out/publish/CLOP_LICENSE.txt'
+          )
+          foreach ($path in $paths) {
+            if (-not (Test-Path $path)) { throw "Missing expected artifact: $path" }
+          }
+
+      - name: Upload publish artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: clop-windows-publish
+          path: out/publish

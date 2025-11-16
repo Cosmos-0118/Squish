@@ -102,7 +102,7 @@ internal sealed class AdvancedCodecRunner
             return null;
         }
 
-        var executable = ResolveExecutable(_preferences.MozJpegPath, new[] { "mozjpeg.exe", "cjpeg.exe" });
+        var executable = ResolveExecutable(_preferences.MozJpegPath, new[] { "mozjpeg.exe", "cjpeg.exe", "cjpeg-static.exe" });
         if (executable is null)
         {
             return null;

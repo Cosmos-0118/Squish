@@ -20,7 +20,8 @@ public sealed class VideoOptimiserTests : IDisposable
         var source = Track(CreateSampleVideo());
         var toolchain = new FakeVideoToolchain();
         var options = VideoOptimiserOptions.Default with { RequireSmallerSize = false };
-        var optimiser = new VideoOptimiser(options, toolchain);
+        var probe = new FakeVideoMetadataProbe();
+        var optimiser = new VideoOptimiser(options, toolchain, probe);
 
         await using var coordinator = new OptimisationCoordinator(new IOptimiser[] { optimiser });
         var ticket = coordinator.Enqueue(new OptimisationRequest(ItemType.Video, source));
@@ -40,7 +41,7 @@ public sealed class VideoOptimiserTests : IDisposable
     {
         var source = Track(CreateSampleVideo(sizeBytes: 4096));
         var toolchain = new FakeVideoToolchain();
-        var optimiser = new VideoOptimiser(VideoOptimiserOptions.Default, toolchain);
+        var optimiser = new VideoOptimiser(VideoOptimiserOptions.Default, toolchain, new FakeVideoMetadataProbe());
 
         var metadata = new Dictionary<string, object?>
         {
@@ -67,7 +68,7 @@ public sealed class VideoOptimiserTests : IDisposable
     {
         var source = Track(CreateSampleVideo());
         var toolchain = new FakeVideoToolchain();
-        var optimiser = new VideoOptimiser(VideoOptimiserOptions.Default, toolchain);
+        var optimiser = new VideoOptimiser(VideoOptimiserOptions.Default, toolchain, new FakeVideoMetadataProbe());
 
         var metadata = new Dictionary<string, object?>
         {
@@ -112,7 +113,7 @@ public sealed class VideoOptimiserTests : IDisposable
         };
 
         var toolchain = new FakeVideoToolchain();
-        var optimiser = new VideoOptimiser(options, toolchain);
+        var optimiser = new VideoOptimiser(options, toolchain, new FakeVideoMetadataProbe());
 
         var metadata = new Dictionary<string, object?>
         {
@@ -135,7 +136,7 @@ public sealed class VideoOptimiserTests : IDisposable
         var source = Track(CreateSampleVideo(sizeBytes: 8192));
         var toolchain = new FakeVideoToolchain();
         var options = VideoOptimiserOptions.Default with { RequireSmallerSize = false };
-        var optimiser = new VideoOptimiser(options, toolchain);
+        var optimiser = new VideoOptimiser(options, toolchain, new FakeVideoMetadataProbe());
 
         var metadata = new Dictionary<string, object?>
         {
@@ -160,7 +161,7 @@ public sealed class VideoOptimiserTests : IDisposable
     {
         var source = Track(CreateSampleVideo());
         var toolchain = new FakeVideoToolchain();
-        var optimiser = new VideoOptimiser(VideoOptimiserOptions.Default with { RequireSmallerSize = false }, toolchain);
+        var optimiser = new VideoOptimiser(VideoOptimiserOptions.Default with { RequireSmallerSize = false }, toolchain, new FakeVideoMetadataProbe());
 
         var metadata = new Dictionary<string, object?>
         {
@@ -179,6 +180,62 @@ public sealed class VideoOptimiserTests : IDisposable
         Assert.Equal(AnimatedExportFormat.AnimatedWebp, plan.AnimatedFormat);
     }
 
+    [Fact]
+    public async Task RemuxesCompatibleMovWithoutTranscode()
+    {
+        var source = Track(CreateSampleVideo(extension: ".mov"));
+        var toolchain = new FakeVideoToolchain();
+        var probe = new FakeVideoMetadataProbe
+        {
+            Result = CreateProbeInfo("h264", "aac", "mov")
+        };
+
+        var options = VideoOptimiserOptions.Default with
+        {
+            RequireSmallerSize = true,
+            CapFps = false,
+            EnableFrameDecimation = false,
+            EnableAudioNormalization = false
+        };
+        var optimiser = new VideoOptimiser(options, toolchain, probe);
+
+        await using var coordinator = new OptimisationCoordinator(new IOptimiser[] { optimiser });
+        var ticket = coordinator.Enqueue(new OptimisationRequest(ItemType.Video, source));
+        var result = await ticket.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(OptimisationStatus.Succeeded, result.Status);
+        Assert.NotNull(result.OutputPath);
+        Track(result.OutputPath!.Value);
+        Assert.Empty(toolchain.TranscodePlans);
+        var remuxPlan = Assert.Single(toolchain.RemuxPlans);
+        Assert.True(remuxPlan.Remux.Enabled);
+        Assert.Equal(RemuxReason.ContainerNormalisation, remuxPlan.Remux.Reason);
+        Assert.EndsWith(".mp4", result.OutputPath!.Value.Value, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task WebmSourcesPreferVp9AndKeepExtension()
+    {
+        var source = Track(CreateSampleVideo(extension: ".webm"));
+        var toolchain = new FakeVideoToolchain();
+        var probe = new FakeVideoMetadataProbe
+        {
+            Result = CreateProbeInfo("vp9", "opus", "webm")
+        };
+
+        var options = VideoOptimiserOptions.Default with { ForceMp4 = true, RequireSmallerSize = false };
+        var optimiser = new VideoOptimiser(options, toolchain, probe);
+
+        await using var coordinator = new OptimisationCoordinator(new IOptimiser[] { optimiser });
+        var ticket = coordinator.Enqueue(new OptimisationRequest(ItemType.Video, source));
+        var result = await ticket.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(OptimisationStatus.Succeeded, result.Status);
+        var plan = Assert.Single(toolchain.TranscodePlans);
+        Assert.Equal(VideoCodec.Vp9, plan.Encoder.Codec);
+        Assert.Equal("webm", plan.OutputExtension);
+    }
+
     public void Dispose()
     {
         foreach (var file in _filesToCleanup)
@@ -193,9 +250,9 @@ public sealed class VideoOptimiserTests : IDisposable
         return path;
     }
 
-    private static FilePath CreateSampleVideo(int sizeBytes = 2048)
+    private static FilePath CreateSampleVideo(int sizeBytes = 2048, string extension = ".mp4")
     {
-        var path = FilePath.TempFile("video-optimiser-test", ".mp4", addUniqueSuffix: true);
+        var path = FilePath.TempFile("video-optimiser-test", extension, addUniqueSuffix: true);
         path.EnsureParentDirectoryExists();
         var buffer = new byte[sizeBytes];
         new Random().NextBytes(buffer);
@@ -218,10 +275,18 @@ public sealed class VideoOptimiserTests : IDisposable
         }
     }
 
+    private static VideoProbeInfo CreateProbeInfo(string videoCodec, string audioCodec, string format)
+    {
+        var video = new VideoStreamInfo(videoCodec, "", "yuv420p", "bt709", 1920, 1080, 6_000_000, 30, false, false);
+        var audio = new AudioStreamInfo(audioCodec, "", 2, 48_000, 256_000);
+        return new VideoProbeInfo(format, format, 10, 6_500_000, 8_000_000, video, audio);
+    }
+
     private sealed class FakeVideoToolchain : IVideoToolchain
     {
         public List<VideoOptimiserPlan> TranscodePlans { get; } = new();
         public List<VideoOptimiserPlan> AnimatedPlans { get; } = new();
+        public List<VideoOptimiserPlan> RemuxPlans { get; } = new();
 
         public Task<ToolchainResult> TranscodeAsync(VideoOptimiserPlan plan, FilePath tempOutput, OptimiserExecutionContext context, CancellationToken cancellationToken)
         {
@@ -238,5 +303,20 @@ public sealed class VideoOptimiserTests : IDisposable
             File.WriteAllBytes(tempOutput.Value, Enumerable.Repeat((byte)0x2, 256).ToArray());
             return Task.FromResult(ToolchainResult.Successful());
         }
+
+        public Task<ToolchainResult> RemuxAsync(VideoOptimiserPlan plan, FilePath tempOutput, OptimiserExecutionContext context, CancellationToken cancellationToken)
+        {
+            RemuxPlans.Add(plan);
+            context.ReportProgress(25, "fake remux");
+            File.WriteAllBytes(tempOutput.Value, Enumerable.Repeat((byte)0x3, 128).ToArray());
+            return Task.FromResult(ToolchainResult.Successful());
+        }
+    }
+
+    private sealed class FakeVideoMetadataProbe : IVideoMetadataProbe
+    {
+        public VideoProbeInfo? Result { get; set; }
+
+        public Task<VideoProbeInfo?> ProbeAsync(FilePath source, CancellationToken cancellationToken) => Task.FromResult(Result);
     }
 }

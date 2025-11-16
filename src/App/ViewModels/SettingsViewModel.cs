@@ -16,6 +16,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     private int _autoHideFloatingResultsAfter;
     private bool _enableClipboardOptimiser;
     private bool _autoCopyToClipboard;
+    private bool _optimiseClipboardFileDrops;
     private bool _optimiseVideoClipboard;
     private bool _optimisePdfClipboard;
     private bool _preserveDates;
@@ -23,9 +24,12 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     private bool _enableAutomaticImageOptimisations;
     private bool _enableAutomaticVideoOptimisations;
     private bool _enableAutomaticPdfOptimisations;
+    private bool _replaceOptimisedFilesInPlace;
+    private bool _deleteOriginalAfterConversion;
     private bool _suppressStoreUpdates;
     private readonly Dictionary<ShortcutId, ShortcutPreferenceViewModel> _shortcutLookup;
     private readonly FloatingHudController _hudController;
+    private readonly IFolderPicker _folderPicker;
     private ThemeOptionViewModel? _selectedThemeOption;
     private bool _floatingHudPinned;
 
@@ -34,15 +38,36 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     public IReadOnlyList<ThemeOptionViewModel> ThemeOptions { get; }
     public RelayCommand BeginHudPlacementCommand { get; }
     public RelayCommand ClearHudPlacementCommand { get; }
+    public RelayCommand BeginHudResizeCommand { get; }
+    public ObservableCollection<string> ImageDirectories { get; }
+    public ObservableCollection<string> VideoDirectories { get; }
+    public ObservableCollection<string> PdfDirectories { get; }
+    public RelayCommand AddImageDirectoryCommand { get; }
+    public RelayCommand AddVideoDirectoryCommand { get; }
+    public RelayCommand AddPdfDirectoryCommand { get; }
+    public RelayCommand RemoveImageDirectoryCommand { get; }
+    public RelayCommand RemoveVideoDirectoryCommand { get; }
+    public RelayCommand RemovePdfDirectoryCommand { get; }
 
-    public SettingsViewModel(FloatingHudController hudController)
+    public SettingsViewModel(FloatingHudController hudController, IFolderPicker folderPicker)
     {
         _hudController = hudController ?? throw new ArgumentNullException(nameof(hudController));
+        _folderPicker = folderPicker ?? throw new ArgumentNullException(nameof(folderPicker));
         SettingsHost.EnsureInitialized();
         ShortcutCatalog.Initialize();
         BeginHudPlacementCommand = new RelayCommand(_ => BeginHudPlacement(), _ => EnableFloatingResults);
         ClearHudPlacementCommand = new RelayCommand(_ => ClearHudPlacement(), _ => EnableFloatingResults && FloatingHudPinned);
+        BeginHudResizeCommand = new RelayCommand(_ => BeginHudResize(), _ => EnableFloatingResults);
         ThemeOptions = new ReadOnlyCollection<ThemeOptionViewModel>(CreateThemeOptions());
+        ImageDirectories = new ObservableCollection<string>();
+        VideoDirectories = new ObservableCollection<string>();
+        PdfDirectories = new ObservableCollection<string>();
+        AddImageDirectoryCommand = new RelayCommand(_ => AddDirectory(ImageDirectories, SettingsRegistry.ImageDirs));
+        AddVideoDirectoryCommand = new RelayCommand(_ => AddDirectory(VideoDirectories, SettingsRegistry.VideoDirs));
+        AddPdfDirectoryCommand = new RelayCommand(_ => AddDirectory(PdfDirectories, SettingsRegistry.PdfDirs));
+        RemoveImageDirectoryCommand = new RelayCommand(path => RemoveDirectory(ImageDirectories, SettingsRegistry.ImageDirs, path));
+        RemoveVideoDirectoryCommand = new RelayCommand(path => RemoveDirectory(VideoDirectories, SettingsRegistry.VideoDirs, path));
+        RemovePdfDirectoryCommand = new RelayCommand(path => RemoveDirectory(PdfDirectories, SettingsRegistry.PdfDirs, path));
         Load();
         SettingsHost.SettingChanged += OnSettingChanged;
         ShortcutCatalog.ShortcutChanged += OnShortcutChanged;
@@ -92,6 +117,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
             }
             BeginHudPlacementCommand.RaiseCanExecuteChanged();
             ClearHudPlacementCommand.RaiseCanExecuteChanged();
+            BeginHudResizeCommand.RaiseCanExecuteChanged();
         }
     }
 
@@ -155,6 +181,18 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         }
     }
 
+    public bool OptimiseClipboardFileDrops
+    {
+        get => _optimiseClipboardFileDrops;
+        set
+        {
+            if (SetProperty(ref _optimiseClipboardFileDrops, value) && !_suppressStoreUpdates)
+            {
+                SettingsHost.Set(SettingsRegistry.OptimiseClipboardFileDrops, value);
+            }
+        }
+    }
+
     public bool OptimisePdfClipboard
     {
         get => _optimisePdfClipboard;
@@ -187,6 +225,36 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
             if (SetProperty(ref _stripMetadata, value) && !_suppressStoreUpdates)
             {
                 SettingsHost.Set(SettingsRegistry.StripMetadata, value);
+            }
+        }
+    }
+
+    public bool ReplaceOptimisedFilesInPlace
+    {
+        get => _replaceOptimisedFilesInPlace;
+        set
+        {
+            if (SetProperty(ref _replaceOptimisedFilesInPlace, value) && !_suppressStoreUpdates)
+            {
+                SettingsHost.Set(SettingsRegistry.ReplaceOptimisedFilesInPlace, value);
+            }
+
+            if (!value && DeleteOriginalAfterConversion)
+            {
+                DeleteOriginalAfterConversion = false;
+            }
+        }
+    }
+
+    public bool DeleteOriginalAfterConversion
+    {
+        get => _deleteOriginalAfterConversion;
+        set
+        {
+            var coercedValue = ReplaceOptimisedFilesInPlace ? value : false;
+            if (SetProperty(ref _deleteOriginalAfterConversion, coercedValue) && !_suppressStoreUpdates)
+            {
+                SettingsHost.Set(SettingsRegistry.DeleteOriginalAfterConversion, coercedValue);
             }
         }
     }
@@ -255,12 +323,16 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         EnableClipboardOptimiser = SettingsHost.Get(SettingsRegistry.EnableClipboardOptimiser);
         AutoCopyToClipboard = SettingsHost.Get(SettingsRegistry.AutoCopyToClipboard);
         OptimiseVideoClipboard = SettingsHost.Get(SettingsRegistry.OptimiseVideoClipboard);
+        OptimiseClipboardFileDrops = SettingsHost.Get(SettingsRegistry.OptimiseClipboardFileDrops);
         OptimisePdfClipboard = SettingsHost.Get(SettingsRegistry.OptimisePdfClipboard);
         PreserveDates = SettingsHost.Get(SettingsRegistry.PreserveDates);
         StripMetadata = SettingsHost.Get(SettingsRegistry.StripMetadata);
+        ReplaceOptimisedFilesInPlace = SettingsHost.Get(SettingsRegistry.ReplaceOptimisedFilesInPlace);
+        DeleteOriginalAfterConversion = SettingsHost.Get(SettingsRegistry.DeleteOriginalAfterConversion);
         EnableAutomaticImageOptimisations = SettingsHost.Get(SettingsRegistry.EnableAutomaticImageOptimisations);
         EnableAutomaticVideoOptimisations = SettingsHost.Get(SettingsRegistry.EnableAutomaticVideoOptimisations);
         EnableAutomaticPdfOptimisations = SettingsHost.Get(SettingsRegistry.EnableAutomaticPdfOptimisations);
+        RefreshDirectoryCollections();
         var themeMode = SettingsHost.Get(SettingsRegistry.AppThemeMode);
         SelectedThemeOption = ThemeOptions.FirstOrDefault(option => option.Mode == themeMode) ?? ThemeOptions.FirstOrDefault();
 
@@ -293,6 +365,9 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
             case var name when name == SettingsRegistry.OptimiseVideoClipboard.Name:
                 OptimiseVideoClipboard = SettingsHost.Get(SettingsRegistry.OptimiseVideoClipboard);
                 break;
+            case var name when name == SettingsRegistry.OptimiseClipboardFileDrops.Name:
+                OptimiseClipboardFileDrops = SettingsHost.Get(SettingsRegistry.OptimiseClipboardFileDrops);
+                break;
             case var name when name == SettingsRegistry.OptimisePdfClipboard.Name:
                 OptimisePdfClipboard = SettingsHost.Get(SettingsRegistry.OptimisePdfClipboard);
                 break;
@@ -302,6 +377,12 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
             case var name when name == SettingsRegistry.StripMetadata.Name:
                 StripMetadata = SettingsHost.Get(SettingsRegistry.StripMetadata);
                 break;
+            case var name when name == SettingsRegistry.ReplaceOptimisedFilesInPlace.Name:
+                ReplaceOptimisedFilesInPlace = SettingsHost.Get(SettingsRegistry.ReplaceOptimisedFilesInPlace);
+                break;
+            case var name when name == SettingsRegistry.DeleteOriginalAfterConversion.Name:
+                DeleteOriginalAfterConversion = SettingsHost.Get(SettingsRegistry.DeleteOriginalAfterConversion);
+                break;
             case var name when name == SettingsRegistry.EnableAutomaticImageOptimisations.Name:
                 EnableAutomaticImageOptimisations = SettingsHost.Get(SettingsRegistry.EnableAutomaticImageOptimisations);
                 break;
@@ -310,6 +391,11 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
                 break;
             case var name when name == SettingsRegistry.EnableAutomaticPdfOptimisations.Name:
                 EnableAutomaticPdfOptimisations = SettingsHost.Get(SettingsRegistry.EnableAutomaticPdfOptimisations);
+                break;
+            case var name when name == SettingsRegistry.ImageDirs.Name:
+            case var name2 when name2 == SettingsRegistry.VideoDirs.Name:
+            case var name3 when name3 == SettingsRegistry.PdfDirs.Name:
+                RefreshDirectoryCollections();
                 break;
             case var name when name == SettingsRegistry.AppThemeMode.Name:
                 var themeMode = SettingsHost.Get(SettingsRegistry.AppThemeMode);
@@ -335,12 +421,86 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         _hudController.ClearPinnedPlacement();
     }
 
+    private void BeginHudResize()
+    {
+        _hudController.BeginResizeMode();
+    }
+
     private void OnShortcutChanged(object? sender, ShortcutChangedEventArgs e)
     {
         if (_shortcutLookup.TryGetValue(e.Id, out var viewModel))
         {
             viewModel.Refresh();
         }
+    }
+
+    private void AddDirectory(ObservableCollection<string> target, SettingKey<string[]> key)
+    {
+        var initial = target.LastOrDefault();
+        var selected = _folderPicker.PickFolder(initial, ClopStringCatalog.Get("settings.automation.pickFolder"));
+        if (string.IsNullOrWhiteSpace(selected))
+        {
+            return;
+        }
+
+        if (target.Any(path => string.Equals(path, selected, StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
+        target.Add(selected);
+        PersistDirectorySetting(target, key);
+    }
+
+    private void RemoveDirectory(ObservableCollection<string> target, SettingKey<string[]> key, object? parameter)
+    {
+        if (parameter is not string path)
+        {
+            return;
+        }
+
+        var existing = target.FirstOrDefault(entry => string.Equals(entry, path, StringComparison.OrdinalIgnoreCase));
+        if (existing is null)
+        {
+            return;
+        }
+
+        target.Remove(existing);
+        PersistDirectorySetting(target, key);
+    }
+
+    private void RefreshDirectoryCollections()
+    {
+        ReplaceCollection(ImageDirectories, SettingsHost.Get(SettingsRegistry.ImageDirs));
+        ReplaceCollection(VideoDirectories, SettingsHost.Get(SettingsRegistry.VideoDirs));
+        ReplaceCollection(PdfDirectories, SettingsHost.Get(SettingsRegistry.PdfDirs));
+    }
+
+    private void ReplaceCollection(ObservableCollection<string> target, string[]? values)
+    {
+        target.Clear();
+        if (values is null)
+        {
+            return;
+        }
+
+        foreach (var path in values)
+        {
+            if (!string.IsNullOrWhiteSpace(path))
+            {
+                target.Add(path);
+            }
+        }
+    }
+
+    private void PersistDirectorySetting(ObservableCollection<string> target, SettingKey<string[]> key)
+    {
+        if (_suppressStoreUpdates)
+        {
+            return;
+        }
+
+        SettingsHost.Set(key, target.ToArray());
     }
 
     private static List<ThemeOptionViewModel> CreateThemeOptions()
