@@ -1,0 +1,55 @@
+Clop for Windows — License Summary
+===================================
+
+Primary License
+---------------
+Clop for Windows is free software distributed under the GNU General Public
+License, version 3.0. The complete license text is included at the root of
+this package (`LICENSE`) and at https://www.gnu.org/licenses/gpl-3.0.txt.
+
+By installing or using this software you agree to the terms of the GPLv3,
+including (but not limited to):
+  • You may run the program for any purpose.
+  • You may study and modify the source code (available at
+    https://github.com/Cosmos-0118/Clop-For-Windows).
+  • You may redistribute original or modified copies, provided you do so
+    under the GPLv3 and include the corresponding source.
+  • This program is provided WITHOUT ANY WARRANTY; see the GPL for details.
+
+Third-Party Tools
+-----------------
+The Clop installer bundles a number of command-line utilities required for
+image/video/PDF optimisation. These binaries remain under their respective
+licenses. Their original LICENSE/NOTICE files can be found inside the
+installation directory at `tools/<name>/`. A summary is provided below:
+
+  • pngquant — GPL v3.0, https://pngquant.org/
+  • ffmpeg — GPL/LGPL (build-dependent), https://ffmpeg.org/
+  • gifski — AGPL v3.0, https://github.com/ImageOptim/gifski
+  • libvips (vipsthumbnail) — LGPL v2.1, https://libvips.github.io/libvips/
+  • Ghostscript — AGPL v3.0, https://www.ghostscript.com/
+  • ExifTool — GPL v3.0, https://exiftool.org/
+
+If you plan to distribute proprietary builds that include any of the
+above GPL/AGPL components, you must either comply with their copyleft
+obligations (provide complete, corresponding source code) or obtain
+commercial licenses from the upstream vendors where available.
+
+Source Code Availability
+------------------------
+The full source that produced this installer, along with build scripts and
+manifest files, is always published at:
+  https://github.com/Cosmos-0118/Clop-For-Windows
+
+You may build your own binaries by following `INSTALLER-WORKFLOW.TXT` in
+that repository. Contributions, forks, and issue reports are welcome.
+
+Warranty Disclaimer
+-------------------
+THIS SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

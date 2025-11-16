@@ -1,0 +1,57 @@
+{
+  "tools": [
+    {
+      "name": "pngquant",
+      "version": "2.25.0",
+      "url": "https://pngquant.org/pngquant-windows.zip",
+      "sha256": "bd0257aeeccfe446a4cd764927e26f8af6051796f28abed104307284107b120d",
+      "archiveType": "zip",
+      "destination": "pngquant",
+      "contentRoot": "pngquant"
+    },
+    {
+      "name": "ffmpeg",
+      "version": "n7.0-latest",
+      "url": "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip",
+      "sha256": "647e467caf82b9fa200a562769b5ff4d736aaf725804ed2c64ea9752106fa569",
+      "archiveType": "zip",
+      "destination": "ffmpeg"
+    },
+    {
+      "name": "gifski",
+      "version": "1.14.4",
+      "url": "https://github.com/ImageOptim/gifski/releases/download/1.14.4/gifski_1.14.4_x64_en-US.msi",
+      "sha256": "ca8d260448a885cd238b36fb5b6a448fa734565a196ffa9cfdc8a7edb22e4e55",
+      "archiveType": "msi",
+      "destination": "gifski",
+      "contentRoot": "PFiles\\gifski"
+    },
+    {
+      "name": "libvips",
+      "version": "8.13.1",
+      "url": "https://github.com/libvips/build-win64-mxe/releases/download/v8.13.1/vips-dev-w64-all-8.13.1.zip",
+      "sha256": "0c57b78d84a280f3a6e42a90e87225136a545fcbafc9fd8ba41b2e6c6ebf66d0",
+      "archiveType": "zip",
+      "destination": "libvips"
+    },
+    {
+      "name": "ghostscript",
+      "version": "10.05.0",
+      "url": "https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10050/gs10050w64.exe",
+      "sha256": "11fcfb85b14ada095946bcfc39a3a3ef96a72fee8bdfa673ed7500e9e83c3648",
+      "archiveType": "inno",
+      "destination": "ghostscript",
+      "contentRoot": "gs10.05.0",
+      "installArgs": "/SP- /VERYSILENT /NORESTART /SUPPRESSMSGBOXES /DIR=\"{ExtractDir}\""
+    },
+    {
+      "name": "exiftool",
+      "version": "13.41",
+      "url": "https://exiftool.org/exiftool-13.41_64.zip",
+      "sha256": "811d34e5f6d973d4f61ee5420aedf80e44ce392291646d2de7e959f065347de0",
+      "archiveType": "zip",
+      "destination": "exiftool",
+      "contentRoot": "exiftool-13.41_64"
+    }
+  ]
+}

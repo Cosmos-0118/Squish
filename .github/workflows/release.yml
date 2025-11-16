@@ -1,0 +1,125 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-package:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Restore dependencies
+        run: dotnet restore src/ClopWindows.sln
+
+      - name: Build solution
+        run: dotnet build src/ClopWindows.sln --configuration Release --no-restore
+
+      - name: Run tests
+        run: dotnet test src/ClopWindows.sln --configuration Release --no-build
+
+      - name: Stage third-party tools
+        shell: pwsh
+        run: ./scripts/fetch-tools.ps1
+
+      - name: Publish artifacts
+        shell: pwsh
+        run: |
+          $rid = 'win-x64'
+          $publishRoot = 'out/publish'
+          if (Test-Path $publishRoot) { Remove-Item $publishRoot -Recurse -Force }
+          New-Item -ItemType Directory -Path $publishRoot | Out-Null
+
+          dotnet publish src/App/ClopWindows.App.csproj --configuration Release --runtime $rid --self-contained:$false --output "$publishRoot/app"
+          dotnet publish src/CliBridge/ClopWindows.CliBridge.csproj --configuration Release --runtime $rid --self-contained:$true --output "$publishRoot/cli"
+          dotnet publish src/Integrations/Explorer/ClopWindows.Integrations.Explorer.csproj --configuration Release --runtime $rid --self-contained:$false --output "$publishRoot/explorer"
+
+          $docsTarget = Join-Path $publishRoot 'docs'
+          New-Item -ItemType Directory -Path $docsTarget -Force | Out-Null
+          Copy-Item docs/windows-deps.md $docsTarget -Force
+          Copy-Item docs/cli.md $docsTarget -Force
+          Copy-Item docs/automation-samples.md $docsTarget -Force
+          Copy-Item installer/CLOP_LICENSE.txt $publishRoot -Force
+          $toolsTarget = Join-Path $publishRoot 'tools'
+          if (Test-Path $toolsTarget) { Remove-Item $toolsTarget -Recurse -Force }
+          New-Item -ItemType Directory -Path $toolsTarget | Out-Null
+          Copy-Item "tools/*" $toolsTarget -Recurse -Force
+
+      - name: Determine version
+        shell: pwsh
+        run: |
+          $version = '${{ github.ref_name }}'.TrimStart('v')
+          "APP_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Prepare artifact folders
+        shell: pwsh
+        run: |
+          Remove-Item artifacts,portable -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path artifacts | Out-Null
+          New-Item -ItemType Directory -Path portable | Out-Null
+          Copy-Item "out/publish/*" portable -Recurse -Force
+
+      - name: Create portable zip
+        shell: pwsh
+        run: |
+          $zipName = "Clop-$env:APP_VERSION-win-x64"
+          $portableSource = 'portable'
+          $targetFolder = Join-Path 'artifacts' $zipName
+          if (Test-Path $targetFolder) { Remove-Item $targetFolder -Recurse -Force }
+          New-Item -ItemType Directory -Path $targetFolder | Out-Null
+          Copy-Item "$portableSource/*" $targetFolder -Recurse -Force
+          Compress-Archive -Path (Join-Path $targetFolder '*') -DestinationPath ("$targetFolder.zip") -Force
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $iscc = "C:\\Program Files (x86)\\Inno Setup 6\\ISCC.exe"
+          if (-not (Test-Path $iscc)) { throw 'ISCC.exe not found' }
+          $appVersion = $env:APP_VERSION
+          $appOut = Resolve-Path 'out/publish/app'
+          $cliOut = Resolve-Path 'out/publish/cli'
+          $explorerOut = Resolve-Path 'out/publish/explorer'
+          & $iscc /Qp \
+            "/DMyAppVersion=$appVersion" \
+            "/DAppBuildOutput=$appOut" \
+            "/DCliBuildOutput=$cliOut" \
+            "/DExplorerBuildOutput=$explorerOut" \
+            "/DToolsRoot=$(Resolve-Path out/publish/tools)" \
+            'installer/ClopInstaller.iss'
+          Copy-Item installer/Output/*.exe artifacts -Force
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: clop-windows-release
+          path: artifacts/*
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
