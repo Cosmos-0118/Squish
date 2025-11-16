@@ -39,6 +39,82 @@ function Test-HasChildItems([string]$Path) {
     return $null -ne $child
 }
 
+function Get-SevenZipPath {
+    $candidates = @('7z.exe', '7za.exe')
+    foreach ($candidate in $candidates) {
+        $cmd = Get-Command -Name $candidate -ErrorAction SilentlyContinue
+        if ($cmd) {
+            return $cmd.Source
+        }
+    }
+
+    $fallbacks = @()
+    if ($env:ProgramFiles) {
+        $fallbacks += Join-Path -Path $env:ProgramFiles -ChildPath '7-Zip/7z.exe'
+    }
+    if (${env:ProgramFiles(x86)}) {
+        $fallbacks += Join-Path -Path ${env:ProgramFiles(x86)} -ChildPath '7-Zip/7z.exe'
+    }
+    foreach ($path in $fallbacks) {
+        if (Test-Path -LiteralPath $path) {
+            return $path
+        }
+    }
+
+    throw "7-Zip executable not found on PATH or standard install locations. Install 7-Zip and retry."
+}
+
+function Expand-WithSevenZip {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ArchivePath,
+        [Parameter(Mandatory = $true)]
+        [string]$DestinationPath
+    )
+
+    $sevenZip = Get-SevenZipPath
+    Write-Host "    Extracting with 7-Zip ($sevenZip)..."
+    $arguments = @('x', "-o$DestinationPath", '-y', $ArchivePath)
+    $process = Start-Process -FilePath $sevenZip -ArgumentList $arguments -NoNewWindow -Wait -PassThru
+    if ($process.ExitCode -ne 0) {
+        throw "7-Zip extraction failed with exit code $($process.ExitCode)."
+    }
+}
+
+function Invoke-InstallerProcess {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FilePath,
+        [Parameter(Mandatory = $true)]
+        [string]$Arguments,
+        [switch]$ForceInvoker
+    )
+
+    $previousCompatLayer = $null
+    $hadPrevious = $false
+    if ($ForceInvoker) {
+        if (Test-Path Env:__COMPAT_LAYER) {
+            $previousCompatLayer = $env:__COMPAT_LAYER
+            $hadPrevious = $true
+        }
+        $env:__COMPAT_LAYER = 'RunAsInvoker'
+    }
+
+    try {
+        return Start-Process -FilePath $FilePath -ArgumentList $Arguments -WindowStyle Hidden -Wait -PassThru
+    }
+    finally {
+        if ($ForceInvoker) {
+            if ($hadPrevious) {
+                $env:__COMPAT_LAYER = $previousCompatLayer
+            }
+            else {
+                Remove-Item Env:__COMPAT_LAYER -ErrorAction SilentlyContinue
+            }
+        }
+    }
+}
+
 if (-not (Test-Path -LiteralPath $ManifestPath)) {
     throw "Manifest not found: $ManifestPath"
 }
@@ -78,7 +154,6 @@ foreach ($tool in $tools) {
         $contentRoot = $tool.contentRoot
     }
     $effectiveContentRoot = $contentRoot
-
     Write-Host "==> $($tool.name) v$($tool.version)" -ForegroundColor Cyan
     Write-Host "    Source: $($tool.url)"
     Write-Host "    Destination: $dest"
@@ -173,6 +248,18 @@ foreach ($tool in $tools) {
         }
 
         switch ($archiveType) {
+            '7zip' {
+                $expandDir = New-TemporaryDirectory
+                Expand-WithSevenZip -ArchivePath $downloadPath -DestinationPath $expandDir
+                if ($effectiveContentRoot) {
+                    $sourcePath = Join-Path -Path $expandDir -ChildPath $effectiveContentRoot
+                }
+                else {
+                    $sourcePath = $expandDir
+                }
+                Copy-Item -Path (Join-Path $sourcePath '*') -Destination $dest -Recurse -Force
+                Remove-Item -Recurse -Force -LiteralPath $expandDir
+            }
             'zip' {
                 $expandDir = New-TemporaryDirectory
                 Expand-Archive -LiteralPath $downloadPath -DestinationPath $expandDir -Force
@@ -205,7 +292,7 @@ foreach ($tool in $tools) {
                     $arguments = $arguments.Replace('{ExtractDir}', $expandDir)
                 }
                 Write-Host "    Running installer extraction..."
-                $process = Start-Process -FilePath $downloadPath -ArgumentList $arguments -WindowStyle Hidden -Wait -PassThru
+                $process = Invoke-InstallerProcess -FilePath $downloadPath -Arguments $arguments -ForceInvoker
                 if ($process.ExitCode -ne 0) {
                     throw "Installer for $($tool.name) exited with code $($process.ExitCode)"
                 }
@@ -250,6 +337,46 @@ foreach ($tool in $tools) {
 
                 if (-not $payloadHasContent) {
                     throw "Installer for $($tool.name) did not produce any files."
+                }
+
+                Copy-Item -Path (Join-Path $sourcePath '*') -Destination $dest -Recurse -Force
+                Remove-Item -Recurse -Force -LiteralPath $expandDir
+            }
+            'nsis' {
+                $expandDir = New-TemporaryDirectory
+                $arguments = $tool.installArgs
+                if (-not $arguments) {
+                    $arguments = "/S /D=`"{ExtractDir}`""
+                }
+                $arguments = $arguments.Replace('{ExtractDir}', $expandDir)
+                Write-Host "    Running NSIS installer extraction..."
+                $process = Invoke-InstallerProcess -FilePath $downloadPath -Arguments $arguments -ForceInvoker
+                if ($process.ExitCode -ne 0) {
+                    throw "NSIS installer for $($tool.name) exited with code $($process.ExitCode)"
+                }
+
+                $sourcePath = $null
+                if ($effectiveContentRoot) {
+                    $candidate = Join-Path -Path $expandDir -ChildPath $effectiveContentRoot
+                    if (Test-Path -LiteralPath $candidate) {
+                        $sourcePath = $candidate
+                    }
+                    else {
+                        Write-Warning "    contentRoot '$contentRoot' not found. Falling back to auto-detect."
+                    }
+                }
+                if (-not $sourcePath) {
+                    $items = @(Get-ChildItem -LiteralPath $expandDir)
+                    if ($items.Count -eq 1 -and $items[0].PSIsContainer) {
+                        $sourcePath = $items[0].FullName
+                    }
+                    else {
+                        $sourcePath = $expandDir
+                    }
+                }
+
+                if (-not (Test-HasChildItems -Path $sourcePath)) {
+                    throw "NSIS installer for $($tool.name) did not produce any files."
                 }
 
                 Copy-Item -Path (Join-Path $sourcePath '*') -Destination $dest -Recurse -Force

@@ -102,12 +102,12 @@ jobs:
           $appOut = Resolve-Path 'out/publish/app'
           $cliOut = Resolve-Path 'out/publish/cli'
           $explorerOut = Resolve-Path 'out/publish/explorer'
-          & $iscc /Qp \
-            "/DMyAppVersion=$appVersion" \
-            "/DAppBuildOutput=$appOut" \
-            "/DCliBuildOutput=$cliOut" \
-            "/DExplorerBuildOutput=$explorerOut" \
-            "/DToolsRoot=$(Resolve-Path out/publish/tools)" \
+          & $iscc /Qp `
+            "/DMyAppVersion=$appVersion" `
+            "/DAppBuildOutput=$appOut" `
+            "/DCliBuildOutput=$cliOut" `
+            "/DExplorerBuildOutput=$explorerOut" `
+            "/DToolsRoot=$(Resolve-Path out/publish/tools)" `
             'installer/ClopInstaller.iss'
           Copy-Item installer/Output/*.exe artifacts -Force
 
