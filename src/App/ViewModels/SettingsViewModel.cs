@@ -26,6 +26,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     private bool _enableAutomaticPdfOptimisations;
     private bool _replaceOptimisedFilesInPlace;
     private bool _deleteOriginalAfterConversion;
+    private bool _forceFullImageOptimisations;
     private bool _suppressStoreUpdates;
     private readonly Dictionary<ShortcutId, ShortcutPreferenceViewModel> _shortcutLookup;
     private readonly FloatingHudController _hudController;
@@ -295,6 +296,18 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         }
     }
 
+    public bool ForceFullImageOptimisations
+    {
+        get => _forceFullImageOptimisations;
+        set
+        {
+            if (SetProperty(ref _forceFullImageOptimisations, value) && !_suppressStoreUpdates)
+            {
+                SettingsHost.Set(SettingsRegistry.ForceFullImageOptimisations, value);
+            }
+        }
+    }
+
     public bool FloatingHudPinned
     {
         get => _floatingHudPinned;
@@ -332,6 +345,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         EnableAutomaticImageOptimisations = SettingsHost.Get(SettingsRegistry.EnableAutomaticImageOptimisations);
         EnableAutomaticVideoOptimisations = SettingsHost.Get(SettingsRegistry.EnableAutomaticVideoOptimisations);
         EnableAutomaticPdfOptimisations = SettingsHost.Get(SettingsRegistry.EnableAutomaticPdfOptimisations);
+        ForceFullImageOptimisations = SettingsHost.Get(SettingsRegistry.ForceFullImageOptimisations);
         RefreshDirectoryCollections();
         var themeMode = SettingsHost.Get(SettingsRegistry.AppThemeMode);
         SelectedThemeOption = ThemeOptions.FirstOrDefault(option => option.Mode == themeMode) ?? ThemeOptions.FirstOrDefault();
@@ -391,6 +405,9 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
                 break;
             case var name when name == SettingsRegistry.EnableAutomaticPdfOptimisations.Name:
                 EnableAutomaticPdfOptimisations = SettingsHost.Get(SettingsRegistry.EnableAutomaticPdfOptimisations);
+                break;
+            case var name when name == SettingsRegistry.ForceFullImageOptimisations.Name:
+                ForceFullImageOptimisations = SettingsHost.Get(SettingsRegistry.ForceFullImageOptimisations);
                 break;
             case var name when name == SettingsRegistry.ImageDirs.Name:
             case var name2 when name2 == SettingsRegistry.VideoDirs.Name:

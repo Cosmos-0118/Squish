@@ -4,7 +4,7 @@
       "name": "ffmpeg",
       "version": "n7.0-latest",
       "url": "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip",
-      "sha256": "647e467caf82b9fa200a562769b5ff4d736aaf725804ed2c64ea9752106fa569",
+      "sha256": "e2aaeaa0fdbc397d4794828086424d4aaa2102cef1fb6874f6ffd29c0b88b673",
       "archiveType": "zip",
       "destination": "ffmpeg"
     },

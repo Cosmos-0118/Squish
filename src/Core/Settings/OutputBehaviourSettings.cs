@@ -9,7 +9,8 @@ public static class OutputBehaviourSettings
     {
         var replaceInPlace = SettingsHost.Get(SettingsRegistry.ReplaceOptimisedFilesInPlace);
         var deleteAfterConversion = replaceInPlace && SettingsHost.Get(SettingsRegistry.DeleteOriginalAfterConversion);
-        return new OutputBehaviourSnapshot(replaceInPlace, deleteAfterConversion);
+        var forceFullImages = SettingsHost.Get(SettingsRegistry.ForceFullImageOptimisations);
+        return new OutputBehaviourSnapshot(replaceInPlace, deleteAfterConversion, forceFullImages);
     }
 
     public static void ApplyTo(IDictionary<string, object?> metadata)
@@ -18,10 +19,15 @@ public static class OutputBehaviourSettings
     }
 }
 
-public readonly record struct OutputBehaviourSnapshot(bool ReplaceInPlace, bool DeleteConvertedSource)
+public readonly record struct OutputBehaviourSnapshot(bool ReplaceInPlace, bool DeleteConvertedSource, bool ForceFullImageOptimisations)
 {
     public void ApplyTo(IDictionary<string, object?> metadata)
     {
+        if (ForceFullImageOptimisations)
+        {
+            metadata[OptimisationMetadata.ImageForceFullOptimisation] = true;
+        }
+
         if (!ReplaceInPlace)
         {
             return;

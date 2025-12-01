@@ -198,6 +198,14 @@
 
             <Border Margin="0,16,0,0" Padding="20" Background="{DynamicResource Brush.SurfaceBackground}" BorderBrush="{DynamicResource Brush.SurfaceBorder}" BorderThickness="1" CornerRadius="12">
                 <StackPanel>
+                    <TextBlock Text="{loc:Loc settings.section.optimisation}" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}"/>
+                    <CheckBox Content="{loc:Loc settings.optimisation.forceFullImage}" Margin="0,12,0,0" IsChecked="{Binding ForceFullImageOptimisations}"/>
+                    <TextBlock Text="{loc:Loc settings.optimisation.forceFullImage.subtitle}" FontSize="12" Foreground="{DynamicResource Brush.SecondaryText}" Margin="24,4,0,0" TextWrapping="Wrap"/>
+                </StackPanel>
+            </Border>
+
+            <Border Margin="0,16,0,0" Padding="20" Background="{DynamicResource Brush.SurfaceBackground}" BorderBrush="{DynamicResource Brush.SurfaceBorder}" BorderThickness="1" CornerRadius="12">
+                <StackPanel>
                     <TextBlock Text="{loc:Loc settings.section.output}" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}"/>
                     <CheckBox Content="{loc:Loc settings.output.replaceInPlace}" Margin="0,12,0,0" IsChecked="{Binding ReplaceOptimisedFilesInPlace}"/>
                     <TextBlock Text="{loc:Loc settings.output.replaceInPlace.subtitle}" FontSize="12" Margin="24,4,0,0" Foreground="{DynamicResource Brush.SecondaryText}" TextWrapping="Wrap"/>

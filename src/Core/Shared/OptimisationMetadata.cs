@@ -6,6 +6,7 @@ public static class OptimisationMetadata
 {
     public const string OutputReplaceOriginal = "output.replaceOriginal";
     public const string OutputDeleteConvertedSource = "output.deleteConvertedSource";
+    public const string ImageForceFullOptimisation = "image.forceFullOptimisation";
 
     public static bool GetFlag(IReadOnlyDictionary<string, object?> metadata, string key)
     {

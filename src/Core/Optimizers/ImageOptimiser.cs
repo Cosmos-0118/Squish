@@ -185,6 +185,11 @@ public sealed class ImageOptimiser : IOptimiser
 
     private async Task<OptimisationResult?> TryFastPathAsync(OptimisationRequest request, string extension, OptimiserExecutionContext context, CancellationToken token)
     {
+        if (OptimisationMetadata.GetFlag(request.Metadata, OptimisationMetadata.ImageForceFullOptimisation))
+        {
+            return null;
+        }
+
         if (!_options.WicFastPath.Enabled || !WicImageTranscoder.IsSupported(extension))
         {
             return null;

@@ -3,7 +3,6 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Threading;
 using System.Threading.Channels;
@@ -153,59 +152,21 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
 
     private async Task ProcessLoopAsync(CancellationToken token)
     {
-        var scheduler = new HeuristicScheduler(_logger);
-        var idleMonitor = new SystemIdleMonitor();
-
-        try
+        await foreach (var fileEvent in _channel.Reader.ReadAllAsync(token).ConfigureAwait(false))
         {
-            await foreach (var fileEvent in _channel.Reader.ReadAllAsync(token).ConfigureAwait(false))
+            token.ThrowIfCancellationRequested();
+
+            try
             {
-                token.ThrowIfCancellationRequested();
-                scheduler.Enqueue(fileEvent);
-
-                while (scheduler.TryDequeueReady(DateTimeOffset.UtcNow, idleMonitor.IsIdle(), out var scheduled))
-                {
-                    try
-                    {
-                        await ProcessFileEventAsync(scheduled.Event, token, scheduled.SizeBytes).ConfigureAwait(false);
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        throw;
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Failed processing watcher event for {Path}", scheduled.Event.Path.Value);
-                    }
-
-                    scheduler.MarkProcessed(scheduled);
-                }
+                await ProcessFileEventAsync(fileEvent, token).ConfigureAwait(false);
             }
-        }
-        catch (OperationCanceledException)
-        {
-            // graceful shutdown
-        }
-        finally
-        {
-            if (!token.IsCancellationRequested)
+            catch (OperationCanceledException)
             {
-                foreach (var scheduled in scheduler.DrainAll())
-                {
-                    try
-                    {
-                        await ProcessFileEventAsync(scheduled.Event, token, scheduled.SizeBytes).ConfigureAwait(false);
-                        scheduler.MarkProcessed(scheduled);
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        throw;
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Failed processing drained watcher event for {Path}", scheduled.Event.Path.Value);
-                    }
-                }
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed processing watcher event for {Path}", fileEvent.Path.Value);
             }
         }
     }
@@ -233,6 +194,12 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
 
         if (IsWithinWorkRoot(path))
         {
+            return;
+        }
+
+        if (IsClopGeneratedFile(path))
+        {
+            _logger.LogTrace("Skipping {Path}; detected Clop output file.", path.Value);
             return;
         }
 
@@ -784,264 +751,6 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
     private readonly record struct DirectoryRequestContext(ItemType ItemType, FilePath Path);
 
     private readonly record struct FileEvent(ItemType ItemType, FilePath Path, FilePath RootDirectory, DateTimeOffset ObservedAt, int Attempts = 0);
-
-    private readonly record struct ScheduledFileEvent(FileEvent Event, long? SizeBytes, DateTimeOffset EnqueuedAt, string BucketKey, string DirectoryPath, double SizeMb, bool IsLarge);
-
-    private sealed class HeuristicScheduler
-    {
-        private static readonly TimeSpan MinimumHold = TimeSpan.FromMilliseconds(200);
-        private static readonly TimeSpan BurstHold = TimeSpan.FromMilliseconds(700);
-        private static readonly TimeSpan LargeHold = TimeSpan.FromSeconds(6);
-        private const double QuickWinThresholdMb = 12d;
-        private const double LargeFileThresholdMb = 180d;
-        private const double IdleOnlyThresholdMb = 512d;
-
-        private readonly PriorityQueue<ScheduledFileEvent, double> _quickQueue = new();
-        private readonly PriorityQueue<ScheduledFileEvent, double> _largeQueue = new();
-        private readonly Dictionary<string, int> _pendingByBucket = new(StringComparer.OrdinalIgnoreCase);
-        private readonly ILogger _logger;
-        private readonly object _gate = new();
-
-        private string? _lastDirectory;
-
-        public HeuristicScheduler(ILogger logger)
-        {
-            _logger = logger;
-        }
-
-        public void Enqueue(FileEvent fileEvent)
-        {
-            var sizeBytes = TryGetFileLength(fileEvent.Path);
-            var sizeMb = sizeBytes.HasValue ? sizeBytes.Value / (1024d * 1024d) : 0d;
-            var directoryPath = fileEvent.Path.Parent.Value;
-            var bucketKey = string.Concat(fileEvent.ItemType.ToString(), ":", directoryPath);
-            var scheduled = new ScheduledFileEvent(fileEvent, sizeBytes, DateTimeOffset.UtcNow, bucketKey, directoryPath, sizeMb, sizeMb >= LargeFileThresholdMb);
-
-            lock (_gate)
-            {
-                var count = _pendingByBucket.TryGetValue(bucketKey, out var existing) ? existing + 1 : 1;
-                _pendingByBucket[bucketKey] = count;
-
-                var priority = ComputePriority(scheduled, count);
-                if (scheduled.IsLarge)
-                {
-                    _largeQueue.Enqueue(scheduled, priority);
-                }
-                else
-                {
-                    _quickQueue.Enqueue(scheduled, priority);
-                }
-            }
-        }
-
-        public bool TryDequeueReady(DateTimeOffset now, bool systemIdle, out ScheduledFileEvent scheduled)
-        {
-            lock (_gate)
-            {
-                if (TryDequeue(_quickQueue, now, systemIdle, holdLarge: false, out scheduled))
-                {
-                    return true;
-                }
-
-                if (TryDequeue(_largeQueue, now, systemIdle, holdLarge: true, out scheduled))
-                {
-                    return true;
-                }
-            }
-
-            scheduled = default;
-            return false;
-        }
-
-        public IReadOnlyList<ScheduledFileEvent> DrainAll()
-        {
-            lock (_gate)
-            {
-                var drained = new List<ScheduledFileEvent>(_quickQueue.Count + _largeQueue.Count);
-                while (_quickQueue.TryDequeue(out var element, out _))
-                {
-                    drained.Add(element);
-                }
-
-                while (_largeQueue.TryDequeue(out var element, out _))
-                {
-                    drained.Add(element);
-                }
-
-                _pendingByBucket.Clear();
-                return drained;
-            }
-        }
-
-        public void MarkProcessed(ScheduledFileEvent scheduled)
-        {
-            lock (_gate)
-            {
-                _lastDirectory = scheduled.DirectoryPath;
-            }
-        }
-
-        private bool TryDequeue(PriorityQueue<ScheduledFileEvent, double> queue, DateTimeOffset now, bool systemIdle, bool holdLarge, out ScheduledFileEvent scheduled)
-        {
-            if (queue.Count == 0)
-            {
-                scheduled = default;
-                return false;
-            }
-
-            var candidate = queue.Peek();
-            if (holdLarge)
-            {
-                if (ShouldHoldLarge(candidate, now, systemIdle))
-                {
-                    scheduled = default;
-                    return false;
-                }
-            }
-            else if (ShouldHold(candidate, now))
-            {
-                scheduled = default;
-                return false;
-            }
-
-            queue.Dequeue();
-            RemovePending(candidate);
-            scheduled = candidate;
-            return true;
-        }
-
-        private bool ShouldHold(ScheduledFileEvent scheduled, DateTimeOffset now)
-        {
-            var elapsed = now - scheduled.EnqueuedAt;
-            if (elapsed < MinimumHold)
-            {
-                return true;
-            }
-
-            if (_pendingByBucket.TryGetValue(scheduled.BucketKey, out var count) && count > 0 && elapsed < BurstHold)
-            {
-                return true;
-            }
-
-            return false;
-        }
-
-        private bool ShouldHoldLarge(ScheduledFileEvent scheduled, DateTimeOffset now, bool systemIdle)
-        {
-            if (systemIdle)
-            {
-                return false;
-            }
-
-            var elapsed = now - scheduled.EnqueuedAt;
-            if (elapsed < MinimumHold)
-            {
-                return true;
-            }
-
-            if (_quickQueue.Count > 0 && elapsed < BurstHold)
-            {
-                return true;
-            }
-
-            if (scheduled.SizeMb >= IdleOnlyThresholdMb && elapsed < LargeHold)
-            {
-                return true;
-            }
-
-            return false;
-        }
-
-        private void RemovePending(ScheduledFileEvent scheduled)
-        {
-            if (_pendingByBucket.TryGetValue(scheduled.BucketKey, out var count))
-            {
-                if (count <= 1)
-                {
-                    _pendingByBucket.Remove(scheduled.BucketKey);
-                }
-                else
-                {
-                    _pendingByBucket[scheduled.BucketKey] = count - 1;
-                }
-            }
-        }
-
-        private double ComputePriority(ScheduledFileEvent scheduled, int countForBucket)
-        {
-            var priority = scheduled.SizeMb <= 0d ? 0.1d : scheduled.SizeMb;
-
-            if (!scheduled.IsLarge && scheduled.SizeMb <= QuickWinThresholdMb)
-            {
-                priority *= 0.25d;
-            }
-
-            if (!string.IsNullOrEmpty(_lastDirectory) && string.Equals(_lastDirectory, scheduled.DirectoryPath, StringComparison.OrdinalIgnoreCase))
-            {
-                priority *= 0.6d;
-            }
-
-            if (countForBucket > 1)
-            {
-                priority *= 0.7d;
-            }
-
-            priority -= Math.Min(0.2d, (DateTimeOffset.UtcNow - scheduled.EnqueuedAt).TotalSeconds / 10d);
-            return Math.Max(0.05d, priority);
-        }
-    }
-
-    private sealed class SystemIdleMonitor
-    {
-        private static readonly TimeSpan Threshold = TimeSpan.FromSeconds(45);
-
-        public bool IsIdle()
-        {
-            var idle = GetIdleTime();
-            return idle >= Threshold;
-        }
-
-        private static TimeSpan GetIdleTime()
-        {
-            if (!OperatingSystem.IsWindows())
-            {
-                return TimeSpan.Zero;
-            }
-
-            var info = new LASTINPUTINFO
-            {
-                cbSize = (uint)Marshal.SizeOf<LASTINPUTINFO>()
-            };
-
-            if (!GetLastInputInfo(ref info))
-            {
-                return TimeSpan.Zero;
-            }
-
-            var now = GetTickCount64();
-            var last = (ulong)info.dwTime;
-            if (now <= last)
-            {
-                return TimeSpan.Zero;
-            }
-
-            var delta = now - last;
-            return TimeSpan.FromMilliseconds(delta);
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct LASTINPUTINFO
-        {
-            public uint cbSize;
-            public uint dwTime;
-        }
-
-        [DllImport("user32.dll")]
-        private static extern bool GetLastInputInfo(ref LASTINPUTINFO plii);
-
-        [DllImport("kernel32.dll")]
-        private static extern ulong GetTickCount64();
-    }
 
     private sealed class DirectoryWatcher : IDisposable
     {
