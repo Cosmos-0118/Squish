@@ -80,7 +80,7 @@ public static class SettingsRegistry
     public static readonly SettingKey<bool> AdaptiveVideoSize = Bool("adaptiveVideoSize", true);
     public static readonly SettingKey<bool> AdaptiveImageSize = Bool("adaptiveImageSize", false);
     public static readonly SettingKey<bool> DownscaleRetinaImages = Bool("downscaleRetinaImages", false);
-    public static readonly SettingKey<bool> CopyImageFilePath = Bool("copyImageFilePath", true);
+    public static readonly SettingKey<bool> CopyImageFilePath = Bool("copyImageFilePath", false);
     public static readonly SettingKey<bool> UseCustomNameTemplateForClipboardImages = Bool("useCustomNameTemplateForClipboardImages", false);
     public static readonly SettingKey<string> CustomNameTemplateForClipboardImages = new("customNameTemplateForClipboardImages", string.Empty);
     public static readonly SettingKey<int> LastAutoIncrementingNumber = Int("lastAutoIncrementingNumber", 0);

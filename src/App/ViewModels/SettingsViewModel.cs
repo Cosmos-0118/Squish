@@ -16,6 +16,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     private int _autoHideFloatingResultsAfter;
     private bool _enableClipboardOptimiser;
     private bool _autoCopyToClipboard;
+    private bool _copyImageFilePath;
     private bool _optimiseClipboardFileDrops;
     private bool _optimiseVideoClipboard;
     private bool _optimisePdfClipboard;
@@ -162,6 +163,18 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
             if (SetProperty(ref _autoCopyToClipboard, value) && !_suppressStoreUpdates)
             {
                 SettingsHost.Set(SettingsRegistry.AutoCopyToClipboard, value);
+            }
+        }
+    }
+
+    public bool CopyImageFilePath
+    {
+        get => _copyImageFilePath;
+        set
+        {
+            if (SetProperty(ref _copyImageFilePath, value) && !_suppressStoreUpdates)
+            {
+                SettingsHost.Set(SettingsRegistry.CopyImageFilePath, value);
             }
         }
     }
@@ -333,6 +346,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         FloatingHudPlacement = SettingsHost.Get(SettingsRegistry.FloatingHudPlacement);
         EnableClipboardOptimiser = SettingsHost.Get(SettingsRegistry.EnableClipboardOptimiser);
         AutoCopyToClipboard = SettingsHost.Get(SettingsRegistry.AutoCopyToClipboard);
+        CopyImageFilePath = SettingsHost.Get(SettingsRegistry.CopyImageFilePath);
         OptimiseVideoClipboard = SettingsHost.Get(SettingsRegistry.OptimiseVideoClipboard);
         OptimiseClipboardFileDrops = SettingsHost.Get(SettingsRegistry.OptimiseClipboardFileDrops);
         OptimisePdfClipboard = SettingsHost.Get(SettingsRegistry.OptimisePdfClipboard);
@@ -373,6 +387,9 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
                 break;
             case var name when name == SettingsRegistry.AutoCopyToClipboard.Name:
                 AutoCopyToClipboard = SettingsHost.Get(SettingsRegistry.AutoCopyToClipboard);
+                break;
+            case var name when name == SettingsRegistry.CopyImageFilePath.Name:
+                CopyImageFilePath = SettingsHost.Get(SettingsRegistry.CopyImageFilePath);
                 break;
             case var name when name == SettingsRegistry.OptimiseVideoClipboard.Name:
                 OptimiseVideoClipboard = SettingsHost.Get(SettingsRegistry.OptimiseVideoClipboard);

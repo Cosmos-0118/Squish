@@ -153,6 +153,7 @@
                     <TextBlock Text="{loc:Loc settings.section.clipboard}" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}"/>
                     <CheckBox Content="{loc:Loc settings.clipboard.optimiseImages}" Margin="0,12,0,0" IsChecked="{Binding EnableClipboardOptimiser}"/>
                     <CheckBox Content="{loc:Loc settings.clipboard.copyBack}" Margin="0,8,0,0" IsChecked="{Binding AutoCopyToClipboard}"/>
+                    <CheckBox Content="{loc:Loc settings.clipboard.copyFilePath}" Margin="0,8,0,0" IsChecked="{Binding CopyImageFilePath}"/>
                     <CheckBox Content="{loc:Loc settings.clipboard.optimiseVideos}" Margin="0,8,0,0" IsChecked="{Binding OptimiseVideoClipboard}"/>
                     <CheckBox Content="{loc:Loc settings.clipboard.optimisePdfs}" Margin="0,8,0,0" IsChecked="{Binding OptimisePdfClipboard}"/>
                     <CheckBox Content="{loc:Loc settings.clipboard.optimiseFileDrops}" Margin="0,8,0,0" IsChecked="{Binding OptimiseClipboardFileDrops}"/>

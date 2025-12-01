@@ -46,6 +46,7 @@
   "settings.section.clipboard": "Clipboard",
   "settings.clipboard.optimiseImages": "Optimise clipboard images automatically",
   "settings.clipboard.copyBack": "Copy optimised image back to clipboard",
+  "settings.clipboard.copyFilePath": "Also add the optimised file path to the clipboard (shows as text)",
   "settings.clipboard.optimiseVideos": "Optimise copied videos",
   "settings.clipboard.optimisePdfs": "Optimise copied PDFs",
   "settings.clipboard.optimiseFileDrops": "Optimise copied files (Ctrl+C) automatically",
