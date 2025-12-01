@@ -265,6 +265,11 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
                 }
 
                 var filePath = FilePath.From(pathText);
+                if (ShouldSkipSourceFile(filePath))
+                {
+                    continue;
+                }
+
                 if (MediaFormats.IsImage(filePath))
                 {
                     results.Add(new ClipboardItem(filePath, ItemType.Image, ClipboardOrigin.FileDrop, false, true));
@@ -310,6 +315,11 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
                 }
 
                 var filePath = FilePath.From(candidate);
+                if (ShouldSkipSourceFile(filePath))
+                {
+                    continue;
+                }
+
                 if (MediaFormats.IsImage(filePath))
                 {
                     results.Add(new ClipboardItem(filePath, ItemType.Image, ClipboardOrigin.TextPath, false, true));
@@ -330,6 +340,23 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
         }
 
         return results;
+    }
+
+    private bool ShouldSkipSourceFile(FilePath filePath)
+    {
+        if (ClopFileGuards.IsClopGenerated(filePath))
+        {
+            _logger.LogTrace("Skipping clipboard source {Path}; detected Clop output.", filePath.Value);
+            return true;
+        }
+
+        if (_optimisedFiles.WasPathRecentlyOptimised(filePath))
+        {
+            _logger.LogTrace("Skipping clipboard source {Path}; recently optimised.", filePath.Value);
+            return true;
+        }
+
+        return false;
     }
 
     private FilePath? PersistClipboardImage(byte[] bytes)

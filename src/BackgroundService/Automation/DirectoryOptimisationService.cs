@@ -197,7 +197,7 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
             return;
         }
 
-        if (IsClopGeneratedFile(path))
+        if (ClopFileGuards.IsClopGenerated(path))
         {
             _logger.LogTrace("Skipping {Path}; detected Clop output file.", path.Value);
             return;
@@ -324,22 +324,6 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
             ItemType.Pdf => MediaFormats.IsPdf(path),
             _ => false
         };
-    }
-
-    private static bool IsClopGeneratedFile(FilePath path)
-    {
-        var fileName = path.Name;
-        if (string.IsNullOrWhiteSpace(fileName))
-        {
-            return false;
-        }
-
-        if (fileName.EndsWith(".clop", StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        return fileName.Contains(".clop.", StringComparison.OrdinalIgnoreCase);
     }
 
     private bool WithinSizeLimit(ItemType type, long bytes)
