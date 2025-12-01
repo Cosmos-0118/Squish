@@ -98,9 +98,13 @@
                         <ItemsControl ItemsSource="{Binding ImageDirectories}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <Border Padding="10" Margin="0,0,0,6" Background="{DynamicResource Brush.CardBackground}" BorderBrush="{DynamicResource Brush.CardBorder}" BorderThickness="1" CornerRadius="6">
+                                    <Border Padding="14" MinHeight="48" Margin="0,0,0,6" Background="{DynamicResource Brush.CardBackground}" BorderBrush="{DynamicResource Brush.CardBorder}" BorderThickness="1" CornerRadius="6">
                                         <DockPanel>
-                                            <TextBlock Text="{Binding}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource Brush.PrimaryText}"/>
+                                            <TextBlock Text="{Binding}"
+                                                       VerticalAlignment="Center"
+                                                       Margin="0,0,8,0"
+                                                       TextWrapping="Wrap"
+                                                       Foreground="{DynamicResource Brush.PrimaryText}"/>
                                             <Button Content="{loc:Loc settings.automation.removeFolder}" Command="{Binding DataContext.RemoveImageDirectoryCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" Padding="10,4" Margin="8,0,0,0" DockPanel.Dock="Right"/>
                                         </DockPanel>
                                     </Border>
@@ -128,9 +132,13 @@
                         <ItemsControl ItemsSource="{Binding VideoDirectories}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <Border Padding="10" Margin="0,0,0,6" Background="{DynamicResource Brush.CardBackground}" BorderBrush="{DynamicResource Brush.CardBorder}" BorderThickness="1" CornerRadius="6">
+                                    <Border Padding="14" MinHeight="48" Margin="0,0,0,6" Background="{DynamicResource Brush.CardBackground}" BorderBrush="{DynamicResource Brush.CardBorder}" BorderThickness="1" CornerRadius="6">
                                         <DockPanel>
-                                            <TextBlock Text="{Binding}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource Brush.PrimaryText}"/>
+                                            <TextBlock Text="{Binding}"
+                                                       VerticalAlignment="Center"
+                                                       Margin="0,0,8,0"
+                                                       TextWrapping="Wrap"
+                                                       Foreground="{DynamicResource Brush.PrimaryText}"/>
                                             <Button Content="{loc:Loc settings.automation.removeFolder}" Command="{Binding DataContext.RemoveVideoDirectoryCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" Padding="10,4" Margin="8,0,0,0" DockPanel.Dock="Right"/>
                                         </DockPanel>
                                     </Border>
@@ -158,9 +166,13 @@
                         <ItemsControl ItemsSource="{Binding PdfDirectories}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <Border Padding="10" Margin="0,0,0,6" Background="{DynamicResource Brush.CardBackground}" BorderBrush="{DynamicResource Brush.CardBorder}" BorderThickness="1" CornerRadius="6">
+                                    <Border Padding="14" MinHeight="48" Margin="0,0,0,6" Background="{DynamicResource Brush.CardBackground}" BorderBrush="{DynamicResource Brush.CardBorder}" BorderThickness="1" CornerRadius="6">
                                         <DockPanel>
-                                            <TextBlock Text="{Binding}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource Brush.PrimaryText}"/>
+                                            <TextBlock Text="{Binding}"
+                                                       VerticalAlignment="Center"
+                                                       Margin="0,0,8,0"
+                                                       TextWrapping="Wrap"
+                                                       Foreground="{DynamicResource Brush.PrimaryText}"/>
                                             <Button Content="{loc:Loc settings.automation.removeFolder}" Command="{Binding DataContext.RemovePdfDirectoryCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" Padding="10,4" Margin="8,0,0,0" DockPanel.Dock="Right"/>
                                         </DockPanel>
                                     </Border>
