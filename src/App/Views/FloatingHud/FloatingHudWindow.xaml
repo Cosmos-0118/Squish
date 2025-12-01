@@ -16,7 +16,8 @@
         MinWidth="320"
         Width="{Binding WindowWidth, Mode=TwoWay}"
         Height="{Binding WindowHeight, Mode=TwoWay}"
-        AutomationProperties.Name="{loc:Loc hud.title}">
+        AutomationProperties.Name="{loc:Loc hud.title}"
+        Opacity="0.7">
     <shell:WindowChrome.WindowChrome>
         <shell:WindowChrome CaptionHeight="0"
                              GlassFrameThickness="0"
@@ -160,13 +161,18 @@
                             </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate DataType="{x:Type viewModels:FloatingResultViewModel}">
-                                    <Border x:Name="ResultCard"
+                                        <Border x:Name="ResultCard"
                                             Background="{DynamicResource Brush.HudCardBackground}"
                                             BorderBrush="{DynamicResource Brush.HudProgressBackground}"
                                             BorderThickness="1"
                                             CornerRadius="10"
                                             Padding="10"
-                                            Margin="0,0,0,8">
+                                            Margin="0,0,0,8"
+                                            Cursor="Hand"
+                                            MouseLeftButtonDown="OnResultCardMouseLeftButtonDown"
+                                            MouseLeftButtonUp="OnResultCardMouseLeftButtonUp"
+                                            MouseMove="OnResultCardMouseMove"
+                                            MouseLeave="OnResultCardMouseLeave">
                                         <Grid>
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition/>

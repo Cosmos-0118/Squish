@@ -51,31 +51,6 @@
                         <TextBlock Text="{loc:Loc settings.floatingHud.hideAfterSuffix}" Margin="8,0,0,0" VerticalAlignment="Center" Foreground="{DynamicResource Brush.SecondaryText}"/>
                     </StackPanel>
                     <StackPanel Margin="0,16,0,0">
-                        <TextBlock x:Name="FloatingHudOpacityLabel"
-                                   Text="{loc:Loc settings.floatingHud.opacity}"
-                                   FontWeight="SemiBold"
-                                   Foreground="{DynamicResource Brush.PrimaryText}"/>
-                        <StackPanel Orientation="Horizontal" Margin="0,6,0,0" VerticalAlignment="Center">
-                            <Slider Width="220"
-                                    Minimum="0.35"
-                                    Maximum="1"
-                                    TickFrequency="0.05"
-                                    IsSnapToTickEnabled="True"
-                                    Value="{Binding FloatingHudOpacity, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                    AutomationProperties.LabeledBy="{Binding ElementName=FloatingHudOpacityLabel}"
-                                    AutomationProperties.HelpText="{loc:Loc settings.floatingHud.opacity.help}"/>
-                            <TextBlock Text="{Binding FloatingHudOpacity, StringFormat={}{0:P0}}"
-                                       Margin="12,0,0,0"
-                                       VerticalAlignment="Center"
-                                       Foreground="{DynamicResource Brush.SecondaryText}"/>
-                        </StackPanel>
-                        <TextBlock Text="{loc:Loc settings.floatingHud.opacity.help}"
-                                   FontSize="12"
-                                   Foreground="{DynamicResource Brush.SecondaryText}"
-                                   Margin="0,4,0,0"
-                                   TextWrapping="Wrap"/>
-                    </StackPanel>
-                    <StackPanel Margin="0,16,0,0">
                         <TextBlock x:Name="FloatingHudPlacementLabel"
                                    Text="{loc:Loc settings.floatingHud.placementHeading}"
                                    FontWeight="SemiBold"

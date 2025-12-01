@@ -249,6 +249,25 @@ public sealed class FloatingResultViewModel : ObservableObject
         }
     }
 
+    public bool TryGetResolvedFilePath(out string? fullPath, bool requireExistence = true)
+    {
+        var resolved = _outputPath ?? SourcePath;
+        if (resolved is not FilePath path)
+        {
+            fullPath = null;
+            return false;
+        }
+
+        fullPath = path.Value;
+        if (requireExistence && !File.Exists(fullPath))
+        {
+            fullPath = null;
+            return false;
+        }
+
+        return true;
+    }
+
     private static SolidColorBrush CreateBrush(byte r, byte g, byte b)
     {
         var brush = new SolidColorBrush(System.Windows.Media.Color.FromRgb(r, g, b));
