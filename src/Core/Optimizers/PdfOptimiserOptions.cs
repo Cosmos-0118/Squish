@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using ClopWindows.Core.Shared;
 
 namespace ClopWindows.Core.Optimizers;
 
@@ -83,11 +84,18 @@ public sealed record PdfOptimiserOptions
             }
 
             var baseDir = GetBaseDirectory();
-            foreach (var path in EnumeratePossibleFiles(baseDir, new[] { "tools", "ghostscript", "gswin64c.exe" }))
+            var ghostscriptSegments = new[]
             {
-                if (!string.IsNullOrWhiteSpace(path))
+                new[] { "tools", "ghostscript", "gswin64c.exe" },
+                new[] { "tools", "ghostscript", "bin", "gswin64c.exe" }
+            };
+
+            foreach (var segments in ghostscriptSegments)
+            {
+                var candidate = ToolLocator.EnumeratePossibleFiles(baseDir, segments).FirstOrDefault();
+                if (!string.IsNullOrWhiteSpace(candidate))
                 {
-                    return path!;
+                    return candidate!;
                 }
             }
 
@@ -116,7 +124,7 @@ public sealed record PdfOptimiserOptions
             }
 
             var baseDir = GetBaseDirectory();
-            foreach (var path in EnumeratePossibleDirectories(baseDir, new[] { "tools", "ghostscript", "Resource", "Init" }))
+            foreach (var path in ToolLocator.EnumeratePossibleDirectories(baseDir, new[] { "tools", "ghostscript", "Resource", "Init" }))
             {
                 if (!string.IsNullOrWhiteSpace(path))
                 {
@@ -170,11 +178,18 @@ public sealed record PdfOptimiserOptions
             }
 
             var baseDir = GetBaseDirectory();
-            foreach (var path in EnumeratePossibleFiles(baseDir, new[] { "tools", "qpdf", "qpdf.exe" }))
+            var qpdfSegments = new[]
             {
-                if (!string.IsNullOrWhiteSpace(path))
+                new[] { "tools", "qpdf", "qpdf.exe" },
+                new[] { "tools", "qpdf", "bin", "qpdf.exe" }
+            };
+
+            foreach (var segments in qpdfSegments)
+            {
+                var candidate = ToolLocator.EnumeratePossibleFiles(baseDir, segments).FirstOrDefault();
+                if (!string.IsNullOrWhiteSpace(candidate))
                 {
-                    return path!;
+                    return candidate!;
                 }
             }
 
@@ -203,7 +218,7 @@ public sealed record PdfOptimiserOptions
             return null;
         }
 
-        return Path.Combine(new[] { root! }.Concat(segments).ToArray());
+        return ToolLocator.SafeCombine(root!, segments);
     }
 
     private static GhostscriptInstallation? GetCachedInstallation(bool forceRefresh)
@@ -380,61 +395,6 @@ public sealed record PdfOptimiserOptions
         return baseDir;
     }
 
-    private static IEnumerable<string?> EnumeratePossibleFiles(string? baseDir, string[] relativeSegments)
-    {
-        foreach (var combined in EnumerateCandidatePaths(baseDir, relativeSegments))
-        {
-            if (combined is not null && File.Exists(combined))
-            {
-                yield return combined;
-            }
-        }
-    }
-
-    private static IEnumerable<string?> EnumeratePossibleDirectories(string? baseDir, string[] relativeSegments)
-    {
-        foreach (var combined in EnumerateCandidatePaths(baseDir, relativeSegments))
-        {
-            if (combined is not null && Directory.Exists(combined))
-            {
-                yield return combined;
-            }
-        }
-    }
-
-    private static IEnumerable<string?> EnumerateCandidatePaths(string? baseDir, string[] relativeSegments)
-    {
-        if (!string.IsNullOrWhiteSpace(baseDir))
-        {
-            yield return SafeCombine(baseDir!, relativeSegments);
-            yield return SafeCombine(baseDir!, new[] { "..", "..", "..", ".." }.Concat(relativeSegments).ToArray());
-        }
-
-        var executingDir = Path.GetDirectoryName(typeof(PdfOptimiserOptions).Assembly.Location);
-        if (!string.IsNullOrWhiteSpace(executingDir))
-        {
-            yield return SafeCombine(executingDir!, relativeSegments);
-            yield return SafeCombine(executingDir!, new[] { "..", ".." }.Concat(relativeSegments).ToArray());
-        }
-    }
-
-    private static string? SafeCombine(string root, params string[] segments)
-    {
-        if (string.IsNullOrWhiteSpace(root))
-        {
-            return null;
-        }
-
-        try
-        {
-            var path = Path.Combine(new[] { root }.Concat(segments).ToArray());
-            return Path.GetFullPath(path);
-        }
-        catch
-        {
-            return null;
-        }
-    }
 }
 
 internal static class DefaultGhostscriptArguments

@@ -1,4 +1,8 @@
+using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using ClopWindows.Core.Shared;
 
 namespace ClopWindows.Core.Optimizers;
 
@@ -13,12 +17,12 @@ public sealed record VideoOptimiserOptions
     /// <summary>
     /// Absolute path (or PATH-resolved executable name) for ffmpeg.
     /// </summary>
-    public string FfmpegPath { get; init; } = "ffmpeg";
+    public string FfmpegPath { get; init; } = ResolveFfmpegPath();
 
     /// <summary>
     /// Absolute path for ffprobe. Defaults to PATH lookup.
     /// </summary>
-    public string FfprobePath { get; init; } = "ffprobe";
+    public string FfprobePath { get; init; } = ResolveFfprobePath();
 
     /// <summary>
     /// Allows callers to disable expensive metadata probing when not required.
@@ -180,4 +184,130 @@ public sealed record VideoOptimiserOptions
     /// Allows feature flags (CLI, UI, automation) to request GIF export via metadata.
     /// </summary>
     public IReadOnlyCollection<string> GifTriggers { get; init; } = new[] { "gif", "animated" };
+
+    private static string ResolveFfmpegPath()
+    {
+        return ResolveTool(
+            new[] { "CLOP_FFMPEG", "FFMPEG_EXECUTABLE" },
+            new[]
+            {
+                new[] { "tools", "ffmpeg", "ffmpeg.exe" },
+                new[] { "tools", "ffmpeg", "bin", "ffmpeg.exe" }
+            },
+            "ffmpeg.exe",
+            "ffmpeg");
+    }
+
+    private static string ResolveFfprobePath()
+    {
+        return ResolveTool(
+            new[] { "CLOP_FFPROBE", "FFPROBE_EXECUTABLE" },
+            new[]
+            {
+                new[] { "tools", "ffmpeg", "ffprobe.exe" },
+                new[] { "tools", "ffmpeg", "bin", "ffprobe.exe" }
+            },
+            "ffprobe.exe",
+            "ffprobe");
+    }
+
+    private static string ResolveTool(IEnumerable<string> environmentVariables, IReadOnlyList<string[]> bundledSegments, string fileName, string defaultCommand)
+    {
+        var envPath = ResolveFromEnvironment(environmentVariables);
+        if (!string.IsNullOrWhiteSpace(envPath))
+        {
+            return envPath!;
+        }
+
+        var baseDir = GetBaseDirectory();
+        foreach (var segments in bundledSegments)
+        {
+            var candidate = ToolLocator.EnumeratePossibleFiles(baseDir, segments).FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(candidate))
+            {
+                return candidate!;
+            }
+        }
+
+        foreach (var localCandidate in EnumerateLocalToolCandidates(fileName))
+        {
+            return localCandidate;
+        }
+
+        var resolved = ToolLocator.ResolveOnPath(fileName) ?? ToolLocator.ResolveOnPath(defaultCommand);
+        return resolved ?? defaultCommand;
+    }
+
+    private static string? ResolveFromEnvironment(IEnumerable<string> variableNames)
+    {
+        foreach (var variable in variableNames)
+        {
+            var value = Environment.GetEnvironmentVariable(variable);
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
+
+            var expanded = Environment.ExpandEnvironmentVariables(value);
+            if (File.Exists(expanded))
+            {
+                return expanded;
+            }
+
+            var resolved = ToolLocator.ResolveOnPath(expanded);
+            if (!string.IsNullOrWhiteSpace(resolved))
+            {
+                return resolved;
+            }
+
+            return expanded;
+        }
+
+        return null;
+    }
+
+    private static IEnumerable<string> EnumerateLocalToolCandidates(string fileName)
+    {
+        foreach (var root in GetLocalToolRoots())
+        {
+            var candidate = Path.Combine(root, fileName);
+            if (File.Exists(candidate))
+            {
+                yield return candidate;
+            }
+        }
+    }
+
+    private static IEnumerable<string> GetLocalToolRoots()
+    {
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        if (!string.IsNullOrWhiteSpace(localAppData))
+        {
+            yield return Path.Combine(localAppData!, "Clop", "bin");
+            yield return Path.Combine(localAppData!, "Clop", "bin", "x64");
+        }
+
+        var roamingAppData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        if (!string.IsNullOrWhiteSpace(roamingAppData))
+        {
+            yield return Path.Combine(roamingAppData!, "Clop", "bin");
+            yield return Path.Combine(roamingAppData!, "Clop", "bin", "x64");
+        }
+    }
+
+    private static string? GetBaseDirectory()
+    {
+        var baseDir = AppContext.BaseDirectory;
+        if (string.IsNullOrWhiteSpace(baseDir))
+        {
+            baseDir = AppDomain.CurrentDomain.BaseDirectory;
+        }
+
+        if (string.IsNullOrWhiteSpace(baseDir))
+        {
+            baseDir = Environment.CurrentDirectory;
+        }
+
+        return baseDir;
+    }
 }
