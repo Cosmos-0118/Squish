@@ -75,11 +75,11 @@ Root: HKCU; Subkey: "Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\cl
 Root: HKCU; Subkey: "Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\clop.exe"; ValueType: string; ValueName: "Path"; ValueData: "{app}\\cli"; Tasks: installcli
 
 [Run]
-Filename: "{sys}\\regsvr32.exe"; Parameters: "/s \"{app}\\integrations\\ClopWindows.Integrations.Explorer.comhost.dll\""; Tasks: registerexplorer; Flags: runhidden
+Filename: "{sys}\\regsvr32.exe"; Parameters: "/s ""{app}\\integrations\\ClopWindows.Integrations.Explorer.comhost.dll"""; Tasks: registerexplorer; Flags: runhidden
 Filename: "{app}\\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent unchecked
 
 [UninstallRun]
-Filename: "{sys}\\regsvr32.exe"; Parameters: "/u /s \"{app}\\integrations\\ClopWindows.Integrations.Explorer.comhost.dll\""; RunOnceId: "UnregisterExplorer"
+Filename: "{sys}\\regsvr32.exe"; Parameters: "/u /s ""{app}\\integrations\\ClopWindows.Integrations.Explorer.comhost.dll"""; RunOnceId: "UnregisterExplorer"
 
 [Code]
 const

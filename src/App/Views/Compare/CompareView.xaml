@@ -31,7 +31,8 @@
             <DockPanel LastChildFill="True">
                 <TextBlock DockPanel.Dock="Top" Text="{loc:Loc compare.recent}" FontSize="14" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}" Margin="0,0,0,12"/>
                 <Grid>
-                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled">
                         <ItemsControl ItemsSource="{Binding RecentItems}" AutomationProperties.HelpText="{loc:Loc compare.recent.list.help}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
@@ -42,7 +43,7 @@
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
                                             <StackPanel Grid.Column="0">
-                                                <TextBlock Text="{Binding FileName}" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}" TextTrimming="CharacterEllipsis"/>
+                                                <TextBlock Text="{Binding FileName}" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}" TextWrapping="Wrap"/>
                                                 <TextBlock Text="{Binding SizeSummary}" FontSize="12" Foreground="{DynamicResource Brush.SecondaryText}" Margin="0,4,0,0" TextWrapping="Wrap" />
                                             </StackPanel>
                                             <TextBlock Grid.Column="1" Text="{Binding DurationText}" FontSize="12" Foreground="{DynamicResource Brush.SecondaryText}" VerticalAlignment="Center" Margin="12,0,0,0">
