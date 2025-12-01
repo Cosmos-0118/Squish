@@ -52,20 +52,15 @@
                     </StackPanel>
                     <StackPanel Margin="0,16,0,0">
                         <TextBlock Text="{loc:Loc settings.floatingHud.pinHeading}" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}"/>
-                        <TextBlock Text="{loc:Loc settings.floatingHud.pinDescription}" FontSize="12" Foreground="{DynamicResource Brush.SecondaryText}" Margin="0,4,0,12" TextWrapping="Wrap"/>
-                        <StackPanel Orientation="Horizontal">
-                            <Button Content="{loc:Loc settings.floatingHud.choosePlacement}"
-                                    Command="{Binding BeginHudPlacementCommand}"
-                                    Padding="18,6"/>
-                            <Button Content="{loc:Loc settings.floatingHud.clearPin}"
-                                    Command="{Binding ClearHudPlacementCommand}"
-                                    Margin="8,0,0,0"
-                                    Padding="18,6"/>
-                            <Button Content="{loc:Loc settings.floatingHud.adjustSize}"
-                                Command="{Binding BeginHudResizeCommand}"
-                                Margin="8,0,0,0"
-                                Padding="18,6"/>
-                        </StackPanel>
+                        <TextBlock Text="{loc:Loc settings.floatingHud.pinDescription}"
+                               FontSize="12"
+                               Foreground="{DynamicResource Brush.SecondaryText}"
+                               Margin="0,4,0,12"
+                               TextWrapping="Wrap"/>
+                        <Button Content="{loc:Loc settings.floatingHud.resetLayout}"
+                            Command="{Binding ResetHudLayoutCommand}"
+                            Padding="18,6"
+                            HorizontalAlignment="Left"/>
                         <TextBlock Text="{Binding FloatingHudPlacementStatus}"
                                    Margin="0,8,0,0"
                                    FontSize="12"

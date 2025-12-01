@@ -7,6 +7,8 @@ public static class SettingsRegistry
 {
     private const string DefaultSameFolderTemplate = "%f-optimised";
     private const string DefaultSpecificFolderTemplate = "%P/optimised/%f";
+    public const double DefaultFloatingHudWidth = 360d;
+    public const double DefaultFloatingHudHeight = 260d;
 
     private static readonly string DesktopPath = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
 
@@ -86,6 +88,8 @@ public static class SettingsRegistry
     public static readonly SettingKey<float> FloatingHudScale = Float("floatingHudScale", 1f);
     public static readonly SettingKey<float> FloatingHudWidthScale = Float("floatingHudWidthScale", 1f);
     public static readonly SettingKey<float> FloatingHudHeightScale = Float("floatingHudHeightScale", 1f);
+    public static readonly SettingKey<double> FloatingHudWidth = new("floatingHudWidth", DefaultFloatingHudWidth);
+    public static readonly SettingKey<double> FloatingHudHeight = new("floatingHudHeight", DefaultFloatingHudHeight);
 
     public static readonly SettingKey<bool> EnableDragAndDrop = Bool("enableDragAndDrop", true);
     public static readonly SettingKey<bool> OnlyShowDropZoneOnOption = Bool("onlyShowDropZoneOnOption", false);
@@ -199,6 +203,8 @@ public static class SettingsRegistry
         FloatingHudScale,
         FloatingHudWidthScale,
         FloatingHudHeightScale,
+        FloatingHudWidth,
+        FloatingHudHeight,
         AutoCopyToClipboard,
         CliInstalled,
         EnableCrossAppAutomation,

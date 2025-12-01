@@ -37,9 +37,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     public IReadOnlyList<ShortcutPreferenceViewModel> AppShortcutPreferences { get; }
     public IReadOnlyList<ShortcutPreferenceViewModel> GlobalShortcutPreferences { get; }
     public IReadOnlyList<ThemeOptionViewModel> ThemeOptions { get; }
-    public RelayCommand BeginHudPlacementCommand { get; }
-    public RelayCommand ClearHudPlacementCommand { get; }
-    public RelayCommand BeginHudResizeCommand { get; }
+    public RelayCommand ResetHudLayoutCommand { get; }
     public ObservableCollection<string> ImageDirectories { get; }
     public ObservableCollection<string> VideoDirectories { get; }
     public ObservableCollection<string> PdfDirectories { get; }
@@ -56,9 +54,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         _folderPicker = folderPicker ?? throw new ArgumentNullException(nameof(folderPicker));
         SettingsHost.EnsureInitialized();
         ShortcutCatalog.Initialize();
-        BeginHudPlacementCommand = new RelayCommand(_ => BeginHudPlacement(), _ => EnableFloatingResults);
-        ClearHudPlacementCommand = new RelayCommand(_ => ClearHudPlacement(), _ => EnableFloatingResults && FloatingHudPinned);
-        BeginHudResizeCommand = new RelayCommand(_ => BeginHudResize(), _ => EnableFloatingResults);
+        ResetHudLayoutCommand = new RelayCommand(_ => ResetHudLayout(), _ => EnableFloatingResults);
         ThemeOptions = new ReadOnlyCollection<ThemeOptionViewModel>(CreateThemeOptions());
         ImageDirectories = new ObservableCollection<string>();
         VideoDirectories = new ObservableCollection<string>();
@@ -116,9 +112,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
             {
                 SettingsHost.Set(SettingsRegistry.EnableFloatingResults, value);
             }
-            BeginHudPlacementCommand.RaiseCanExecuteChanged();
-            ClearHudPlacementCommand.RaiseCanExecuteChanged();
-            BeginHudResizeCommand.RaiseCanExecuteChanged();
+            ResetHudLayoutCommand.RaiseCanExecuteChanged();
         }
     }
 
@@ -316,7 +310,6 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
             if (SetProperty(ref _floatingHudPinned, value))
             {
                 OnPropertyChanged(nameof(FloatingHudPlacementStatus));
-                ClearHudPlacementCommand.RaiseCanExecuteChanged();
             }
         }
     }
@@ -428,19 +421,9 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         ShortcutCatalog.ShortcutChanged -= OnShortcutChanged;
     }
 
-    private void BeginHudPlacement()
+    private void ResetHudLayout()
     {
-        _hudController.BeginPlacementMode();
-    }
-
-    private void ClearHudPlacement()
-    {
-        _hudController.ClearPinnedPlacement();
-    }
-
-    private void BeginHudResize()
-    {
-        _hudController.BeginResizeMode();
+        _hudController.ResetHudLayout();
     }
 
     private void OnShortcutChanged(object? sender, ShortcutChangedEventArgs e)

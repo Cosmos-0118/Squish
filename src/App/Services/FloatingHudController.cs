@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -27,8 +28,6 @@ public sealed class FloatingHudController : IDisposable
 
     private bool _isInitialized;
     private bool _isDisposed;
-    private bool _isPlacementMode;
-    private bool _isResizeMode;
 
     public FloatingHudController(
         FloatingHudViewModel viewModel,
@@ -58,6 +57,8 @@ public sealed class FloatingHudController : IDisposable
         _coordinator.RequestCompleted += OnRequestCompleted;
         _coordinator.RequestFailed += OnRequestCompleted;
         SettingsHost.SettingChanged += OnSettingChanged;
+        _viewModel.PropertyChanged += OnViewModelPropertyChanged;
+        _window.LocationChanged += OnWindowLocationChanged;
 
         foreach (var request in _coordinator.PendingRequests)
         {
@@ -98,56 +99,16 @@ public sealed class FloatingHudController : IDisposable
         });
     }
 
-    public void BeginPlacementMode()
+    public void ResetHudLayout()
     {
         ThrowIfDisposed();
+
         Dispatch(() =>
         {
-            if (_isPlacementMode || _isResizeMode)
-            {
-                return;
-            }
-
-            _isPlacementMode = true;
+            _viewModel.ResetLayout();
+            ClearPinnedLocation();
+            PositionWindow();
             EnsureVisible(forceShow: true);
-            _window.PlacementConfirmed += OnPlacementConfirmed;
-            _window.PlacementCancelled += OnPlacementCancelled;
-            _window.EnterPlacementMode();
-        });
-    }
-
-    public void BeginResizeMode()
-    {
-        ThrowIfDisposed();
-        Dispatch(() =>
-        {
-            if (_isResizeMode || _isPlacementMode)
-            {
-                return;
-            }
-
-            _isResizeMode = true;
-            EnsureVisible(forceShow: true);
-            _window.ResizeScalesChanged += OnResizeScalesChanged;
-            _window.ResizeScalesConfirmed += OnResizeScalesConfirmed;
-            _window.ResizeCancelled += OnResizeCancelled;
-            _window.EnterResizeMode(_viewModel.WidthScale, _viewModel.HeightScale);
-        });
-    }
-
-    public void ClearPinnedPlacement()
-    {
-        SettingsHost.Set(SettingsRegistry.FloatingHudPinned, false);
-        SettingsHost.Set(SettingsRegistry.FloatingHudPinnedLeft, double.NaN);
-        SettingsHost.Set(SettingsRegistry.FloatingHudPinnedTop, double.NaN);
-
-        Dispatch(() =>
-        {
-            _window.ClearPinnedPosition();
-            if (!_window.IsPlacementMode && !_window.IsResizeMode)
-            {
-                PositionWindow();
-            }
         });
     }
 
@@ -163,7 +124,7 @@ public sealed class FloatingHudController : IDisposable
             return;
         }
 
-        if (!_viewModel.HasResults && !forceShow && !_window.IsPlacementMode && !_window.IsResizeMode)
+        if (!_viewModel.HasResults && !forceShow)
         {
             return;
         }
@@ -179,32 +140,31 @@ public sealed class FloatingHudController : IDisposable
 
     private void PositionWindow()
     {
-        if (_window.IsPlacementMode || _window.IsResizeMode)
+        if (_viewModel.IsPinned)
         {
+            if (!TryApplyPinnedPosition())
+            {
+                PersistPinnedLocation();
+            }
+
             return;
         }
 
-        if (TryApplyPinnedPosition())
-        {
-            return;
-        }
-
-        _window.ClearPinnedPosition();
         _window.MoveToTopRight();
     }
 
     private bool TryApplyPinnedPosition()
     {
-        if (!SettingsHost.Get(SettingsRegistry.FloatingHudPinned))
-        {
-            return false;
-        }
-
         var left = SettingsHost.Get(SettingsRegistry.FloatingHudPinnedLeft);
         var top = SettingsHost.Get(SettingsRegistry.FloatingHudPinnedTop);
         if (double.IsNaN(left) || double.IsNaN(top))
         {
             return false;
+        }
+
+        if (Math.Abs(_window.Left - left) < 0.5 && Math.Abs(_window.Top - top) < 0.5)
+        {
+            return true;
         }
 
         _window.MoveTo(left, top);
@@ -489,72 +449,67 @@ public sealed class FloatingHudController : IDisposable
         }
     }
 
-    private void OnPlacementConfirmed(object? sender, EventArgs e)
+    private void PersistPinnedLocation()
     {
-        SettingsHost.Set(SettingsRegistry.FloatingHudPinnedLeft, _window.Left);
-        SettingsHost.Set(SettingsRegistry.FloatingHudPinnedTop, _window.Top);
-        SettingsHost.Set(SettingsRegistry.FloatingHudPinned, true);
-        EndPlacementMode();
-    }
-
-    private void OnPlacementCancelled(object? sender, EventArgs e)
-    {
-        EndPlacementMode();
-    }
-
-    private void EndPlacementMode()
-    {
-        _window.PlacementConfirmed -= OnPlacementConfirmed;
-        _window.PlacementCancelled -= OnPlacementCancelled;
-        _window.ExitPlacementMode();
-        _isPlacementMode = false;
-
-        if (!_viewModel.HasResults && SettingsHost.Get(SettingsRegistry.AutoHideFloatingResults))
+        if (!_viewModel.IsPinned)
         {
-            _window.Hide();
+            return;
         }
-        else
+
+        var left = _window.Left;
+        var top = _window.Top;
+        if (double.IsNaN(left) || double.IsNaN(top))
         {
-            PositionWindow();
+            return;
+        }
+
+        var currentLeft = SettingsHost.Get(SettingsRegistry.FloatingHudPinnedLeft);
+        var currentTop = SettingsHost.Get(SettingsRegistry.FloatingHudPinnedTop);
+
+        if (double.IsNaN(currentLeft) || Math.Abs(currentLeft - left) > 0.5)
+        {
+            SettingsHost.Set(SettingsRegistry.FloatingHudPinnedLeft, left);
+        }
+
+        if (double.IsNaN(currentTop) || Math.Abs(currentTop - top) > 0.5)
+        {
+            SettingsHost.Set(SettingsRegistry.FloatingHudPinnedTop, top);
         }
     }
 
-    private void EndResizeMode()
+    private static void ClearPinnedLocation()
     {
-        _window.ResizeScalesChanged -= OnResizeScalesChanged;
-        _window.ResizeScalesConfirmed -= OnResizeScalesConfirmed;
-        _window.ResizeCancelled -= OnResizeCancelled;
-        _window.ExitResizeMode();
-        _isResizeMode = false;
+        SettingsHost.Set(SettingsRegistry.FloatingHudPinnedLeft, double.NaN);
+        SettingsHost.Set(SettingsRegistry.FloatingHudPinnedTop, double.NaN);
+    }
 
-        if (!_viewModel.HasResults && SettingsHost.Get(SettingsRegistry.AutoHideFloatingResults))
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (!string.Equals(e.PropertyName, nameof(FloatingHudViewModel.IsPinned), StringComparison.Ordinal))
         {
-            _window.Hide();
+            return;
         }
-        else
+
+        Dispatch(() =>
         {
-            PositionWindow();
+            if (_viewModel.IsPinned)
+            {
+                PersistPinnedLocation();
+            }
+            else
+            {
+                ClearPinnedLocation();
+                PositionWindow();
+            }
+        });
+    }
+
+    private void OnWindowLocationChanged(object? sender, EventArgs e)
+    {
+        if (_viewModel.IsPinned)
+        {
+            PersistPinnedLocation();
         }
-    }
-
-    private void OnResizeScalesChanged(object? sender, FloatingHudWindow.ResizeScalesEventArgs e)
-    {
-        _viewModel.PreviewWidthScale(e.WidthScale);
-        _viewModel.PreviewHeightScale(e.HeightScale);
-    }
-
-    private void OnResizeScalesConfirmed(object? sender, FloatingHudWindow.ResizeScalesEventArgs e)
-    {
-        _viewModel.PreviewWidthScale(e.WidthScale);
-        _viewModel.PreviewHeightScale(e.HeightScale);
-        _viewModel.CommitScales();
-        EndResizeMode();
-    }
-
-    private void OnResizeCancelled(object? sender, EventArgs e)
-    {
-        _viewModel.RevertScales();
-        EndResizeMode();
     }
 
     private void Dispatch(Action action)
@@ -589,6 +544,8 @@ public sealed class FloatingHudController : IDisposable
         _coordinator.RequestCompleted -= OnRequestCompleted;
         _coordinator.RequestFailed -= OnRequestCompleted;
         SettingsHost.SettingChanged -= OnSettingChanged;
+        _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
+        _window.LocationChanged -= OnWindowLocationChanged;
 
         foreach (var delay in _dismissDelays.Values)
         {

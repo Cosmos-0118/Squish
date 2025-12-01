@@ -69,7 +69,12 @@ public sealed class FloatingResultViewModel : ObservableObject
     public double Progress
     {
         get => _progress;
-        private set => SetProperty(ref _progress, value);
+        set
+        {
+            var normalized = double.IsNaN(value) ? 0d : value;
+            var clamped = Math.Clamp(normalized, 0d, 100d);
+            SetProperty(ref _progress, clamped);
+        }
     }
 
     public bool IsRunning
