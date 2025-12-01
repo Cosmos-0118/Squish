@@ -135,14 +135,15 @@ end;
 procedure BackupUserData;
 var
   SourceDir, TargetDir, Timestamp: string;
+  ResultCode: Integer;
 begin
   SourceDir := ExpandConstant('{userappdata}\\Clop');
   if not DirExists(SourceDir) then Exit;
   Timestamp := BuildTimestamp;
   TargetDir := ExpandConstant('{tmp}\\Clop_Backup_' + Timestamp);
   if not ForceDirectories(TargetDir) then Exit;
-  if not Exec('robocopy', '"' + SourceDir + '" "' + TargetDir + '" /MIR /FFT /Z /NFL /NDL', '', SW_HIDE, ewWaitUntilTerminated, _) then
-    Exec(ExpandConstant('{cmd}'), '/C xcopy "' + SourceDir + '" "' + TargetDir + '" /E /I /Y /Q', '', SW_HIDE, ewWaitUntilTerminated, _);
+  if not Exec('robocopy', '"' + SourceDir + '" "' + TargetDir + '" /MIR /FFT /Z /NFL /NDL', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+    Exec(ExpandConstant('{cmd}'), '/C xcopy "' + SourceDir + '" "' + TargetDir + '" /E /I /Y /Q', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
 
 function InitializeSetup: Boolean;
