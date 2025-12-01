@@ -5,7 +5,6 @@ using System.IO;
 using System.Linq;
 using System.Runtime.Versioning;
 using System.Threading;
-using System.Threading.Channels;
 using System.Threading.Tasks;
 using ClopWindows.BackgroundService.Automation;
 using ClopWindows.Core.Optimizers;
@@ -24,13 +23,11 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
     private readonly ClipboardMonitor _monitor;
     private readonly OptimisedFileRegistry _optimisedFiles;
     private readonly ILogger<ClipboardOptimisationService> _logger;
-    private readonly Channel<ClipboardSnapshot> _channel;
-    private readonly ConcurrentDictionary<string, ClipboardRequestContext> _pending = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, ClipboardItem> _pending = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, byte> _inFlightPaths = new(StringComparer.Ordinal);
     private readonly object _stateGate = new();
     private readonly object _settingsGate = new();
 
-    private Task? _processingTask;
     private bool _monitorRunning;
     private volatile bool _enableClipboard;
     private volatile bool _paused;
@@ -54,13 +51,6 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
         _monitor = monitor;
         _optimisedFiles = optimisedFiles;
         _logger = logger;
-        _channel = Channel.CreateUnbounded<ClipboardSnapshot>(new UnboundedChannelOptions
-        {
-            SingleReader = true,
-            SingleWriter = false,
-            AllowSynchronousContinuations = false
-        });
-
         SettingsHost.EnsureInitialized();
         RefreshSettings(updateMonitor: false);
 
@@ -74,10 +64,6 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
     {
         UpdateMonitorState();
 
-        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var linkedToken = linkedCts.Token;
-        _processingTask = Task.Run(() => ProcessLoopAsync(linkedToken), CancellationToken.None);
-
         try
         {
             await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(false);
@@ -87,21 +73,6 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
             // Expected on shutdown.
         }
 
-        linkedCts.Cancel();
-        _channel.Writer.TryComplete();
-
-        if (_processingTask is not null)
-        {
-            try
-            {
-                await _processingTask.ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                // ignore
-            }
-        }
-
         lock (_stateGate)
         {
             if (_monitorRunning)
@@ -112,26 +83,13 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
         }
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
         SettingsHost.SettingChanged -= OnSettingChanged;
         _monitor.ClipboardChanged -= HandleClipboardChanged;
         _coordinator.RequestCompleted -= OnCoordinatorRequestCompleted;
         _coordinator.RequestFailed -= OnCoordinatorRequestFailed;
 
-        _channel.Writer.TryComplete();
-        if (_processingTask is not null)
-        {
-            try
-            {
-                await _processingTask.ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                // ignore
-            }
-        }
-
         lock (_stateGate)
         {
             if (_monitorRunning)
@@ -140,40 +98,24 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
                 _monitorRunning = false;
             }
         }
-    }
 
-    private async Task ProcessLoopAsync(CancellationToken token)
-    {
-        try
-        {
-            await foreach (var snapshot in _channel.Reader.ReadAllAsync(token).ConfigureAwait(false))
-            {
-                if (token.IsCancellationRequested)
-                {
-                    break;
-                }
-
-                try
-                {
-                    ProcessSnapshot(snapshot);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error processing clipboard snapshot.");
-                }
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            // graceful shutdown
-        }
+        return ValueTask.CompletedTask;
     }
 
     private void HandleClipboardChanged(object? sender, ClipboardSnapshot snapshot)
     {
-        if (!_channel.Writer.TryWrite(snapshot))
+        _ = Task.Run(() => ProcessSnapshotSafe(snapshot));
+    }
+
+    private void ProcessSnapshotSafe(ClipboardSnapshot snapshot)
+    {
+        try
         {
-            _logger.LogWarning("Dropped clipboard snapshot because the processing queue is full.");
+            ProcessSnapshot(snapshot);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error processing clipboard snapshot.");
         }
     }
 
@@ -189,17 +131,17 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
 
     private async Task HandleCompletionAsync(OptimisationResult result)
     {
-        if (!_pending.TryRemove(result.RequestId, out var context))
+        if (!_pending.TryRemove(result.RequestId, out var item))
         {
             _logger.LogDebug("No pending clipboard context found for request {RequestId}", result.RequestId);
             return;
         }
 
-        _inFlightPaths.TryRemove(context.Item.SourcePath.Value, out _);
+        _inFlightPaths.TryRemove(item.SourcePath.Value, out _);
 
         try
         {
-            var sourcePath = context.Item.SourcePath;
+            var sourcePath = item.SourcePath;
             var finalPath = sourcePath;
 
             if (result.Status == OptimisationStatus.Succeeded)
@@ -207,18 +149,18 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
                 var output = result.OutputPath ?? sourcePath;
                 finalPath = output;
 
-                if (context.Item.IsImage && context.Item.Origin == ClipboardOrigin.Bitmap && _copyImageFilePath && _useCustomTemplate)
+                if (item.IsImage && item.Origin == ClipboardOrigin.Bitmap && _copyImageFilePath && _useCustomTemplate)
                 {
                     finalPath = RenameOptimisedClipboardImage(output);
                 }
 
                 if (_autoCopy)
                 {
-                    if (context.Item.IsImage)
+                    if (item.IsImage)
                     {
                         await CopyImageToClipboardAsync(finalPath).ConfigureAwait(false);
                     }
-                    else if (context.Item.IsVideo || context.Item.IsPdf)
+                    else if (item.IsVideo || item.IsPdf)
                     {
                         await CopyFileToClipboardAsync(finalPath).ConfigureAwait(false);
                     }
@@ -226,7 +168,7 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
 
                 RegisterOptimisedResult(finalPath);
 
-                if (context.Item.IsTemporary && !PathsEqual(sourcePath, finalPath))
+                if (item.IsTemporary && !PathsEqual(sourcePath, finalPath))
                 {
                     TryDeleteFile(sourcePath);
                 }
@@ -242,7 +184,7 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
                     _logger.LogWarning("Clipboard optimisation {RequestId} finished with status {Status}", result.RequestId, result.Status);
                 }
 
-                if (context.Item.IsTemporary)
+                if (item.IsTemporary)
                 {
                     TryDeleteFile(sourcePath);
                 }
@@ -429,7 +371,7 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
         OutputBehaviourSettings.ApplyTo(metadata);
 
         var request = new OptimisationRequest(item.ItemType, item.SourcePath, metadata: metadata);
-        _pending[request.RequestId] = new ClipboardRequestContext(item, DateTimeOffset.UtcNow);
+        _pending[request.RequestId] = item;
         var ticket = _coordinator.Enqueue(request);
 
         ticket.Completion.ContinueWith(_ => { }, TaskScheduler.Default);
@@ -692,6 +634,4 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
             }
         }
     }
-
-    private sealed record ClipboardRequestContext(ClipboardItem Item, DateTimeOffset EnqueuedAt);
 }
