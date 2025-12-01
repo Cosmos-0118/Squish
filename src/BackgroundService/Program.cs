@@ -6,8 +6,13 @@ using ClopWindows.BackgroundService.Clipboard;
 using ClopWindows.Core.Optimizers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using ClopWindows.Core.Shared.Logging;
+
+using var sharedLogging = SharedLogging.EnableSharedLogger("background-service");
 
 var builder = Host.CreateApplicationBuilder(args);
+builder.Logging.AddSharedFileLogger("background-service", LogLevel.Information);
 
 builder.Services.AddSingleton<IOptimiser, ImageOptimiser>();
 builder.Services.AddSingleton<IOptimiser, VideoOptimiser>();

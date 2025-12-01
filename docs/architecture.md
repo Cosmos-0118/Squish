@@ -44,3 +44,8 @@ This matrix maps every macOS Swift source file to the Windows project area that 
 - `App/Services/KeyboardShortcutService.cs` registers global shortcuts via `user32.RegisterHotKey`, using the shared `ShortcutCatalog` metadata and Windows `MOD_NOREPEAT` to prevent repeats.
 - Global "Sauce" shortcuts default to `Ctrl+Shift` combos (`Space`, `F`, `C`) that focus the main window, toggle floating results, and toggle the clipboard optimiser.
 - Pointer gestures mirror macOS drop-zone behaviour: standard drag drops onto the floating HUD, holding `Alt` reveals the full drop-zone overlay, and pressing `Ctrl` while dragging exposes preset zones. Right-click continues to surface the per-result context menu for restore/compare actions, matching SwiftUI interactions.
+
+## Logging
+
+- `Core/Shared/Logging/SharedLogging.cs` exposes `EnableSharedLogger(component)` for `Log.*` callsites and an `AddSharedFileLogger` extension for `ILoggingBuilder`. Both route writes into the repo-level `logs/` directory (or `%LOCALAPPDATA%\Clop\logs` when deployed) with per-component daily log files.
+- The WPF app, background worker, and CLI initialise the shared logger on startup so unhandled exceptions and `ILogger` error entries automatically land in the same log directory for easier debugging.

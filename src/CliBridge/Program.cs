@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using ClopWindows.Core.Optimizers;
 using ClopWindows.Core.Shared;
+using ClopWindows.Core.Shared.Logging;
 
 namespace ClopWindows.CliBridge;
 
@@ -14,6 +15,8 @@ internal static class Program
 {
     public static async Task<int> Main(string[] args)
     {
+        using var sharedLogging = SharedLogging.EnableSharedLogger("cli");
+
         if (!OperatingSystem.IsWindowsVersionAtLeast(6, 1))
         {
             Console.Error.WriteLine("Clop CLI requires Windows 7 or later.");
@@ -102,6 +105,7 @@ internal static class OptimiseCommandBuilder
             }
             catch (Exception ex)
             {
+                Log.Error("CLI optimise command failed", ex);
                 Console.Error.WriteLine($"[error] {ex.Message}");
                 context.ExitCode = 1;
             }

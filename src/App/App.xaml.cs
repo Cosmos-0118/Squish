@@ -11,6 +11,7 @@ using ClopWindows.BackgroundService.Clipboard;
 using ClopWindows.Core.Optimizers;
 using ClopWindows.Core.Settings;
 using ClopWindows.Core.Shared;
+using ClopWindows.Core.Shared.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -20,7 +21,7 @@ namespace ClopWindows.App;
 public partial class App : System.Windows.Application
 {
     private IHost? _host;
-    private SimpleFileLoggerProvider? _fileLoggerProvider;
+    private IDisposable? _sharedLogScope;
     private TrayIconService? _trayIconService;
 
     protected override void OnStartup(StartupEventArgs e)
@@ -29,34 +30,13 @@ public partial class App : System.Windows.Application
         SettingsHost.EnsureInitialized();
         ShortcutCatalog.Initialize();
 
-        var logDirectory = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Clop", "logs");
-        System.IO.Directory.CreateDirectory(logDirectory);
-        var logFilePath = System.IO.Path.Combine(logDirectory, $"app-{DateTime.UtcNow:yyyyMMdd}.log");
-        _fileLoggerProvider = new SimpleFileLoggerProvider(logFilePath);
-
-        SharedLogger.Sink = (level, message, context) =>
-        {
-            try
-            {
-                var contextText = context is null ? string.Empty : $" {context}";
-                var line = $"{DateTimeOffset.UtcNow:O} [{level}] Shared: {message}{contextText}";
-                _fileLoggerProvider?.WriteLine(line);
-            }
-            catch
-            {
-                // ignore logging failures
-            }
-        };
+        _sharedLogScope = SharedLogging.EnableSharedLogger("app");
 
         _host = Host.CreateDefaultBuilder(e.Args)
             .ConfigureLogging(logging =>
             {
-                logging.SetMinimumLevel(LogLevel.Information);
                 logging.AddDebug();
-                if (_fileLoggerProvider is not null)
-                {
-                    logging.AddProvider(_fileLoggerProvider);
-                }
+                logging.AddSharedFileLogger("app", LogLevel.Information);
             })
             .ConfigureServices(services =>
             {
@@ -113,7 +93,6 @@ public partial class App : System.Windows.Application
     {
         DispatcherUnhandledException -= OnDispatcherUnhandledException;
         AppDomain.CurrentDomain.UnhandledException -= OnUnhandledException;
-        SharedLogger.Sink = null;
 
         if (_host is not null)
         {
@@ -130,8 +109,8 @@ public partial class App : System.Windows.Application
         _trayIconService?.Dispose();
         _trayIconService = null;
 
-        _fileLoggerProvider?.Dispose();
-        _fileLoggerProvider = null;
+        _sharedLogScope?.Dispose();
+        _sharedLogScope = null;
 
         base.OnExit(e);
     }
