@@ -5,6 +5,7 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media.Animation;
 using ClopWindows.App.ViewModels;
+using ClopWindows.Core.Settings;
 
 namespace ClopWindows.App.Views.FloatingHud;
 
@@ -18,24 +19,49 @@ public partial class FloatingHudWindow : Window
         SourceInitialized += (_, _) => ApplyDarkModeHint();
     }
 
-    private FloatingHudViewModel? ViewModel => DataContext as FloatingHudViewModel;
-
-    private void OnLoaded(object sender, RoutedEventArgs e)
-    {
-        if (ViewModel is null || !ViewModel.IsPinned)
-        {
-            MoveToTopRight();
-        }
-    }
-
-    public void MoveToTopRight()
+    public void MoveToPlacement(FloatingHudPlacement placement)
     {
         var workArea = SystemParameters.WorkArea;
         var width = ActualWidth > 0 ? ActualWidth : Width;
         var height = ActualHeight > 0 ? ActualHeight : Height;
 
-        Left = workArea.Right - width - MarginFromScreen;
-        Top = workArea.Top + MarginFromScreen;
+        if (width <= 0)
+        {
+            width = Math.Max(Width, MinWidth);
+        }
+
+        if (height <= 0)
+        {
+            height = Math.Max(Height, MinHeight);
+        }
+
+        var horizontalMin = workArea.Left;
+        var horizontalMax = workArea.Right - width;
+        var verticalMin = workArea.Top;
+        var verticalMax = workArea.Bottom - height;
+
+        var left = Math.Clamp(workArea.Left + MarginFromScreen, horizontalMin, horizontalMax);
+        var right = Math.Clamp(workArea.Right - width - MarginFromScreen, horizontalMin, horizontalMax);
+        var centerX = Math.Clamp(workArea.Left + (workArea.Width - width) / 2, horizontalMin, horizontalMax);
+
+        var top = Math.Clamp(workArea.Top + MarginFromScreen, verticalMin, verticalMax);
+        var bottom = Math.Clamp(workArea.Bottom - height - MarginFromScreen, verticalMin, verticalMax);
+        var centerY = Math.Clamp(workArea.Top + (workArea.Height - height) / 2, verticalMin, verticalMax);
+
+        var (targetLeft, targetTop) = placement switch
+        {
+            FloatingHudPlacement.TopLeft => (left, top),
+            FloatingHudPlacement.TopCenter => (centerX, top),
+            FloatingHudPlacement.TopRight => (right, top),
+            FloatingHudPlacement.MiddleLeft => (left, centerY),
+            FloatingHudPlacement.MiddleRight => (right, centerY),
+            FloatingHudPlacement.BottomLeft => (left, bottom),
+            FloatingHudPlacement.BottomCenter => (centerX, bottom),
+            FloatingHudPlacement.BottomRight => (right, bottom),
+            _ => (right, top)
+        };
+
+        MoveTo(targetLeft, targetTop);
     }
 
     public void MoveTo(double left, double top)

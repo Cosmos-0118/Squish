@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -57,8 +56,6 @@ public sealed class FloatingHudController : IDisposable
         _coordinator.RequestCompleted += OnRequestCompleted;
         _coordinator.RequestFailed += OnRequestCompleted;
         SettingsHost.SettingChanged += OnSettingChanged;
-        _viewModel.PropertyChanged += OnViewModelPropertyChanged;
-        _window.LocationChanged += OnWindowLocationChanged;
 
         foreach (var request in _coordinator.PendingRequests)
         {
@@ -106,7 +103,6 @@ public sealed class FloatingHudController : IDisposable
         Dispatch(() =>
         {
             _viewModel.ResetLayout();
-            ClearPinnedLocation();
             PositionWindow();
             EnsureVisible(forceShow: true);
         });
@@ -140,35 +136,8 @@ public sealed class FloatingHudController : IDisposable
 
     private void PositionWindow()
     {
-        if (_viewModel.IsPinned)
-        {
-            if (!TryApplyPinnedPosition())
-            {
-                PersistPinnedLocation();
-            }
-
-            return;
-        }
-
-        _window.MoveToTopRight();
-    }
-
-    private bool TryApplyPinnedPosition()
-    {
-        var left = SettingsHost.Get(SettingsRegistry.FloatingHudPinnedLeft);
-        var top = SettingsHost.Get(SettingsRegistry.FloatingHudPinnedTop);
-        if (double.IsNaN(left) || double.IsNaN(top))
-        {
-            return false;
-        }
-
-        if (Math.Abs(_window.Left - left) < 0.5 && Math.Abs(_window.Top - top) < 0.5)
-        {
-            return true;
-        }
-
-        _window.MoveTo(left, top);
-        return true;
+        var placement = SettingsHost.Get(SettingsRegistry.FloatingHudPlacement);
+        _window.MoveToPlacement(placement);
     }
 
     private void OnProgressChanged(object? sender, OptimisationProgressEventArgs e)
@@ -359,9 +328,7 @@ public sealed class FloatingHudController : IDisposable
             return;
         }
 
-        if (string.Equals(e.Name, SettingsRegistry.FloatingHudPinned.Name, StringComparison.Ordinal) ||
-            string.Equals(e.Name, SettingsRegistry.FloatingHudPinnedLeft.Name, StringComparison.Ordinal) ||
-            string.Equals(e.Name, SettingsRegistry.FloatingHudPinnedTop.Name, StringComparison.Ordinal))
+        if (string.Equals(e.Name, SettingsRegistry.FloatingHudPlacement.Name, StringComparison.Ordinal))
         {
             Dispatch(PositionWindow);
         }
@@ -449,69 +416,6 @@ public sealed class FloatingHudController : IDisposable
         }
     }
 
-    private void PersistPinnedLocation()
-    {
-        if (!_viewModel.IsPinned)
-        {
-            return;
-        }
-
-        var left = _window.Left;
-        var top = _window.Top;
-        if (double.IsNaN(left) || double.IsNaN(top))
-        {
-            return;
-        }
-
-        var currentLeft = SettingsHost.Get(SettingsRegistry.FloatingHudPinnedLeft);
-        var currentTop = SettingsHost.Get(SettingsRegistry.FloatingHudPinnedTop);
-
-        if (double.IsNaN(currentLeft) || Math.Abs(currentLeft - left) > 0.5)
-        {
-            SettingsHost.Set(SettingsRegistry.FloatingHudPinnedLeft, left);
-        }
-
-        if (double.IsNaN(currentTop) || Math.Abs(currentTop - top) > 0.5)
-        {
-            SettingsHost.Set(SettingsRegistry.FloatingHudPinnedTop, top);
-        }
-    }
-
-    private static void ClearPinnedLocation()
-    {
-        SettingsHost.Set(SettingsRegistry.FloatingHudPinnedLeft, double.NaN);
-        SettingsHost.Set(SettingsRegistry.FloatingHudPinnedTop, double.NaN);
-    }
-
-    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        if (!string.Equals(e.PropertyName, nameof(FloatingHudViewModel.IsPinned), StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        Dispatch(() =>
-        {
-            if (_viewModel.IsPinned)
-            {
-                PersistPinnedLocation();
-            }
-            else
-            {
-                ClearPinnedLocation();
-                PositionWindow();
-            }
-        });
-    }
-
-    private void OnWindowLocationChanged(object? sender, EventArgs e)
-    {
-        if (_viewModel.IsPinned)
-        {
-            PersistPinnedLocation();
-        }
-    }
-
     private void Dispatch(Action action)
     {
         if (_window.Dispatcher.CheckAccess())
@@ -544,8 +448,6 @@ public sealed class FloatingHudController : IDisposable
         _coordinator.RequestCompleted -= OnRequestCompleted;
         _coordinator.RequestFailed -= OnRequestCompleted;
         SettingsHost.SettingChanged -= OnSettingChanged;
-        _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
-        _window.LocationChanged -= OnWindowLocationChanged;
 
         foreach (var delay in _dismissDelays.Values)
         {

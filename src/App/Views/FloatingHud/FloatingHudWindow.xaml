@@ -16,7 +16,6 @@
         MinWidth="320"
         Width="{Binding WindowWidth, Mode=TwoWay}"
         Height="{Binding WindowHeight, Mode=TwoWay}"
-        Loaded="OnLoaded"
         AutomationProperties.Name="{loc:Loc hud.title}">
     <shell:WindowChrome.WindowChrome>
         <shell:WindowChrome CaptionHeight="0"
@@ -131,13 +130,7 @@
                                FontSize="11"/>
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal">
-                    <ToggleButton Style="{StaticResource ToggleIconButtonStyle}"
-                                  IsChecked="{Binding IsPinned, Mode=TwoWay}"
-                                  Content=""
-                                  AutomationProperties.Name="{loc:Loc hud.pin.toggle}"
-                                  ToolTip="{loc:Loc hud.pin.tooltip}"/>
                     <Button Style="{StaticResource IconButtonStyle}"
-                            Margin="6,0,0,0"
                             Content=""
                             Click="OnHideClicked"
                             AutomationProperties.Name="{loc:Loc hud.hide.toggle}"

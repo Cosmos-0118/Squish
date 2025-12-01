@@ -51,20 +51,99 @@
                         <TextBlock Text="{loc:Loc settings.floatingHud.hideAfterSuffix}" Margin="8,0,0,0" VerticalAlignment="Center" Foreground="{DynamicResource Brush.SecondaryText}"/>
                     </StackPanel>
                     <StackPanel Margin="0,16,0,0">
-                        <TextBlock Text="{loc:Loc settings.floatingHud.pinHeading}" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}"/>
-                        <TextBlock Text="{loc:Loc settings.floatingHud.pinDescription}"
-                               FontSize="12"
-                               Foreground="{DynamicResource Brush.SecondaryText}"
-                               Margin="0,4,0,12"
-                               TextWrapping="Wrap"/>
-                        <Button Content="{loc:Loc settings.floatingHud.resetLayout}"
-                            Command="{Binding ResetHudLayoutCommand}"
-                            Padding="18,6"
-                            HorizontalAlignment="Left"/>
+                        <TextBlock x:Name="FloatingHudOpacityLabel"
+                                   Text="{loc:Loc settings.floatingHud.opacity}"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource Brush.PrimaryText}"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,6,0,0" VerticalAlignment="Center">
+                            <Slider Width="220"
+                                    Minimum="0.35"
+                                    Maximum="1"
+                                    TickFrequency="0.05"
+                                    IsSnapToTickEnabled="True"
+                                    Value="{Binding FloatingHudOpacity, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                    AutomationProperties.LabeledBy="{Binding ElementName=FloatingHudOpacityLabel}"
+                                    AutomationProperties.HelpText="{loc:Loc settings.floatingHud.opacity.help}"/>
+                            <TextBlock Text="{Binding FloatingHudOpacity, StringFormat={}{0:P0}}"
+                                       Margin="12,0,0,0"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource Brush.SecondaryText}"/>
+                        </StackPanel>
+                        <TextBlock Text="{loc:Loc settings.floatingHud.opacity.help}"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource Brush.SecondaryText}"
+                                   Margin="0,4,0,0"
+                                   TextWrapping="Wrap"/>
+                    </StackPanel>
+                    <StackPanel Margin="0,16,0,0">
+                        <TextBlock x:Name="FloatingHudPlacementLabel"
+                                   Text="{loc:Loc settings.floatingHud.placementHeading}"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource Brush.PrimaryText}"/>
+                        <TextBlock Text="{loc:Loc settings.floatingHud.placementDescription}"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource Brush.SecondaryText}"
+                                   Margin="0,4,0,12"
+                                   TextWrapping="Wrap"/>
+                        <ListBox ItemsSource="{Binding FloatingHudPlacementOptions}"
+                                 SelectedValuePath="Placement"
+                                 SelectedValue="{Binding FloatingHudPlacement, Mode=TwoWay}"
+                                 BorderThickness="0"
+                                 Background="Transparent"
+                                 Margin="0,0,0,12"
+                                 HorizontalContentAlignment="Stretch"
+                                 AutomationProperties.LabeledBy="{Binding ElementName=FloatingHudPlacementLabel}">
+                            <ListBox.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel/>
+                                </ItemsPanelTemplate>
+                            </ListBox.ItemsPanel>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding DisplayName}"
+                                               TextAlignment="Center"
+                                               FontWeight="SemiBold"/>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem">
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                    <Setter Property="VerticalContentAlignment" Value="Center"/>
+                                    <Setter Property="Foreground" Value="{DynamicResource Brush.PrimaryText}"/>
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="ListBoxItem">
+                                                <Border x:Name="Chrome"
+                                                        Background="{DynamicResource Brush.FieldBackground}"
+                                                        BorderBrush="{DynamicResource Brush.FieldBorder}"
+                                                        BorderThickness="1"
+                                                        CornerRadius="10"
+                                                        Margin="0,0,8,8"
+                                                        Padding="16,10">
+                                                    <ContentPresenter HorizontalAlignment="Center"
+                                                                      VerticalAlignment="Center"/>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsSelected" Value="True">
+                                                        <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource Brush.PrimaryButtonBackground}"/>
+                                                        <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource Brush.PrimaryButtonBackground}"/>
+                                                        <Setter Property="Foreground" Value="{DynamicResource Brush.PrimaryButtonForeground}"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                        </ListBox>
                         <TextBlock Text="{Binding FloatingHudPlacementStatus}"
-                                   Margin="0,8,0,0"
                                    FontSize="12"
                                    Foreground="{DynamicResource Brush.SecondaryText}"/>
+                        <Button Content="{loc:Loc settings.floatingHud.resetLayout}"
+                                Command="{Binding ResetHudLayoutCommand}"
+                                Padding="18,6"
+                                Margin="0,12,0,0"
+                                HorizontalAlignment="Left"/>
                     </StackPanel>
                 </StackPanel>
             </Border>

@@ -15,7 +15,6 @@ public sealed class FloatingHudViewModel : ObservableObject
     private readonly ObservableCollection<FloatingResultViewModel> _results;
     private double _windowWidth;
     private double _windowHeight;
-    private bool _isPinned;
     private bool _suppressSettingsSync;
 
     public FloatingHudViewModel()
@@ -38,8 +37,6 @@ public sealed class FloatingHudViewModel : ObservableObject
             MaxWindowHeight,
             SettingsRegistry.FloatingHudHeightScale);
 
-        _isPinned = SettingsHost.Get(SettingsRegistry.FloatingHudPinned);
-
         SettingsHost.SettingChanged += OnSettingChanged;
     }
 
@@ -57,18 +54,6 @@ public sealed class FloatingHudViewModel : ObservableObject
     {
         get => _windowHeight;
         set => UpdateDimension(ref _windowHeight, value, MinWindowHeight, MaxWindowHeight, SettingsRegistry.FloatingHudHeight);
-    }
-
-    public bool IsPinned
-    {
-        get => _isPinned;
-        set
-        {
-            if (SetProperty(ref _isPinned, value) && !_suppressSettingsSync)
-            {
-                SettingsHost.Set(SettingsRegistry.FloatingHudPinned, value);
-            }
-        }
     }
 
     private void UpdateDimension(ref double field, double rawValue, double min, double max, SettingKey<double> key)
@@ -133,7 +118,6 @@ public sealed class FloatingHudViewModel : ObservableObject
             _suppressSettingsSync = true;
             WindowWidth = SettingsRegistry.DefaultFloatingHudWidth;
             WindowHeight = SettingsRegistry.DefaultFloatingHudHeight;
-            IsPinned = false;
         }
         finally
         {
@@ -142,9 +126,7 @@ public sealed class FloatingHudViewModel : ObservableObject
 
         SettingsHost.Set(SettingsRegistry.FloatingHudWidth, WindowWidth);
         SettingsHost.Set(SettingsRegistry.FloatingHudHeight, WindowHeight);
-        SettingsHost.Set(SettingsRegistry.FloatingHudPinned, IsPinned);
-        SettingsHost.Set(SettingsRegistry.FloatingHudPinnedLeft, double.NaN);
-        SettingsHost.Set(SettingsRegistry.FloatingHudPinnedTop, double.NaN);
+        SettingsHost.Set(SettingsRegistry.FloatingHudPlacement, FloatingHudPlacement.TopRight);
     }
 
     private void OnSettingChanged(object? sender, SettingChangedEventArgs e)
@@ -153,11 +135,7 @@ public sealed class FloatingHudViewModel : ObservableObject
 
         try
         {
-            if (string.Equals(e.Name, SettingsRegistry.FloatingHudPinned.Name, StringComparison.Ordinal))
-            {
-                IsPinned = SettingsHost.Get(SettingsRegistry.FloatingHudPinned);
-            }
-            else if (string.Equals(e.Name, SettingsRegistry.FloatingHudWidth.Name, StringComparison.Ordinal))
+            if (string.Equals(e.Name, SettingsRegistry.FloatingHudWidth.Name, StringComparison.Ordinal))
             {
                 WindowWidth = SettingsHost.Get(SettingsRegistry.FloatingHudWidth);
             }

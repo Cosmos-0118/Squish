@@ -100,9 +100,7 @@ public static class SettingsRegistry
     public static readonly SettingKey<int> AutoHideFloatingResultsAfter = Int("autoHideFloatingResultsAfter", 30);
     public static readonly SettingKey<int> AutoHideClipboardResultAfter = Int("autoHideClipboardResultAfter", 3);
     public static readonly SettingKey<int> AutoClearCompactResultsAfter = Int("autoClearAllCompactResultsAfter", 120);
-    public static readonly SettingKey<bool> FloatingHudPinned = Bool("floatingHudPinned", false);
-    public static readonly SettingKey<double> FloatingHudPinnedLeft = new("floatingHudPinnedLeft", double.NaN);
-    public static readonly SettingKey<double> FloatingHudPinnedTop = new("floatingHudPinnedTop", double.NaN);
+    public static readonly SettingKey<FloatingHudPlacement> FloatingHudPlacement = new("floatingHudPlacement", global::ClopWindows.Core.Settings.FloatingHudPlacement.TopRight);
 
     public static readonly SettingKey<bool> AutoCopyToClipboard = Bool("autoCopyToClipboard", true);
     public static readonly SettingKey<bool> CliInstalled = Bool("cliInstalled", true);
@@ -197,9 +195,7 @@ public static class SettingsRegistry
         AutoHideFloatingResultsAfter,
         AutoHideClipboardResultAfter,
         AutoClearCompactResultsAfter,
-        FloatingHudPinned,
-        FloatingHudPinnedLeft,
-        FloatingHudPinnedTop,
+        FloatingHudPlacement,
         FloatingHudScale,
         FloatingHudWidthScale,
         FloatingHudHeightScale,

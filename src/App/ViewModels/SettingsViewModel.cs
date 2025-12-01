@@ -32,12 +32,13 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     private readonly FloatingHudController _hudController;
     private readonly IFolderPicker _folderPicker;
     private ThemeOptionViewModel? _selectedThemeOption;
-    private bool _floatingHudPinned;
+    private FloatingHudPlacement _floatingHudPlacement;
 
     public IReadOnlyList<ShortcutPreferenceViewModel> AppShortcutPreferences { get; }
     public IReadOnlyList<ShortcutPreferenceViewModel> GlobalShortcutPreferences { get; }
     public IReadOnlyList<ThemeOptionViewModel> ThemeOptions { get; }
     public RelayCommand ResetHudLayoutCommand { get; }
+    public IReadOnlyList<FloatingHudPlacementOptionViewModel> FloatingHudPlacementOptions { get; }
     public ObservableCollection<string> ImageDirectories { get; }
     public ObservableCollection<string> VideoDirectories { get; }
     public ObservableCollection<string> PdfDirectories { get; }
@@ -55,6 +56,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         SettingsHost.EnsureInitialized();
         ShortcutCatalog.Initialize();
         ResetHudLayoutCommand = new RelayCommand(_ => ResetHudLayout(), _ => EnableFloatingResults);
+        FloatingHudPlacementOptions = new ReadOnlyCollection<FloatingHudPlacementOptionViewModel>(CreatePlacementOptions());
         ThemeOptions = new ReadOnlyCollection<ThemeOptionViewModel>(CreateThemeOptions());
         ImageDirectories = new ObservableCollection<string>();
         VideoDirectories = new ObservableCollection<string>();
@@ -302,21 +304,24 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         }
     }
 
-    public bool FloatingHudPinned
+    public FloatingHudPlacement FloatingHudPlacement
     {
-        get => _floatingHudPinned;
-        private set
+        get => _floatingHudPlacement;
+        set
         {
-            if (SetProperty(ref _floatingHudPinned, value))
+            if (SetProperty(ref _floatingHudPlacement, value))
             {
+                if (!_suppressStoreUpdates)
+                {
+                    SettingsHost.Set(SettingsRegistry.FloatingHudPlacement, value);
+                }
+
                 OnPropertyChanged(nameof(FloatingHudPlacementStatus));
             }
         }
     }
 
-    public string FloatingHudPlacementStatus => FloatingHudPinned
-        ? ClopStringCatalog.Get("settings.floatingHud.pinStatusPinned")
-        : ClopStringCatalog.Get("settings.floatingHud.pinStatusUnpinned");
+    public string FloatingHudPlacementStatus => ClopStringCatalog.Get(GetPlacementResourceKey("placementStatus", FloatingHudPlacement));
 
     private void Load()
     {
@@ -325,7 +330,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         EnableFloatingResults = SettingsHost.Get(SettingsRegistry.EnableFloatingResults);
         AutoHideFloatingResults = SettingsHost.Get(SettingsRegistry.AutoHideFloatingResults);
         AutoHideFloatingResultsAfter = SettingsHost.Get(SettingsRegistry.AutoHideFloatingResultsAfter);
-        FloatingHudPinned = SettingsHost.Get(SettingsRegistry.FloatingHudPinned);
+        FloatingHudPlacement = SettingsHost.Get(SettingsRegistry.FloatingHudPlacement);
         EnableClipboardOptimiser = SettingsHost.Get(SettingsRegistry.EnableClipboardOptimiser);
         AutoCopyToClipboard = SettingsHost.Get(SettingsRegistry.AutoCopyToClipboard);
         OptimiseVideoClipboard = SettingsHost.Get(SettingsRegistry.OptimiseVideoClipboard);
@@ -360,8 +365,8 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
             case var name when name == SettingsRegistry.AutoHideFloatingResultsAfter.Name:
                 AutoHideFloatingResultsAfter = SettingsHost.Get(SettingsRegistry.AutoHideFloatingResultsAfter);
                 break;
-            case var name when name == SettingsRegistry.FloatingHudPinned.Name:
-                FloatingHudPinned = SettingsHost.Get(SettingsRegistry.FloatingHudPinned);
+            case var name when name == SettingsRegistry.FloatingHudPlacement.Name:
+                FloatingHudPlacement = SettingsHost.Get(SettingsRegistry.FloatingHudPlacement);
                 break;
             case var name when name == SettingsRegistry.EnableClipboardOptimiser.Name:
                 EnableClipboardOptimiser = SettingsHost.Get(SettingsRegistry.EnableClipboardOptimiser);
@@ -512,5 +517,38 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
             new(AppThemeMode.Dark, ClopStringCatalog.Get("settings.theme.dark")),
             new(AppThemeMode.HighSaturation, ClopStringCatalog.Get("settings.theme.highSaturation"))
         };
+    }
+
+    private static List<FloatingHudPlacementOptionViewModel> CreatePlacementOptions()
+    {
+        return new List<FloatingHudPlacementOptionViewModel>
+        {
+            CreatePlacementOption(FloatingHudPlacement.TopLeft),
+            CreatePlacementOption(FloatingHudPlacement.TopCenter),
+            CreatePlacementOption(FloatingHudPlacement.TopRight),
+            CreatePlacementOption(FloatingHudPlacement.MiddleLeft),
+            CreatePlacementOption(FloatingHudPlacement.MiddleRight),
+            CreatePlacementOption(FloatingHudPlacement.BottomLeft),
+            CreatePlacementOption(FloatingHudPlacement.BottomCenter),
+            CreatePlacementOption(FloatingHudPlacement.BottomRight)
+        };
+    }
+
+    private static FloatingHudPlacementOptionViewModel CreatePlacementOption(FloatingHudPlacement placement)
+    {
+        var displayName = ClopStringCatalog.Get(GetPlacementResourceKey("placementOption", placement));
+        return new FloatingHudPlacementOptionViewModel(placement, displayName);
+    }
+
+    private static string GetPlacementResourceKey(string prefix, FloatingHudPlacement placement)
+    {
+        var suffix = placement.ToString();
+        if (string.IsNullOrEmpty(suffix))
+        {
+            return string.Empty;
+        }
+
+        var token = char.ToLowerInvariant(suffix[0]) + suffix[1..];
+        return $"settings.floatingHud.{prefix}.{token}";
     }
 }
