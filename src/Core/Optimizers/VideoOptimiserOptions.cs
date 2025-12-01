@@ -107,6 +107,12 @@ public sealed record VideoOptimiserOptions
 
     public bool EnableTwoPassEncoding { get; init; } = true;
 
+    /// <summary>
+    /// Minimum duration (in seconds) before two-pass encoding is considered. Short clips finish faster with a single pass.
+    /// Set to 0 to always allow two-pass.
+    /// </summary>
+    public double TwoPassMinimumDurationSeconds { get; init; } = 45d;
+
     public bool EnableSceneCutAwareBitrate { get; init; } = true;
 
     public int SoftwareLookaheadFrames { get; init; } = 32;

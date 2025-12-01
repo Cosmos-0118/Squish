@@ -347,7 +347,7 @@ public sealed class VideoOptimiser : IOptimiser
         var filters = BuildFilters(maxWidth, maxHeight, playbackSpeed, options.EnforceEvenDimensions, capFps, targetFps, frameDecimation);
 
         var lookahead = DetermineLookahead(options, encoderSelection);
-        var useTwoPass = ShouldUseTwoPass(options, encoderSelection, aggressive);
+        var useTwoPass = ShouldUseTwoPass(options, encoderSelection, aggressive, probeInfo);
 
         var audioPlan = BuildAudioPlan(metadata, options, removeAudio, outputExtension, encoderSelection);
         var softwareFallback = encoderSelection.UseHardwareEncoder
@@ -655,7 +655,7 @@ public sealed class VideoOptimiser : IOptimiser
         return Math.Max(0, Math.Min(baseline, encoderSelection.SuggestedLookaheadFrames));
     }
 
-    private static bool ShouldUseTwoPass(VideoOptimiserOptions options, VideoEncoderSelection selection, bool aggressive)
+    private static bool ShouldUseTwoPass(VideoOptimiserOptions options, VideoEncoderSelection selection, bool aggressive, VideoProbeInfo? probeInfo)
     {
         if (!options.EnableTwoPassEncoding)
         {
@@ -663,6 +663,13 @@ public sealed class VideoOptimiser : IOptimiser
         }
 
         if (selection.UseHardwareEncoder || !selection.SupportsTwoPass)
+        {
+            return false;
+        }
+
+        if (options.TwoPassMinimumDurationSeconds > 0
+            && probeInfo?.DurationSeconds is double duration
+            && duration < options.TwoPassMinimumDurationSeconds)
         {
             return false;
         }

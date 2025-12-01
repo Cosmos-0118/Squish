@@ -8,7 +8,6 @@ using ClopWindows.App.ViewModels;
 using ClopWindows.App.Views.FloatingHud;
 using ClopWindows.Core.Optimizers;
 using ClopWindows.Core.Settings;
-using ClopWindows.Core.Shared;
 using Microsoft.Extensions.Logging;
 
 namespace ClopWindows.App.Services;
@@ -28,7 +27,6 @@ public sealed class FloatingHudController : IDisposable
 
     private bool _isInitialized;
     private bool _isDisposed;
-    private bool _overlayVisible;
 
     public FloatingHudController(
         FloatingHudViewModel viewModel,
@@ -53,8 +51,6 @@ public sealed class FloatingHudController : IDisposable
 
         _isInitialized = true;
         _window.DataContext = _viewModel;
-        _window.ExternalFilesDropped += OnExternalFilesDropped;
-        _window.DropOverlayVisibilityChanged += OnDropOverlayVisibilityChanged;
 
         _coordinator.ProgressChanged += OnProgressChanged;
         _coordinator.RequestCompleted += OnRequestCompleted;
@@ -68,7 +64,6 @@ public sealed class FloatingHudController : IDisposable
 
         EnsureVisible();
         ApplyAutoHideSettings();
-        UpdateGhostMode();
     }
 
     public void Show()
@@ -98,7 +93,6 @@ public sealed class FloatingHudController : IDisposable
         {
             RegisterRequest(request);
             EnsureVisible();
-            UpdateGhostMode();
         });
     }
 
@@ -117,6 +111,16 @@ public sealed class FloatingHudController : IDisposable
     private void EnsureVisible(bool forceShow = false)
     {
         if (!SettingsHost.Get(SettingsRegistry.EnableFloatingResults))
+        {
+            if (_window.IsVisible)
+            {
+                _window.Hide();
+            }
+
+            return;
+        }
+
+        if (!forceShow && _results.Count == 0)
         {
             if (_window.IsVisible)
             {
@@ -159,11 +163,6 @@ public sealed class FloatingHudController : IDisposable
 
             EnsureVisible();
         });
-    }
-
-    private void OnExternalFilesDropped(object? sender, IReadOnlyList<string> paths)
-    {
-        Dispatch(() => ProcessDroppedFiles(paths));
     }
 
     private void OnRequestCompleted(object? sender, OptimisationCompletedEventArgs e)
@@ -224,7 +223,6 @@ public sealed class FloatingHudController : IDisposable
         _requests[request.RequestId] = request;
         _viewModel.InsertResult(viewModel);
         TrimOverflow();
-        UpdateGhostMode();
     }
 
     private OptimisationRequest? FindRequest(string requestId)
@@ -287,7 +285,7 @@ public sealed class FloatingHudController : IDisposable
 
         _requests.Remove(viewModel.RequestId);
         _viewModel.RemoveResult(viewModel);
-        UpdateGhostMode();
+        EnsureVisible();
     }
 
     private void TrimOverflow()
@@ -313,7 +311,6 @@ public sealed class FloatingHudController : IDisposable
                 else
                 {
                     EnsureVisible(forceShow: true);
-                    UpdateGhostMode();
                 }
             });
 
@@ -354,89 +351,6 @@ public sealed class FloatingHudController : IDisposable
                 ScheduleAutoDismiss(result);
             }
         }
-    }
-
-    private void ProcessDroppedFiles(IEnumerable<string> paths)
-    {
-        var enqueued = 0;
-
-        foreach (var path in paths)
-        {
-            var request = CreateRequestForPath(path);
-            if (request is null)
-            {
-                continue;
-            }
-
-            RegisterRequest(request);
-            _ = _coordinator.Enqueue(request);
-            enqueued++;
-        }
-
-        if (enqueued > 0)
-        {
-            EnsureVisible(forceShow: true);
-            UpdateGhostMode();
-        }
-    }
-
-    private OptimisationRequest? CreateRequestForPath(string rawPath)
-    {
-        if (string.IsNullOrWhiteSpace(rawPath))
-        {
-            return null;
-        }
-
-        try
-        {
-            var filePath = FilePath.From(rawPath);
-            var itemType = ResolveItemType(filePath);
-            if (itemType is null)
-            {
-                _logger.LogInformation("Skipping dropped file {FilePath} because the format is unsupported.", rawPath);
-                return null;
-            }
-
-            var metadata = new Dictionary<string, object?>(StringComparer.Ordinal)
-            {
-                ["source"] = "hud-drop"
-            };
-
-            OutputBehaviourSettings.ApplyTo(metadata);
-
-            return new OptimisationRequest(itemType.Value, filePath, metadata: metadata);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to enqueue dropped file {FilePath}", rawPath);
-            return null;
-        }
-    }
-
-    private static ItemType? ResolveItemType(FilePath path)
-    {
-        if (MediaFormats.IsImage(path))
-        {
-            return ItemType.Image;
-        }
-
-        if (MediaFormats.IsVideo(path))
-        {
-            return ItemType.Video;
-        }
-
-        if (MediaFormats.IsPdf(path))
-        {
-            return ItemType.Pdf;
-        }
-
-        return null;
-    }
-
-    private void OnDropOverlayVisibilityChanged(object? sender, bool isVisible)
-    {
-        _overlayVisible = isVisible;
-        UpdateGhostMode();
     }
 
     private void ScheduleAutoDismiss(FloatingResultViewModel viewModel)
@@ -498,12 +412,6 @@ public sealed class FloatingHudController : IDisposable
         }
     }
 
-    private void UpdateGhostMode()
-    {
-        var shouldGhost = !_viewModel.HasResults && !_overlayVisible;
-        _window.SetGhostMode(shouldGhost);
-    }
-
     private void Dispatch(Action action)
     {
         if (_window.Dispatcher.CheckAccess())
@@ -536,8 +444,6 @@ public sealed class FloatingHudController : IDisposable
         _coordinator.RequestCompleted -= OnRequestCompleted;
         _coordinator.RequestFailed -= OnRequestCompleted;
         SettingsHost.SettingChanged -= OnSettingChanged;
-        _window.ExternalFilesDropped -= OnExternalFilesDropped;
-        _window.DropOverlayVisibilityChanged -= OnDropOverlayVisibilityChanged;
 
         foreach (var delay in _dismissDelays.Values)
         {
