@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
+using ClopWindows.Core.Shared;
 
 namespace ClopWindows.Core.Optimizers;
 
@@ -134,6 +135,12 @@ public sealed class OptimisationCoordinator : IAsyncDisposable
 
             if (result.Status == OptimisationStatus.Succeeded)
             {
+                var target = result.OutputPath ?? request.SourcePath;
+                if (target.Exists)
+                {
+                    ClopOptimisationMarker.TryMark(target);
+                }
+
                 RequestCompleted?.Invoke(this, new OptimisationCompletedEventArgs(result));
             }
             else

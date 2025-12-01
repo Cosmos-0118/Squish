@@ -350,6 +350,12 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
             return true;
         }
 
+        if (ClopOptimisationMarker.HasValidMarker(filePath))
+        {
+            _logger.LogTrace("Skipping clipboard source {Path}; optimisation marker present.", filePath.Value);
+            return true;
+        }
+
         if (_optimisedFiles.WasPathRecentlyOptimised(filePath))
         {
             _logger.LogTrace("Skipping clipboard source {Path}; recently optimised.", filePath.Value);

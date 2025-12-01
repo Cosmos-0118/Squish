@@ -203,6 +203,12 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
             return;
         }
 
+        if (ClopOptimisationMarker.HasValidMarker(path))
+        {
+            _logger.LogTrace("Skipping {Path}; optimisation marker present.", path.Value);
+            return;
+        }
+
         if (!MatchesMediaType(fileEvent.ItemType, path))
         {
             return;
