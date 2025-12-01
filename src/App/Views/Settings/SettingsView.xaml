@@ -331,27 +331,6 @@
                 </StackPanel>
             </Border>
 
-            <Border Margin="0,16,0,0"
-                    Padding="20"
-                    Background="{DynamicResource Brush.SurfaceSecondaryBackground}"
-                    BorderBrush="{DynamicResource Brush.SurfaceBorder}"
-                    BorderThickness="1"
-                    CornerRadius="12">
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <Border Width="56" Height="56" Background="{DynamicResource Brush.ContentBackground}" CornerRadius="12" BorderBrush="{DynamicResource Brush.SurfaceBorder}" BorderThickness="1">
-                        <Image Source="/Assets/Brand/Assets.xcassets/lowtech.imageset/typewriter.png" Stretch="Uniform" Margin="4" AutomationProperties.Name="Low-tech logo"/>
-                    </Border>
-                    <StackPanel Margin="12,0,0,0">
-                        <TextBlock Text="{loc:Loc settings.about.title}" FontSize="14" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}" TextWrapping="Wrap"/>
-                        <TextBlock Text="{loc:Loc settings.about.subtitle}" FontSize="12" Foreground="{DynamicResource Brush.SecondaryText}" TextWrapping="Wrap"/>
-                        <TextBlock>
-                            <Hyperlink NavigateUri="https://lowtechguys.com/" RequestNavigate="Hyperlink_RequestNavigate">
-                                <Run Text="{loc:Loc settings.about.link}"/>
-                            </Hyperlink>
-                        </TextBlock>
-                    </StackPanel>
-                </StackPanel>
-            </Border>
         </StackPanel>
     </ScrollViewer>
 </UserControl>
