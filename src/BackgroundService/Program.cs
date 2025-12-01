@@ -19,6 +19,7 @@ builder.Services.AddSingleton(provider =>
     return new OptimisationCoordinator(optimisers, degreeOfParallelism: Math.Max(Environment.ProcessorCount / 2, 2));
 });
 
+builder.Services.AddSingleton<OptimisedFileRegistry>();
 builder.Services.AddSingleton<ClipboardMonitor>();
 builder.Services.AddSingleton<ClipboardOptimisationService>();
 builder.Services.AddSingleton<DirectoryOptimisationService>();

@@ -18,18 +18,17 @@ namespace ClopWindows.BackgroundService.Automation;
 public sealed class DirectoryOptimisationService : IAsyncDisposable
 {
     private static readonly TimeSpan FileReadyRetryDelay = TimeSpan.FromMilliseconds(200);
-    private static readonly TimeSpan RecentlyOptimisedWindow = TimeSpan.FromMinutes(2);
 
     private readonly OptimisationCoordinator _coordinator;
     private readonly ILogger<DirectoryOptimisationService> _logger;
     private readonly Channel<FileEvent> _channel;
+    private readonly OptimisedFileRegistry _optimisedFiles;
     private readonly object _watcherGate = new();
     private readonly object _settingsGate = new();
     private readonly Dictionary<string, DirectoryWatcher> _watchers = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, DirectoryRequestContext> _pending = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, byte> _activePaths = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<ItemType, int> _activeCounts = new();
-    private readonly ConcurrentDictionary<string, DateTimeOffset> _recentlyOptimised = new(StringComparer.OrdinalIgnoreCase);
 
     private Task? _processingTask;
     private const int MaxRetryAttempts = 24;
@@ -52,9 +51,10 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
     private int _maxVideoFileCount;
     private int _maxPdfFileCount;
 
-    public DirectoryOptimisationService(OptimisationCoordinator coordinator, ILogger<DirectoryOptimisationService> logger)
+    public DirectoryOptimisationService(OptimisationCoordinator coordinator, OptimisedFileRegistry optimisedFiles, ILogger<DirectoryOptimisationService> logger)
     {
         _coordinator = coordinator;
+        _optimisedFiles = optimisedFiles;
         _logger = logger;
         _channel = Channel.CreateUnbounded<FileEvent>(new UnboundedChannelOptions
         {
@@ -252,6 +252,12 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
                 return;
             }
 
+            if (MatchesRecentFingerprint(path))
+            {
+                _logger.LogTrace("Skipping {Path}; matches fingerprint from a recent optimisation.", path.Value);
+                return;
+            }
+
             if (!TryReserveSlot(fileEvent.ItemType))
             {
                 _logger.LogWarning("Skipping {Path}; maximum concurrent {Type} jobs reached.", path.Value, fileEvent.ItemType);
@@ -320,6 +326,22 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
         };
     }
 
+    private static bool IsClopGeneratedFile(FilePath path)
+    {
+        var fileName = path.Name;
+        if (string.IsNullOrWhiteSpace(fileName))
+        {
+            return false;
+        }
+
+        if (fileName.EndsWith(".clop", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return fileName.Contains(".clop.", StringComparison.OrdinalIgnoreCase);
+    }
+
     private bool WithinSizeLimit(ItemType type, long bytes)
     {
         var sizeMb = bytes / (1024d * 1024d);
@@ -361,17 +383,18 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
 
     private bool WasRecentlyOptimised(FilePath path)
     {
-        if (_recentlyOptimised.TryGetValue(path.Value, out var timestamp))
-        {
-            if (DateTimeOffset.UtcNow - timestamp <= RecentlyOptimisedWindow)
-            {
-                return true;
-            }
+        return _optimisedFiles.WasPathRecentlyOptimised(path);
+    }
 
-            _recentlyOptimised.TryRemove(path.Value, out _);
+    private bool MatchesRecentFingerprint(FilePath path)
+    {
+        if (!_optimisedFiles.HasFingerprintCandidates)
+        {
+            return false;
         }
 
-        return false;
+        return FileFingerprint.TryCreate(path, out var fingerprint) &&
+               _optimisedFiles.WasFingerprintRecentlyOptimised(fingerprint);
     }
 
     private async Task<FileInfo?> WaitForFileReadyAsync(FilePath path, CancellationToken token)
@@ -480,19 +503,7 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
 
     private void CleanupRecent()
     {
-        if (_recentlyOptimised.IsEmpty)
-        {
-            return;
-        }
-
-        var threshold = DateTimeOffset.UtcNow - RecentlyOptimisedWindow;
-        foreach (var kvp in _recentlyOptimised)
-        {
-            if (kvp.Value < threshold)
-            {
-                _recentlyOptimised.TryRemove(kvp.Key, out _);
-            }
-        }
+        _optimisedFiles.Cleanup();
     }
 
     private void OnCoordinatorRequestFinished(object? sender, OptimisationCompletedEventArgs e)
@@ -507,12 +518,12 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
 
         if (context.Path.Exists)
         {
-            _recentlyOptimised[context.Path.Value] = DateTimeOffset.UtcNow;
+            _optimisedFiles.RegisterPath(context.Path);
         }
 
         if (e.Result.OutputPath is { } outputPath)
         {
-            _recentlyOptimised[outputPath.Value] = DateTimeOffset.UtcNow;
+            _optimisedFiles.RegisterPath(outputPath);
         }
 
         if (e.Result.Status == OptimisationStatus.Succeeded)
@@ -672,12 +683,7 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
 
     public void RegisterExternalOptimisation(FilePath path)
     {
-        if (string.IsNullOrWhiteSpace(path.Value))
-        {
-            return;
-        }
-
-        _recentlyOptimised[path.Value] = DateTimeOffset.UtcNow;
+        _optimisedFiles.RegisterPath(path);
     }
 
     private void OnWatcherEvent(FileEvent fileEvent)

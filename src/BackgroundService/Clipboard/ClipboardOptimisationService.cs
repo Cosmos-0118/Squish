@@ -7,6 +7,7 @@ using System.Runtime.Versioning;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
+using ClopWindows.BackgroundService.Automation;
 using ClopWindows.Core.Optimizers;
 using ClopWindows.Core.Settings;
 using ClopWindows.Core.Shared;
@@ -21,6 +22,7 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
 {
     private readonly OptimisationCoordinator _coordinator;
     private readonly ClipboardMonitor _monitor;
+    private readonly OptimisedFileRegistry _optimisedFiles;
     private readonly ILogger<ClipboardOptimisationService> _logger;
     private readonly Channel<ClipboardSnapshot> _channel;
     private readonly ConcurrentDictionary<string, ClipboardRequestContext> _pending = new(StringComparer.Ordinal);
@@ -45,10 +47,12 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
     public ClipboardOptimisationService(
         OptimisationCoordinator coordinator,
         ClipboardMonitor monitor,
+        OptimisedFileRegistry optimisedFiles,
         ILogger<ClipboardOptimisationService> logger)
     {
         _coordinator = coordinator;
         _monitor = monitor;
+        _optimisedFiles = optimisedFiles;
         _logger = logger;
         _channel = Channel.CreateUnbounded<ClipboardSnapshot>(new UnboundedChannelOptions
         {
@@ -219,6 +223,8 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
                         await CopyFileToClipboardAsync(finalPath).ConfigureAwait(false);
                     }
                 }
+
+                RegisterOptimisedResult(finalPath);
 
                 if (context.Item.IsTemporary && !PathsEqual(sourcePath, finalPath))
                 {
@@ -602,6 +608,21 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
         {
             // Best effort cleanup
         }
+    }
+
+    private void RegisterOptimisedResult(FilePath path)
+    {
+        if (!path.Exists)
+        {
+            return;
+        }
+
+        if (_optimisedFiles.TryRegisterFingerprint(path))
+        {
+            return;
+        }
+
+        _optimisedFiles.RegisterPath(path);
     }
 
     private static bool PathsEqual(FilePath left, FilePath right) => string.Equals(left.Value, right.Value, StringComparison.OrdinalIgnoreCase);

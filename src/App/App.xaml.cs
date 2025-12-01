@@ -70,6 +70,7 @@ public partial class App : System.Windows.Application
                     return new OptimisationCoordinator(optimisers, Math.Max(Environment.ProcessorCount / 2, 2));
                 });
 
+                services.AddSingleton<OptimisedFileRegistry>();
                 services.AddSingleton<ClipboardMonitor>();
                 services.AddSingleton<ClipboardOptimisationService>();
                 services.AddSingleton<DirectoryOptimisationService>();
