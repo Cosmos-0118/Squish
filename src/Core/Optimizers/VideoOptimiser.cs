@@ -246,15 +246,31 @@ public sealed class VideoOptimiser : IOptimiser
         }
 
         var diff = originalSize - optimisedSize;
-        if (diff <= 0 && plan.RequireSizeReduction)
+        var summary = $"{originalSize.HumanSize()} → {optimisedSize.HumanSize()}";
+
+        string DescribeDelta()
         {
-            return "Re-encoded";
+            if (diff > 0)
+            {
+                return $"Saved {diff.HumanSize()} ({summary})";
+            }
+
+            if (diff < 0)
+            {
+                return $"Larger by {Math.Abs(diff).HumanSize()} ({summary})";
+            }
+
+            return $"No size change ({summary})";
         }
 
-        var descriptor = diff > 0
-            ? $"Saved {diff.HumanSize()} ({originalSize.HumanSize()} → {optimisedSize.HumanSize()})"
-            : "Re-encoded";
-        return isGif ? $"GIF ready – {descriptor}" : descriptor;
+        if (diff <= 0 && plan.RequireSizeReduction)
+        {
+            var descriptor = DescribeDelta();
+            return isGif ? $"GIF ready – {descriptor}" : descriptor;
+        }
+
+        var successDescriptor = DescribeDelta();
+        return isGif ? $"GIF ready – {successDescriptor}" : successDescriptor;
     }
 
     private static void CopyTimestamps(FilePath source, FilePath destination, bool preserve)
@@ -1322,9 +1338,16 @@ internal sealed class ExternalVideoToolchain : IVideoToolchain
     {
         var args = new List<string>
         {
-            "-y",
-            "-i", plan.SourcePath.Value
+            "-y"
         };
+
+        var (inputScoped, encoderScoped) = PartitionCodecArguments(plan.VideoCodecArguments);
+        if (inputScoped.Count > 0)
+        {
+            args.AddRange(inputScoped);
+        }
+
+        args.AddRange(new[] { "-i", plan.SourcePath.Value });
 
         if (plan.RequiresFilters)
         {
@@ -1332,7 +1355,7 @@ internal sealed class ExternalVideoToolchain : IVideoToolchain
             args.Add(string.Join(',', plan.Filters));
         }
 
-        args.AddRange(plan.VideoCodecArguments);
+        args.AddRange(encoderScoped);
 
         args.AddRange(new[] { "-map", "0:v" });
 
@@ -1347,6 +1370,37 @@ internal sealed class ExternalVideoToolchain : IVideoToolchain
 
         args.AddRange(new[] { "-movflags", "+faststart", "-progress", "pipe:2", "-nostats", "-hide_banner", "-stats_period", "0.2", output.Value });
         return args;
+    }
+
+    private static (List<string> InputScoped, List<string> EncoderScoped) PartitionCodecArguments(IReadOnlyList<string> arguments)
+    {
+        var inputScoped = new List<string>();
+        var encoderScoped = new List<string>();
+
+        for (var i = 0; i < arguments.Count; i++)
+        {
+            var flag = arguments[i];
+            if (IsInputScopedCodecOption(flag))
+            {
+                inputScoped.Add(flag);
+                if (i + 1 < arguments.Count)
+                {
+                    inputScoped.Add(arguments[++i]);
+                }
+                continue;
+            }
+
+            encoderScoped.Add(flag);
+        }
+
+        return (inputScoped, encoderScoped);
+    }
+
+    private static bool IsInputScopedCodecOption(string value)
+    {
+        return value.Equals("-hwaccel", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("-hwaccel_output_format", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("-init_hw_device", StringComparison.OrdinalIgnoreCase);
     }
 
     private List<string> BuildRemuxArguments(VideoOptimiserPlan plan, FilePath output)

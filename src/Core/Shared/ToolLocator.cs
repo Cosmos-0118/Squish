@@ -7,7 +7,7 @@ namespace ClopWindows.Core.Shared;
 
 internal static class ToolLocator
 {
-    private static readonly string[] RepoFallbackSegments = { "..", "..", "..", ".." };
+    private static readonly string[] RepoFallbackSegments = { "..", "..", "..", "..", ".." };
     private static readonly string[] AssemblyFallbackSegments = { "..", ".." };
 
     public static IEnumerable<string> EnumeratePossibleFiles(string? baseDirectory, string[] relativeSegments)

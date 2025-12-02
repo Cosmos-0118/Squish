@@ -11,6 +11,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AssemblyName>ClopWindows</AssemblyName>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <ApplicationIcon>..\..\installer\assets\Clop.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>

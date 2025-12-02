@@ -163,11 +163,11 @@ internal sealed class WatchCommandHandler
         var imageOptions = _options.Aggressive
             ? ImageOptimiserOptions.Default with { TargetJpegQuality = 68, RequireSizeImprovement = true }
             : ImageOptimiserOptions.Default;
-        var videoOptions = VideoOptimiserOptions.Default with
+        var videoOptions = (VideoOptimiserOptions.Default with
         {
             AggressiveQuality = _options.Aggressive,
             RemoveAudio = _options.RemoveAudio
-        };
+        }).WithHardwareOverride();
         var pdfOptions = PdfOptimiserOptions.Default with { AggressiveByDefault = _options.Aggressive };
 
         await using var coordinator = new OptimisationCoordinator(

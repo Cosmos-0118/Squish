@@ -6,7 +6,7 @@ and licenses are shipped within the installer and portable packages.
 
 | Component   | Version / Source                                                                                     | License  | Notes                                                                                                   |
 | ----------- | ---------------------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------- |
-| ffmpeg      | https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip                                     | GPL/LGPL | Audio/video transcoder used for GIF/video pipelines and ffprobe metadata probes.                        |
+| ffmpeg      | https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip    | GPL/LGPL | Audio/video transcoder used for GIF/video pipelines and ffprobe metadata probes.                        |
 | mozjpeg     | https://github.com/garyzyg/mozjpeg-windows/releases                                                  | IJG/BSD  | `cjpeg-static.exe` build of mozjpeg used for high-quality JPEG output when advanced codecs are enabled. |
 | libwebp     | https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-1.4.0-windows-x64.zip | BSD-3    | Provides `cwebp.exe` + DLLs for WebP export and animated WebP replacements.                             |
 | libavif     | https://github.com/AOMediaCodec/libavif/releases/download/v1.3.0/windows-artifacts.zip               | BSD-2    | Supplies `avifenc.exe` for AVIF output in the advanced codec pipeline.                                  |

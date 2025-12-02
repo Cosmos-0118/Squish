@@ -234,8 +234,7 @@ public sealed record VideoOptimiserOptions
             return localCandidate;
         }
 
-        var resolved = ToolLocator.ResolveOnPath(fileName) ?? ToolLocator.ResolveOnPath(defaultCommand);
-        return resolved ?? defaultCommand;
+        throw new FileNotFoundException($"Unable to locate required tool '{fileName}'. Run scripts/fetch-tools.ps1 and ensure the binaries remain under the 'tools' directory.");
     }
 
     private static string? ResolveFromEnvironment(IEnumerable<string> variableNames)

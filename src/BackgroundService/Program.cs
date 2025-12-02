@@ -15,7 +15,7 @@ var builder = Host.CreateApplicationBuilder(args);
 builder.Logging.AddSharedFileLogger("background-service", LogLevel.Information);
 
 builder.Services.AddSingleton<IOptimiser, ImageOptimiser>();
-builder.Services.AddSingleton<IOptimiser, VideoOptimiser>();
+builder.Services.AddSingleton<IOptimiser>(_ => new VideoOptimiser(VideoOptimiserOptions.Default.WithHardwareOverride()));
 builder.Services.AddSingleton<IOptimiser, PdfOptimiser>();
 
 builder.Services.AddSingleton(provider =>

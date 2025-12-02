@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading;
 using ClopWindows.Core.Processes;
 using ClopWindows.Core.Shared;
@@ -183,6 +185,7 @@ public static class VideoHardwareDetector
 {
     private static readonly object Gate = new();
     private static VideoHardwareCapabilities? _cached;
+    private static string? _cachedKey;
 
     public static VideoHardwareCapabilities Detect(string ffmpegPath, bool probe)
     {
@@ -191,9 +194,11 @@ public static class VideoHardwareDetector
             return VideoHardwareCapabilities.CpuOnly;
         }
 
+        var cacheKey = BuildCacheKey(ffmpegPath);
+
         lock (Gate)
         {
-            if (_cached is not null)
+            if (_cached is not null && string.Equals(_cachedKey, cacheKey, StringComparison.Ordinal))
             {
                 return _cached;
             }
@@ -210,27 +215,52 @@ public static class VideoHardwareDetector
                     ? ParseLines(hwAccelResult.StandardOutput)
                     : Array.Empty<string>();
 
+                var hasNvDriver = HasVendorLibrary("nvcuda.dll") || HasVendorLibrary("nvEncodeAPI64.dll");
+                var hasAmfDriver = HasVendorLibrary("amfrt64.dll") || HasVendorLibrary("amfrt32.dll");
+                var hasQsvDriver = HasVendorLibrary("libmfxhw64.dll") || HasVendorLibrary("libmfxhw32.dll");
+
                 var caps = new VideoHardwareCapabilities(
-                    SupportsNvenc: encoders.Any(line => line.Contains("nvenc", StringComparison.OrdinalIgnoreCase)),
-                    SupportsAmf: encoders.Any(line => line.Contains("_amf", StringComparison.OrdinalIgnoreCase)),
-                    SupportsQsv: encoders.Any(line => line.Contains("_qsv", StringComparison.OrdinalIgnoreCase)),
+                    SupportsNvenc: hasNvDriver && encoders.Any(line => line.Contains("nvenc", StringComparison.OrdinalIgnoreCase)),
+                    SupportsAmf: hasAmfDriver && encoders.Any(line => line.Contains("_amf", StringComparison.OrdinalIgnoreCase)),
+                    SupportsQsv: hasQsvDriver && encoders.Any(line => line.Contains("_qsv", StringComparison.OrdinalIgnoreCase)),
                     SupportsDxva: hwAccels.Any(line => line.Contains("d3d11", StringComparison.OrdinalIgnoreCase) || line.Contains("dxva2", StringComparison.OrdinalIgnoreCase)),
-                    SupportsAv1Nvenc: encoders.Any(line => line.Contains("av1_nvenc", StringComparison.OrdinalIgnoreCase)),
-                    SupportsAv1Amf: encoders.Any(line => line.Contains("av1_amf", StringComparison.OrdinalIgnoreCase)),
-                    SupportsAv1Qsv: encoders.Any(line => line.Contains("av1_qsv", StringComparison.OrdinalIgnoreCase)),
-                    SupportsHevcNvenc: encoders.Any(line => line.Contains("hevc_nvenc", StringComparison.OrdinalIgnoreCase)),
-                    SupportsHevcAmf: encoders.Any(line => line.Contains("hevc_amf", StringComparison.OrdinalIgnoreCase)),
-                    SupportsHevcQsv: encoders.Any(line => line.Contains("hevc_qsv", StringComparison.OrdinalIgnoreCase)));
+                    SupportsAv1Nvenc: hasNvDriver && encoders.Any(line => line.Contains("av1_nvenc", StringComparison.OrdinalIgnoreCase)),
+                    SupportsAv1Amf: hasAmfDriver && encoders.Any(line => line.Contains("av1_amf", StringComparison.OrdinalIgnoreCase)),
+                    SupportsAv1Qsv: hasQsvDriver && encoders.Any(line => line.Contains("av1_qsv", StringComparison.OrdinalIgnoreCase)),
+                    SupportsHevcNvenc: hasNvDriver && encoders.Any(line => line.Contains("hevc_nvenc", StringComparison.OrdinalIgnoreCase)),
+                    SupportsHevcAmf: hasAmfDriver && encoders.Any(line => line.Contains("hevc_amf", StringComparison.OrdinalIgnoreCase)),
+                    SupportsHevcQsv: hasQsvDriver && encoders.Any(line => line.Contains("hevc_qsv", StringComparison.OrdinalIgnoreCase)));
 
                 _cached = caps;
+                _cachedKey = cacheKey;
                 return caps;
             }
             catch (Exception ex)
             {
                 Log.Warning($"Failed to probe ffmpeg hardware capabilities: {ex.Message}");
                 _cached = VideoHardwareCapabilities.CpuOnly;
+                _cachedKey = cacheKey;
                 return _cached;
             }
+        }
+    }
+
+    private static string BuildCacheKey(string ffmpegPath)
+    {
+        if (string.IsNullOrWhiteSpace(ffmpegPath))
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            var info = new FileInfo(ffmpegPath);
+            var timestamp = info.Exists ? info.LastWriteTimeUtc.Ticks : 0L;
+            return $"{ffmpegPath}|{timestamp}";
+        }
+        catch
+        {
+            return ffmpegPath;
         }
     }
 
@@ -247,5 +277,28 @@ public static class VideoHardwareDetector
             .Where(line => !string.IsNullOrWhiteSpace(line))
             .ToArray();
         return new ReadOnlyCollection<string>(lines);
+    }
+
+    private static bool HasVendorLibrary(string libraryName)
+    {
+        if (string.IsNullOrWhiteSpace(libraryName))
+        {
+            return false;
+        }
+
+        try
+        {
+            if (NativeLibrary.TryLoad(libraryName, out var handle))
+            {
+                NativeLibrary.Free(handle);
+                return true;
+            }
+        }
+        catch
+        {
+            // ignored — absence means the driver is missing.
+        }
+
+        return false;
     }
 }

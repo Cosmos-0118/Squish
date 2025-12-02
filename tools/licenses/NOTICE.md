@@ -5,14 +5,14 @@ This folder lists the upstream licenses for the third-party utilities that
 are redistributed verbatim from their original publishers; no source
 changes are applied.
 
-| Component   | Upstream URL                             | License                                       | Notes                                                                                  |
-| ----------- | ---------------------------------------- | --------------------------------------------- | -------------------------------------------------------------------------------------- |
-| ffmpeg      | https://ffmpeg.org/                      | GNU GPL/LGPL (depending on configured codecs) | The "release essentials" package from gyan.dev includes GPL code; retain full notices. |
-| mozjpeg     | https://github.com/mozilla/mozjpeg       | IJG / BSD-style                               | Windows build sourced from `garyzyg/mozjpeg-windows` (`mozjpeg-x64.zip`).              |
-| libwebp     | https://developers.google.com/speed/webp | BSD 3-Clause                                  | Use Google's official `libwebp-1.4.0-windows-x64` distribution.                        |
-| libavif     | https://github.com/AOMediaCodec/libavif  | BSD 2-Clause                                  | Alliance for Open Media's `windows-artifacts.zip` provides `avifenc.exe`.              |
-| Ghostscript | https://www.ghostscript.com/             | GNU AGPL v3.0                                 | Commercial licenses available from Artifex.                                            |
-| qpdf        | https://github.com/qpdf/qpdf             | Apache License 2.0                            | Official `qpdf-12.2.0-msvc64` archives include NOTICE + DLL dependencies.              |
+| Component   | Upstream URL                             | License                                       | Notes                                                                                 |
+| ----------- | ---------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------- |
+| ffmpeg      | https://ffmpeg.org/                      | GNU GPL/LGPL (depending on configured codecs) | Bundled via BtbN's `ffmpeg-master-latest-win64-gpl` archive which enables GPL codecs. |
+| mozjpeg     | https://github.com/mozilla/mozjpeg       | IJG / BSD-style                               | Windows build sourced from `garyzyg/mozjpeg-windows` (`mozjpeg-x64.zip`).             |
+| libwebp     | https://developers.google.com/speed/webp | BSD 3-Clause                                  | Use Google's official `libwebp-1.4.0-windows-x64` distribution.                       |
+| libavif     | https://github.com/AOMediaCodec/libavif  | BSD 2-Clause                                  | Alliance for Open Media's `windows-artifacts.zip` provides `avifenc.exe`.             |
+| Ghostscript | https://www.ghostscript.com/             | GNU AGPL v3.0                                 | Commercial licenses available from Artifex.                                           |
+| qpdf        | https://github.com/qpdf/qpdf             | Apache License 2.0                            | Official `qpdf-12.2.0-msvc64` archives include NOTICE + DLL dependencies.             |
 
 Each entry below reproduces the text required by the upstream license.
 
@@ -23,7 +23,7 @@ Each entry below reproduces the text required by the upstream license.
 FFmpeg is licensed under the GNU Lesser General Public License (LGPL) version 2.1
 or later. However, some configurations enable optional GPL components which bring
 the entire binary under the GNU General Public License version 2 or later. The
-"release-essentials" ZIP from gyan.dev includes GPL code. Consult
+`ffmpeg-master-latest-win64-gpl` includes GPL code. Consult
 <https://ffmpeg.org/legal.html> for the authoritative terms.
 
 ---
