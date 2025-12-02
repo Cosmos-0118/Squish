@@ -9,6 +9,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using ClopWindows.Core.Settings;
 using ClopWindows.Core.Shared;
 
 namespace ClopWindows.Core.Optimizers;
@@ -70,24 +71,80 @@ public sealed class VideoOptimiser : IOptimiser
         var tempOutput = FilePath.TempFile("clop-video", plan.OutputExtension, addUniqueSuffix: true);
         tempOutput.EnsureParentDirectoryExists();
 
+        var currentPlan = plan;
+        var originalSize = SafeFileSize(plan.SourcePath);
+        long optimisedSize = 0;
+        var hardwareRetryCount = 0;
+
         try
         {
-            var toolchainResult = await _toolchain.TranscodeAsync(plan, tempOutput, context, cancellationToken).ConfigureAwait(false);
-            if (!toolchainResult.Success)
+            while (true)
             {
-                return OptimisationResult.Failure(request.RequestId, toolchainResult.ErrorMessage ?? "Video optimisation failed");
+                var toolchainResult = await _toolchain.TranscodeAsync(currentPlan, tempOutput, context, cancellationToken).ConfigureAwait(false);
+                if (!toolchainResult.Success)
+                {
+                    return OptimisationResult.Failure(request.RequestId, toolchainResult.ErrorMessage ?? "Video optimisation failed");
+                }
+
+                if (!File.Exists(tempOutput.Value))
+                {
+                    return OptimisationResult.Failure(request.RequestId, "Video optimiser produced no output file");
+                }
+
+                optimisedSize = SafeFileSize(tempOutput);
+
+                if (ShouldRetryHardwareSavings(_options, currentPlan, originalSize, optimisedSize, hardwareRetryCount))
+                {
+                    if (TryCreateTightenedHardwarePlan(currentPlan, _options) is { } tightenedPlan)
+                    {
+                        hardwareRetryCount++;
+                        context.ReportProgress(8, "Reducing hardware bitrate");
+                        TryDelete(tempOutput);
+                        currentPlan = tightenedPlan;
+                        continue;
+                    }
+                }
+
+                plan = currentPlan;
+                break;
             }
 
-            if (!File.Exists(tempOutput.Value))
+            var savingsPercent = CalculateSavingsPercent(originalSize, optimisedSize);
+            var requiresFallback = plan.UseHardwareAcceleration
+                && plan.SoftwareFallback is not null
+                && plan.RequireSizeReduction
+                && (optimisedSize >= originalSize
+                    || (savingsPercent.HasValue && savingsPercent.Value < _options.HardwareMinimumSavingsPercent));
+
+            if (requiresFallback)
             {
-                return OptimisationResult.Failure(request.RequestId, "Video optimiser produced no output file");
+                context.ReportProgress(10, "Retrying with software encoder");
+                TryDelete(tempOutput);
+
+                var softwareFallback = plan.SoftwareFallback!;
+                var fallbackArgs = BuildVideoCodecArguments(_options, softwareFallback, plan.AggressiveQuality, plan.LookaheadFrames);
+                var fallbackPlan = plan with
+                {
+                    Encoder = softwareFallback,
+                    SoftwareFallback = null,
+                    UseHardwareAcceleration = softwareFallback.UseHardwareEncoder,
+                    VideoCodecArguments = fallbackArgs
+                };
+
+                var fallbackResult = await _toolchain.TranscodeAsync(fallbackPlan, tempOutput, context, cancellationToken).ConfigureAwait(false);
+                if (!fallbackResult.Success)
+                {
+                    return OptimisationResult.Failure(request.RequestId, fallbackResult.ErrorMessage ?? "Software fallback failed");
+                }
+
+                plan = fallbackPlan;
+                optimisedSize = SafeFileSize(tempOutput);
+                savingsPercent = CalculateSavingsPercent(originalSize, optimisedSize);
             }
 
             var outputPlan = OptimisedOutputPlanner.Plan(plan.SourcePath, plan.OutputExtension, request.Metadata, BuildCopyOutputPath);
             var finalOutput = outputPlan.Destination;
             finalOutput.EnsureParentDirectoryExists();
-            var originalSize = SafeFileSize(plan.SourcePath);
-            var optimisedSize = SafeFileSize(tempOutput);
 
             var requireSizeCheck = plan.RequireSizeReduction && !plan.ForceMp4;
             if (requireSizeCheck && optimisedSize >= originalSize)
@@ -344,6 +401,8 @@ public sealed class VideoOptimiser : IOptimiser
             ? options.DefaultVideoExtension
             : requestedExtension.Trim().TrimStart('.');
 
+        var encoderPreset = ParseEncoderPreset(metadata, options.EncoderPreset);
+
         var codecOverride = ParseCodec(ReadString(metadata, "video.codec"));
 
         if (options.EnableFormatSpecificTuning && probeInfo?.Video is not null)
@@ -353,7 +412,8 @@ public sealed class VideoOptimiser : IOptimiser
 
         var animatedFormat = DetermineAnimatedFormat(mode, metadata, options);
         var hardware = options.HardwareOverride ?? VideoHardwareDetector.Detect(options.FfmpegPath, options.ProbeHardwareCapabilities);
-        var encoderSelection = SelectEncoder(options, hardware, aggressive, forceMp4, requestedExtension, codecOverride);
+        var encoderSelection = SelectEncoder(options, hardware, aggressive, forceMp4, requestedExtension, codecOverride, encoderPreset);
+        encoderSelection = ApplyHardwareBitrateTarget(options, encoderSelection, probeInfo);
 
         var outputExtension = mode == VideoOptimiserMode.Gif
             ? ResolveAnimatedExtension(animatedFormat)
@@ -411,6 +471,17 @@ public sealed class VideoOptimiser : IOptimiser
         }
 
         return plan;
+    }
+
+    private static VideoEncoderPreset ParseEncoderPreset(IReadOnlyDictionary<string, object?> metadata, VideoEncoderPreset fallback)
+    {
+        var raw = ReadString(metadata, "video.encoderPreset");
+        if (!string.IsNullOrWhiteSpace(raw) && Enum.TryParse<VideoEncoderPreset>(raw, ignoreCase: true, out var preset))
+        {
+            return preset;
+        }
+
+        return fallback;
     }
 
     private static void ApplyFormatSpecificHeuristics(OptimisationRequest request, VideoProbeInfo probeInfo, VideoOptimiserOptions options, ref bool forceMp4, ref string requestedExtension, ref VideoCodec? codecOverride, bool aggressive)
@@ -756,6 +827,8 @@ public sealed class VideoOptimiser : IOptimiser
     {
         var args = new List<string>();
 
+        var usingBitrateTarget = selection.TargetBitrateKbps.HasValue;
+
         if (selection.UseHardwareEncoder)
         {
             if (!string.IsNullOrWhiteSpace(selection.HardwareAcceleration))
@@ -773,13 +846,24 @@ public sealed class VideoOptimiser : IOptimiser
             args.Add("-c:v");
             args.Add(selection.VideoEncoder);
 
-            args.Add(selection.RateControlFlag);
-            args.Add(selection.Quality.ToInvariantString());
-
-            if (selection.RateControlFlag.Equals("-cq", StringComparison.OrdinalIgnoreCase))
+            if (usingBitrateTarget)
             {
-                args.Add("-b:v");
-                args.Add("0");
+                AppendBitrateArguments(args, selection.TargetBitrateKbps!.Value, options);
+            }
+            else
+            {
+                if (!string.IsNullOrWhiteSpace(selection.RateControlFlag))
+                {
+                    args.Add(selection.RateControlFlag);
+                    var rateControlValue = selection.RateControlValueOverride ?? selection.Quality.ToInvariantString();
+                    args.Add(rateControlValue);
+
+                    if (selection.RateControlFlag.Equals("-cq", StringComparison.OrdinalIgnoreCase))
+                    {
+                        args.Add("-b:v");
+                        args.Add("0");
+                    }
+                }
             }
 
             if (lookahead.HasValue && lookahead.Value > 0)
@@ -799,8 +883,19 @@ public sealed class VideoOptimiser : IOptimiser
             args.Add("-c:v");
             args.Add(selection.VideoEncoder);
 
-            args.Add(selection.RateControlFlag);
-            args.Add(selection.Quality.ToInvariantString());
+            if (usingBitrateTarget)
+            {
+                AppendBitrateArguments(args, selection.TargetBitrateKbps!.Value, options);
+            }
+            else
+            {
+                if (!string.IsNullOrWhiteSpace(selection.RateControlFlag))
+                {
+                    args.Add(selection.RateControlFlag);
+                    var rateControlValue = selection.RateControlValueOverride ?? selection.Quality.ToInvariantString();
+                    args.Add(rateControlValue);
+                }
+            }
 
             args.Add("-preset");
             args.Add(GetSoftwarePreset(options, selection.Codec, aggressive));
@@ -829,6 +924,19 @@ public sealed class VideoOptimiser : IOptimiser
         return args;
     }
 
+    private static void AppendBitrateArguments(List<string> args, int targetKbps, VideoOptimiserOptions options)
+    {
+        var maxrate = (int)Math.Max(targetKbps, Math.Round(targetKbps * options.HardwareBitrateMaxrateHeadroom, MidpointRounding.AwayFromZero));
+        var bufsize = (int)Math.Max(targetKbps, Math.Round(targetKbps * options.HardwareBitrateBufferMultiplier, MidpointRounding.AwayFromZero));
+
+        args.Add("-b:v");
+        args.Add($"{targetKbps}k");
+        args.Add("-maxrate");
+        args.Add($"{maxrate}k");
+        args.Add("-bufsize");
+        args.Add($"{bufsize}k");
+    }
+
     private static string GetSoftwarePreset(VideoOptimiserOptions options, VideoCodec codec, bool aggressive) => codec switch
     {
         VideoCodec.Hevc => aggressive ? options.SoftwarePresetHevcAggressive : options.SoftwarePresetHevcGentle,
@@ -837,12 +945,13 @@ public sealed class VideoOptimiser : IOptimiser
         _ => aggressive ? options.SoftwarePresetAggressive : options.SoftwarePresetGentle
     };
 
-    private static VideoEncoderSelection SelectEncoder(VideoOptimiserOptions options, VideoHardwareCapabilities hardware, bool aggressive, bool forceMp4, string requestedExtension, VideoCodec? overrideCodec)
+    private static VideoEncoderSelection SelectEncoder(VideoOptimiserOptions options, VideoHardwareCapabilities hardware, bool aggressive, bool forceMp4, string requestedExtension, VideoCodec? overrideCodec, VideoEncoderPreset preset)
     {
         var candidates = BuildCodecPriorityList(options, aggressive, requestedExtension, overrideCodec);
         foreach (var codec in candidates)
         {
-            if (TrySelectHardwareEncoder(options, hardware, codec, aggressive, forceMp4, requestedExtension, out var hardwareSelection))
+            if (preset != VideoEncoderPreset.Cpu
+                && TrySelectHardwareEncoder(options, hardware, codec, aggressive, forceMp4, requestedExtension, preset, out var hardwareSelection))
             {
                 return hardwareSelection;
             }
@@ -898,73 +1007,249 @@ public sealed class VideoOptimiser : IOptimiser
         }
     }
 
-    private static bool TrySelectHardwareEncoder(VideoOptimiserOptions options, VideoHardwareCapabilities hardware, VideoCodec codec, bool aggressive, bool forceMp4, string requestedExtension, out VideoEncoderSelection selection)
+    private static double? CalculateSavingsPercent(long originalSize, long optimisedSize)
+    {
+        if (originalSize <= 0 || optimisedSize <= 0 || optimisedSize >= originalSize)
+        {
+            return null;
+        }
+
+        var diff = originalSize - optimisedSize;
+        return (diff / (double)originalSize) * 100d;
+    }
+
+    private static bool ShouldRetryHardwareSavings(VideoOptimiserOptions options, VideoOptimiserPlan plan, long originalSize, long optimisedSize, int attemptCount)
+    {
+        if (!plan.UseHardwareAcceleration
+            || !plan.RequireSizeReduction
+            || plan.Encoder.TargetBitrateKbps is null
+            || options.HardwareBitrateRetryLimit <= 0
+            || options.HardwareMinimumSavingsPercent <= 0)
+        {
+            return false;
+        }
+
+        if (attemptCount >= options.HardwareBitrateRetryLimit)
+        {
+            return false;
+        }
+
+        var savingsPercent = CalculateSavingsPercent(originalSize, optimisedSize);
+        return savingsPercent.HasValue && savingsPercent.Value < options.HardwareMinimumSavingsPercent;
+    }
+
+    private static VideoOptimiserPlan? TryCreateTightenedHardwarePlan(VideoOptimiserPlan plan, VideoOptimiserOptions options)
+    {
+        if (plan.Encoder.TargetBitrateKbps is not int current || current <= options.HardwareBitrateFloorKbps)
+        {
+            return null;
+        }
+
+        var reductionRatio = options.HardwareBitrateRetryReductionRatio;
+        if (reductionRatio <= 0 || reductionRatio >= 1)
+        {
+            reductionRatio = 0.75;
+        }
+
+        var next = (int)Math.Round(current * reductionRatio, MidpointRounding.AwayFromZero);
+        next = Math.Max(options.HardwareBitrateFloorKbps, next);
+
+        if (next >= current)
+        {
+            next = Math.Max(options.HardwareBitrateFloorKbps, current - 1);
+        }
+
+        if (next <= 0 || next >= current)
+        {
+            return null;
+        }
+
+        var updatedEncoder = plan.Encoder with { TargetBitrateKbps = next };
+        var updatedArgs = BuildVideoCodecArguments(options, updatedEncoder, plan.AggressiveQuality, plan.LookaheadFrames);
+        return plan with { Encoder = updatedEncoder, VideoCodecArguments = updatedArgs };
+    }
+
+    private static VideoEncoderSelection ApplyHardwareBitrateTarget(VideoOptimiserOptions options, VideoEncoderSelection selection, VideoProbeInfo? probeInfo)
+    {
+        if (!selection.UseHardwareEncoder)
+        {
+            return selection;
+        }
+
+        var sourceBitrate = EstimateSourceBitrateKbps(probeInfo);
+        int target;
+
+        if (sourceBitrate.HasValue && sourceBitrate.Value > 0)
+        {
+            var scaled = (int)Math.Round(sourceBitrate.Value * options.HardwareBitrateReductionRatio, MidpointRounding.AwayFromZero);
+            target = Math.Clamp(scaled, options.HardwareBitrateFloorKbps, options.HardwareBitrateCeilingKbps);
+        }
+        else
+        {
+            var fallback = (int)Math.Round(options.HardwareBitrateCeilingKbps * options.HardwareBitrateReductionRatio, MidpointRounding.AwayFromZero);
+            target = Math.Clamp(fallback, options.HardwareBitrateFloorKbps, options.HardwareBitrateCeilingKbps);
+        }
+
+        return target > 0
+            ? selection with { TargetBitrateKbps = target }
+            : selection;
+    }
+
+    private static int? EstimateSourceBitrateKbps(VideoProbeInfo? probeInfo)
+    {
+        if (probeInfo is null)
+        {
+            return null;
+        }
+
+        if (probeInfo.Video?.Bitrate is long videoBitrate && videoBitrate > 0)
+        {
+            return (int)Math.Max(1, videoBitrate / 1000);
+        }
+
+        if (probeInfo.ContainerBitrate.HasValue && probeInfo.ContainerBitrate.Value > 0)
+        {
+            return (int)Math.Max(1, probeInfo.ContainerBitrate.Value / 1000);
+        }
+
+        if (probeInfo.ContainerSize.HasValue && probeInfo.ContainerSize.Value > 0 && probeInfo.DurationSeconds is > 0)
+        {
+            var bitsPerSecond = (probeInfo.ContainerSize.Value * 8d) / probeInfo.DurationSeconds.Value;
+            return (int)Math.Max(1, bitsPerSecond / 1000d);
+        }
+
+        return null;
+    }
+
+    private static bool TrySelectHardwareEncoder(VideoOptimiserOptions options, VideoHardwareCapabilities hardware, VideoCodec codec, bool aggressive, bool forceMp4, string requestedExtension, VideoEncoderPreset preset, out VideoEncoderSelection selection)
     {
         selection = null!;
-        if (!options.UseHardwareAcceleration || !hardware.HasAnyHardware)
+        if (!options.UseHardwareAcceleration || !hardware.HasAnyHardware || preset == VideoEncoderPreset.Cpu)
         {
             return false;
         }
 
         var container = ResolveContainerForCodec(codec, requestedExtension, forceMp4);
+        int BuildHardwareQuality(VideoCodec targetCodec, int baseline, int offset = 2)
+        {
+            var adjusted = AdjustHardwareQuality(baseline, aggressive, offset);
+            return HardwareRateControlHelper.GetQuality(targetCodec, adjusted, options, aggressive);
+        }
 
         switch (codec)
         {
             case VideoCodec.H264:
                 if (hardware.SupportsNvenc)
                 {
-                    selection = VideoEncoderSelection.Hardware(VideoCodec.H264, "h264_nvenc", container, "yuv420p", "cuda", "cuda", AdjustHardwareQuality(options.HardwareQuality, aggressive), Array.Empty<string>(), supportsTwoPass: false, suggestedLookahead: 12, sceneCutAware: true);
+                    var quality = BuildHardwareQuality(VideoCodec.H264, options.HardwareQuality);
+                    selection = VideoEncoderSelection.Hardware(
+                        VideoCodec.H264,
+                        "h264_nvenc",
+                        container,
+                        "yuv420p",
+                        "cuda",
+                        "cuda",
+                        quality,
+                        new[] { "-preset", "p7", "-tune", "hq", "-rc", "vbr_hq" },
+                        supportsTwoPass: false,
+                        suggestedLookahead: 12,
+                        sceneCutAware: true);
                     return true;
                 }
                 if (hardware.SupportsAmf)
                 {
-                    selection = VideoEncoderSelection.Hardware(VideoCodec.H264, options.HardwareEncoder, container, "yuv420p", "d3d11va", null, AdjustHardwareQuality(options.HardwareQuality, aggressive), Array.Empty<string>(), supportsTwoPass: false, suggestedLookahead: 10, sceneCutAware: true);
+                    var quality = BuildHardwareQuality(VideoCodec.H264, options.HardwareQuality);
+                    selection = VideoEncoderSelection.Hardware(VideoCodec.H264, options.HardwareEncoder, container, "yuv420p", "d3d11va", null, quality, Array.Empty<string>(), supportsTwoPass: false, suggestedLookahead: 10, sceneCutAware: true);
                     return true;
                 }
                 if (hardware.SupportsQsv)
                 {
-                    selection = VideoEncoderSelection.Hardware(VideoCodec.H264, "h264_qsv", container, "yuv420p", "qsv", null, AdjustHardwareQuality(options.HardwareQuality, aggressive), Array.Empty<string>(), supportsTwoPass: false, suggestedLookahead: 10, sceneCutAware: true);
+                    var quality = BuildHardwareQuality(VideoCodec.H264, options.HardwareQuality);
+                    selection = VideoEncoderSelection.Hardware(VideoCodec.H264, "h264_qsv", container, "yuv420p", "qsv", null, quality, Array.Empty<string>(), supportsTwoPass: false, suggestedLookahead: 10, sceneCutAware: true);
                     return true;
                 }
                 break;
             case VideoCodec.Hevc:
                 if (hardware.SupportsHevcNvenc)
                 {
-                    selection = VideoEncoderSelection.Hardware(VideoCodec.Hevc, "hevc_nvenc", container, "p010le", "cuda", "cuda", AdjustHardwareQuality(options.HardwareQualityHevc, aggressive, 3), Array.Empty<string>(), supportsTwoPass: false, suggestedLookahead: 12, sceneCutAware: true);
+                    var quality = BuildHardwareQuality(VideoCodec.Hevc, options.HardwareQualityHevc, 3);
+                    selection = VideoEncoderSelection.Hardware(
+                        VideoCodec.Hevc,
+                        "hevc_nvenc",
+                        container,
+                        "p010le",
+                        "cuda",
+                        "cuda",
+                        quality,
+                        new[] { "-preset", "p7", "-tune", "hq", "-rc", "vbr_hq" },
+                        supportsTwoPass: false,
+                        suggestedLookahead: 12,
+                        sceneCutAware: true);
                     return true;
                 }
                 if (hardware.SupportsHevcAmf)
                 {
-                    selection = VideoEncoderSelection.Hardware(VideoCodec.Hevc, options.HardwareEncoderHevc, container, "p010le", "d3d11va", null, AdjustHardwareQuality(options.HardwareQualityHevc, aggressive, 3), Array.Empty<string>(), supportsTwoPass: false, suggestedLookahead: 10, sceneCutAware: true);
+                    var quality = BuildHardwareQuality(VideoCodec.Hevc, options.HardwareQualityHevc, 3);
+                    var amdProfile = ResolveAmdHevcProfile(preset);
+                    selection = VideoEncoderSelection.Hardware(
+                        VideoCodec.Hevc,
+                        options.HardwareEncoderHevc,
+                        container,
+                        "p010le",
+                        "d3d11va",
+                        null,
+                        quality,
+                        amdProfile.Arguments,
+                        supportsTwoPass: false,
+                        suggestedLookahead: 0,
+                        sceneCutAware: false,
+                        rateControlFlag: amdProfile.RateControlFlag,
+                        rateControlValueOverride: amdProfile.RateControlValueOverride);
                     return true;
                 }
                 if (hardware.SupportsHevcQsv)
                 {
-                    selection = VideoEncoderSelection.Hardware(VideoCodec.Hevc, "hevc_qsv", container, "p010le", "qsv", null, AdjustHardwareQuality(options.HardwareQualityHevc, aggressive, 3), Array.Empty<string>(), supportsTwoPass: false, suggestedLookahead: 10, sceneCutAware: true);
+                    var quality = BuildHardwareQuality(VideoCodec.Hevc, options.HardwareQualityHevc, 3);
+                    selection = VideoEncoderSelection.Hardware(VideoCodec.Hevc, "hevc_qsv", container, "p010le", "qsv", null, quality, Array.Empty<string>(), supportsTwoPass: false, suggestedLookahead: 10, sceneCutAware: true);
                     return true;
                 }
                 break;
             case VideoCodec.Av1:
                 if (hardware.SupportsAv1Nvenc)
                 {
-                    selection = VideoEncoderSelection.Hardware(VideoCodec.Av1, "av1_nvenc", container, "p010le", "cuda", "cuda", AdjustHardwareQuality(options.HardwareQualityAv1, aggressive, 4), Array.Empty<string>(), supportsTwoPass: false, suggestedLookahead: 14, sceneCutAware: true);
+                    var quality = BuildHardwareQuality(VideoCodec.Av1, options.HardwareQualityAv1, 4);
+                    selection = VideoEncoderSelection.Hardware(
+                        VideoCodec.Av1,
+                        "av1_nvenc",
+                        container,
+                        "p010le",
+                        "cuda",
+                        "cuda",
+                        quality,
+                        new[] { "-preset", "p7", "-tune", "hq", "-rc", "vbr_hq" },
+                        supportsTwoPass: false,
+                        suggestedLookahead: 14,
+                        sceneCutAware: true);
                     return true;
                 }
                 if (hardware.SupportsAv1Amf)
                 {
-                    selection = VideoEncoderSelection.Hardware(VideoCodec.Av1, options.HardwareEncoderAv1, container, "p010le", "d3d11va", null, AdjustHardwareQuality(options.HardwareQualityAv1, aggressive, 4), Array.Empty<string>(), supportsTwoPass: false, suggestedLookahead: 12, sceneCutAware: true);
+                    var quality = BuildHardwareQuality(VideoCodec.Av1, options.HardwareQualityAv1, 4);
+                    selection = VideoEncoderSelection.Hardware(VideoCodec.Av1, options.HardwareEncoderAv1, container, "p010le", "d3d11va", null, quality, Array.Empty<string>(), supportsTwoPass: false, suggestedLookahead: 12, sceneCutAware: true);
                     return true;
                 }
                 if (hardware.SupportsAv1Qsv)
                 {
-                    selection = VideoEncoderSelection.Hardware(VideoCodec.Av1, "av1_qsv", container, "p010le", "qsv", null, AdjustHardwareQuality(options.HardwareQualityAv1, aggressive, 4), Array.Empty<string>(), supportsTwoPass: false, suggestedLookahead: 12, sceneCutAware: true);
+                    var quality = BuildHardwareQuality(VideoCodec.Av1, options.HardwareQualityAv1, 4);
+                    selection = VideoEncoderSelection.Hardware(VideoCodec.Av1, "av1_qsv", container, "p010le", "qsv", null, quality, Array.Empty<string>(), supportsTwoPass: false, suggestedLookahead: 12, sceneCutAware: true);
                     return true;
                 }
                 break;
             case VideoCodec.Vp9:
                 if (hardware.SupportsQsv)
                 {
-                    selection = VideoEncoderSelection.Hardware(VideoCodec.Vp9, "vp9_qsv", container, "yuv420p", "qsv", null, AdjustHardwareQuality(options.HardwareQualityVp9, aggressive, 4), Array.Empty<string>(), supportsTwoPass: false, suggestedLookahead: 10, sceneCutAware: false);
+                    var quality = BuildHardwareQuality(VideoCodec.Vp9, options.HardwareQualityVp9, 4);
+                    selection = VideoEncoderSelection.Hardware(VideoCodec.Vp9, "vp9_qsv", container, "yuv420p", "qsv", null, quality, Array.Empty<string>(), supportsTwoPass: false, suggestedLookahead: 10, sceneCutAware: false);
                     return true;
                 }
                 break;
@@ -973,10 +1258,45 @@ public sealed class VideoOptimiser : IOptimiser
         return false;
     }
 
+    private static (IReadOnlyList<string> Arguments, string RateControlFlag, string? RateControlValueOverride) ResolveAmdHevcProfile(VideoEncoderPreset preset)
+    {
+        return preset switch
+        {
+            VideoEncoderPreset.GpuSimple => (new[]
+            {
+                "-quality", "balanced",
+                "-usage", "transcoding",
+                "-profile:v", "main10",
+                "-level", "5.1",
+                "-bf", "2"
+            }, "-rc", "vbr"),
+            VideoEncoderPreset.GpuCqp => (new[]
+            {
+                "-quality", "quality",
+                "-usage", "transcoding",
+                "-profile:v", "main10",
+                "-level", "5.1",
+                "-qp_i", "22",
+                "-qp_p", "24",
+                "-qp_b", "26",
+                "-bf", "3"
+            }, "-rc", "cqp"),
+            _ => (new[]
+            {
+                "-quality", "quality",
+                "-usage", "transcoding",
+                "-profile:v", "main10",
+                "-level", "5.1",
+                "-bf", "3"
+            }, "-rc", "vbr")
+        };
+    }
+
     private static int AdjustHardwareQuality(int baseline, bool aggressive, int offset = 2)
     {
         return aggressive ? Math.Max(0, baseline - offset) : baseline;
     }
+
 
     private static string ResolveContainerForCodec(VideoCodec codec, string requestedExtension, bool forceMp4)
     {

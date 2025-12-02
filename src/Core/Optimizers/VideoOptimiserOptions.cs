@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using ClopWindows.Core.Settings;
 using ClopWindows.Core.Shared;
 
 namespace ClopWindows.Core.Optimizers;
@@ -111,6 +112,8 @@ public sealed record VideoOptimiserOptions
 
     public bool EnableTwoPassEncoding { get; init; } = true;
 
+    public VideoEncoderPreset EncoderPreset { get; init; } = VideoEncoderPreset.Auto;
+
     /// <summary>
     /// Minimum duration (in seconds) before two-pass encoding is considered. Short clips finish faster with a single pass.
     /// Set to 0 to always allow two-pass.
@@ -124,6 +127,22 @@ public sealed record VideoOptimiserOptions
     public int HardwareLookaheadFrames { get; init; } = 16;
 
     public int SceneCutThreshold { get; init; } = 35;
+
+    public double HardwareBitrateReductionRatio { get; init; } = 0.7;
+
+    public int HardwareBitrateFloorKbps { get; init; } = 800;
+
+    public int HardwareBitrateCeilingKbps { get; init; } = 45000;
+
+    public double HardwareBitrateMaxrateHeadroom { get; init; } = 1.0;
+
+    public double HardwareBitrateBufferMultiplier { get; init; } = 2.0;
+
+    public double HardwareMinimumSavingsPercent { get; init; } = 18d;
+
+    public double HardwareBitrateRetryReductionRatio { get; init; } = 0.75;
+
+    public int HardwareBitrateRetryLimit { get; init; } = 2;
 
     public bool EnableFrameDecimation { get; init; } = true;
 

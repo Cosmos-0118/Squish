@@ -31,11 +31,19 @@ public sealed record VideoEncoderSelection(
     bool SceneCutAware,
     string RateControlFlag)
 {
-    public static VideoEncoderSelection Software(VideoCodec codec, string encoder, string container, string pixelFormat, int quality, IReadOnlyList<string>? additionalArgs = null, bool supportsTwoPass = true, bool suggestTwoPass = true, int suggestedLookahead = 24, bool sceneCutAware = true, string rateControlFlag = "-crf")
-        => new(codec, container, encoder, pixelFormat, false, null, null, quality, null, additionalArgs ?? Array.Empty<string>(), supportsTwoPass, suggestTwoPass, suggestedLookahead, sceneCutAware, rateControlFlag);
+    public string? RateControlValueOverride { get; init; }
 
-    public static VideoEncoderSelection Hardware(VideoCodec codec, string encoder, string container, string pixelFormat, string acceleration, string? outputFormat, int quality, IReadOnlyList<string>? additionalArgs, bool supportsTwoPass, int suggestedLookahead, bool sceneCutAware, string rateControlFlag = "-cq")
-        => new(codec, container, encoder, pixelFormat, true, acceleration, outputFormat, quality, null, additionalArgs ?? Array.Empty<string>(), supportsTwoPass, false, suggestedLookahead, sceneCutAware, rateControlFlag);
+    public static VideoEncoderSelection Software(VideoCodec codec, string encoder, string container, string pixelFormat, int quality, IReadOnlyList<string>? additionalArgs = null, bool supportsTwoPass = true, bool suggestTwoPass = true, int suggestedLookahead = 24, bool sceneCutAware = true, string rateControlFlag = "-crf", string? rateControlValueOverride = null)
+        => new(codec, container, encoder, pixelFormat, false, null, null, quality, null, additionalArgs ?? Array.Empty<string>(), supportsTwoPass, suggestTwoPass, suggestedLookahead, sceneCutAware, rateControlFlag)
+        {
+            RateControlValueOverride = rateControlValueOverride
+        };
+
+    public static VideoEncoderSelection Hardware(VideoCodec codec, string encoder, string container, string pixelFormat, string acceleration, string? outputFormat, int quality, IReadOnlyList<string>? additionalArgs, bool supportsTwoPass, int suggestedLookahead, bool sceneCutAware, string rateControlFlag = "-cq", string? rateControlValueOverride = null)
+        => new(codec, container, encoder, pixelFormat, true, acceleration, outputFormat, quality, null, additionalArgs ?? Array.Empty<string>(), supportsTwoPass, false, suggestedLookahead, sceneCutAware, rateControlFlag)
+        {
+            RateControlValueOverride = rateControlValueOverride
+        };
 }
 
 public enum VideoCodec

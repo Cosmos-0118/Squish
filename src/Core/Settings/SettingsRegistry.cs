@@ -58,6 +58,7 @@ public static class SettingsRegistry
     public static readonly SettingKey<bool> UseAggressiveOptimisationPng = Bool("useAggressiveOptimisationPNG", false);
     public static readonly SettingKey<bool> UseAggressiveOptimisationGif = Bool("useAggressiveOptimisationGIF", false);
     public static readonly SettingKey<bool> UseAggressiveOptimisationPdf = Bool("useAggressiveOptimisationPDF", true);
+    public static readonly SettingKey<VideoEncoderPreset> VideoEncoderPresetPreference = new("videoEncoderPreset", VideoEncoderPreset.Auto);
     public static readonly SettingKey<bool> ForceFullImageOptimisations = Bool("forceFullImageOptimisations", false);
 
     public static readonly SettingKey<string[]> ImageDirs = Array("imageDirs", DesktopPath);
@@ -164,6 +165,7 @@ public static class SettingsRegistry
         UseAggressiveOptimisationPng,
         UseAggressiveOptimisationGif,
         UseAggressiveOptimisationPdf,
+        VideoEncoderPresetPreference,
         ForceFullImageOptimisations,
         ImageDirs,
         VideoDirs,

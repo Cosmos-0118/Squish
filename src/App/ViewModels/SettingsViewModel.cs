@@ -33,11 +33,13 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     private readonly FloatingHudController _hudController;
     private readonly IFolderPicker _folderPicker;
     private ThemeOptionViewModel? _selectedThemeOption;
+    private VideoEncoderPresetOptionViewModel? _selectedVideoEncoderPreset;
     private FloatingHudPlacement _floatingHudPlacement;
 
     public IReadOnlyList<ShortcutPreferenceViewModel> AppShortcutPreferences { get; }
     public IReadOnlyList<ShortcutPreferenceViewModel> GlobalShortcutPreferences { get; }
     public IReadOnlyList<ThemeOptionViewModel> ThemeOptions { get; }
+    public IReadOnlyList<VideoEncoderPresetOptionViewModel> VideoEncoderPresetOptions { get; }
     public RelayCommand ResetHudLayoutCommand { get; }
     public IReadOnlyList<FloatingHudPlacementOptionViewModel> FloatingHudPlacementOptions { get; }
     public ObservableCollection<string> ImageDirectories { get; }
@@ -59,6 +61,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         ResetHudLayoutCommand = new RelayCommand(_ => ResetHudLayout(), _ => EnableFloatingResults);
         FloatingHudPlacementOptions = new ReadOnlyCollection<FloatingHudPlacementOptionViewModel>(CreatePlacementOptions());
         ThemeOptions = new ReadOnlyCollection<ThemeOptionViewModel>(CreateThemeOptions());
+        VideoEncoderPresetOptions = new ReadOnlyCollection<VideoEncoderPresetOptionViewModel>(CreateVideoEncoderPresetOptions());
         ImageDirectories = new ObservableCollection<string>();
         VideoDirectories = new ObservableCollection<string>();
         PdfDirectories = new ObservableCollection<string>();
@@ -102,6 +105,18 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
             if (SetProperty(ref _selectedThemeOption, value) && !_suppressStoreUpdates && value is not null)
             {
                 SettingsHost.Set(SettingsRegistry.AppThemeMode, value.Mode);
+            }
+        }
+    }
+
+    public VideoEncoderPresetOptionViewModel? SelectedVideoEncoderPreset
+    {
+        get => _selectedVideoEncoderPreset;
+        set
+        {
+            if (SetProperty(ref _selectedVideoEncoderPreset, value) && !_suppressStoreUpdates && value is not null)
+            {
+                SettingsHost.Set(SettingsRegistry.VideoEncoderPresetPreference, value.Preset);
             }
         }
     }
@@ -361,6 +376,8 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         RefreshDirectoryCollections();
         var themeMode = SettingsHost.Get(SettingsRegistry.AppThemeMode);
         SelectedThemeOption = ThemeOptions.FirstOrDefault(option => option.Mode == themeMode) ?? ThemeOptions.FirstOrDefault();
+        var encoderPreset = SettingsHost.Get(SettingsRegistry.VideoEncoderPresetPreference);
+        SelectedVideoEncoderPreset = VideoEncoderPresetOptions.FirstOrDefault(option => option.Preset == encoderPreset) ?? VideoEncoderPresetOptions.FirstOrDefault();
 
         _suppressStoreUpdates = false;
     }
@@ -432,6 +449,10 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
             case var name when name == SettingsRegistry.AppThemeMode.Name:
                 var themeMode = SettingsHost.Get(SettingsRegistry.AppThemeMode);
                 SelectedThemeOption = ThemeOptions.FirstOrDefault(option => option.Mode == themeMode) ?? SelectedThemeOption;
+                break;
+            case var name when name == SettingsRegistry.VideoEncoderPresetPreference.Name:
+                var preset = SettingsHost.Get(SettingsRegistry.VideoEncoderPresetPreference);
+                SelectedVideoEncoderPreset = VideoEncoderPresetOptions.FirstOrDefault(option => option.Preset == preset) ?? SelectedVideoEncoderPreset;
                 break;
         }
         _suppressStoreUpdates = false;
@@ -523,6 +544,18 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         }
 
         SettingsHost.Set(key, target.ToArray());
+    }
+
+    private static List<VideoEncoderPresetOptionViewModel> CreateVideoEncoderPresetOptions()
+    {
+        return new List<VideoEncoderPresetOptionViewModel>
+        {
+            new(VideoEncoderPreset.Auto, ClopStringCatalog.Get("settings.optimisation.videoPreset.auto.title"), ClopStringCatalog.Get("settings.optimisation.videoPreset.auto.description")),
+            new(VideoEncoderPreset.Cpu, ClopStringCatalog.Get("settings.optimisation.videoPreset.cpu.title"), ClopStringCatalog.Get("settings.optimisation.videoPreset.cpu.description")),
+            new(VideoEncoderPreset.GpuQuality, ClopStringCatalog.Get("settings.optimisation.videoPreset.gpuQuality.title"), ClopStringCatalog.Get("settings.optimisation.videoPreset.gpuQuality.description")),
+            new(VideoEncoderPreset.GpuSimple, ClopStringCatalog.Get("settings.optimisation.videoPreset.gpuSimple.title"), ClopStringCatalog.Get("settings.optimisation.videoPreset.gpuSimple.description")),
+            new(VideoEncoderPreset.GpuCqp, ClopStringCatalog.Get("settings.optimisation.videoPreset.gpuCqp.title"), ClopStringCatalog.Get("settings.optimisation.videoPreset.gpuCqp.description"))
+        };
     }
 
     private static List<ThemeOptionViewModel> CreateThemeOptions()

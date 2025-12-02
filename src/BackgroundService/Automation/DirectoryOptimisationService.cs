@@ -280,6 +280,7 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
             };
 
             OutputBehaviourSettings.ApplyTo(metadata);
+            VideoEncoderPresetSettings.ApplyTo(metadata);
 
             var request = new OptimisationRequest(fileEvent.ItemType, path, metadata: metadata);
             _pending[request.RequestId] = new DirectoryRequestContext(fileEvent.ItemType, path);

@@ -429,6 +429,7 @@ public sealed class CrossAppAutomationHost : IAsyncDisposable
             };
 
             OutputBehaviourSettings.ApplyTo(metadata);
+            VideoEncoderPresetSettings.ApplyTo(metadata);
 
             var request = new OptimisationRequest(target.Type, target.Path, metadata: metadata);
             tickets.Add((_coordinator.Enqueue(request, token), target));
