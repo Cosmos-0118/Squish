@@ -10,9 +10,15 @@ using Xunit;
 
 namespace Core.Tests;
 
+[Collection("VideoTools")]
 public sealed class VideoOptimiserTests : IDisposable
 {
     private readonly List<FilePath> _filesToCleanup = new();
+
+    public VideoOptimiserTests(VideoToolchainFixture tools)
+    {
+        _ = tools ?? throw new ArgumentNullException(nameof(tools));
+    }
 
     [Fact]
     public async Task TranscodesVideoAndProducesOutput()

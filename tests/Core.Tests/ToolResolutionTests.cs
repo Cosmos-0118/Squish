@@ -14,12 +14,16 @@ public sealed class ToolResolutionTests
     public void VideoOptimiserOptions_UsesEnvironmentVariableForFfmpeg()
     {
         using var tempExe = new TemporaryExecutable("ffmpeg-env");
+        using var tempProbe = new TemporaryExecutable("ffprobe-env");
         using var primaryEnv = new EnvironmentVariableScope("CLOP_FFMPEG", tempExe.Path);
         using var secondaryEnv = new EnvironmentVariableScope("FFMPEG_EXECUTABLE", null);
+        using var probePrimaryEnv = new EnvironmentVariableScope("CLOP_FFPROBE", tempProbe.Path);
+        using var probeSecondaryEnv = new EnvironmentVariableScope("FFPROBE_EXECUTABLE", null);
 
         var options = new VideoOptimiserOptions();
 
         Assert.Equal(tempExe.Path, options.FfmpegPath);
+        Assert.Equal(tempProbe.Path, options.FfprobePath);
     }
 
     [Fact]
@@ -27,13 +31,17 @@ public sealed class ToolResolutionTests
     {
         using var primaryEnv = new EnvironmentVariableScope("CLOP_FFMPEG", null);
         using var secondaryEnv = new EnvironmentVariableScope("FFMPEG_EXECUTABLE", null);
+        using var probePrimaryEnv = new EnvironmentVariableScope("CLOP_FFPROBE", null);
+        using var probeSecondaryEnv = new EnvironmentVariableScope("FFPROBE_EXECUTABLE", null);
         using var sandbox = new ToolSandbox();
 
         var expected = sandbox.CreateFile("ffmpeg", "bin", "ffmpeg.exe");
+        var expectedProbe = sandbox.CreateFile("ffmpeg", "bin", "ffprobe.exe");
 
         var options = new VideoOptimiserOptions();
 
         Assert.Equal(expected, options.FfmpegPath);
+        Assert.Equal(expectedProbe, options.FfprobePath);
     }
 
     [Fact]

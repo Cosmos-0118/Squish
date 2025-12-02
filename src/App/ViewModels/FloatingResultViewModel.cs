@@ -15,7 +15,7 @@ public sealed class FloatingResultViewModel : ObservableObject
     private readonly Action<FloatingResultViewModel> _dismiss;
     private static readonly SolidColorBrush SuccessBrush = CreateBrush(122, 145, 255);
     private static readonly SolidColorBrush FailureBrush = CreateBrush(240, 120, 120);
-    private static readonly SolidColorBrush RunningBrush = CreateBrush(200, 200, 200);
+    private static readonly SolidColorBrush RunningBrush = CreateBrush(120, 180, 255);
 
     private string _displayName = string.Empty;
     private string? _subtitle;
@@ -160,13 +160,13 @@ public sealed class FloatingResultViewModel : ObservableObject
 
         var summary = IsSuccess ? BuildSizeSummary(_outputPath, _originalBytes) : null;
 
-        if (!string.IsNullOrWhiteSpace(result.Message))
-        {
-            StatusText = result.Message;
-        }
-        else if (!string.IsNullOrWhiteSpace(summary))
+        if (!string.IsNullOrWhiteSpace(summary))
         {
             StatusText = summary;
+        }
+        else if (!string.IsNullOrWhiteSpace(result.Message))
+        {
+            StatusText = result.Message;
         }
         else
         {
@@ -194,15 +194,9 @@ public sealed class FloatingResultViewModel : ObservableObject
             return null;
         }
 
-        var delta = originalBytes.Value - optimisedBytes.Value;
-        var magnitude = Math.Abs(delta);
-        var total = optimisedBytes.Value;
-        var changeAmount = magnitude.HumanSize();
         var original = originalBytes.Value.HumanSize();
-        var final = total.HumanSize();
-        var percentage = originalBytes.Value == 0 ? 0 : (double)delta / originalBytes.Value * 100d;
-        var direction = delta >= 0 ? "Saved" : "Added";
-        return string.Format(CultureInfo.CurrentCulture, "{0} {1} ({2} → {3}, {4:+0.##;-0.##;0}%)", direction, changeAmount, original, final, percentage);
+        var final = optimisedBytes.Value.HumanSize();
+        return string.Format(CultureInfo.CurrentCulture, "{0} → {1}", original, final);
     }
 
     private static string ExtractSourceTag(IReadOnlyDictionary<string, object?> metadata)

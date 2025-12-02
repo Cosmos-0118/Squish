@@ -95,12 +95,12 @@ public partial class FloatingHudWindow : Window
             return false;
         }
 
-        if (ResultsItemsControl.ItemContainerGenerator.ContainerFromItem(viewModel) is not ContentPresenter presenter)
+        if (CurrentResultPresenter?.Content != viewModel)
         {
             return false;
         }
 
-        if (presenter.ContentTemplate?.FindName("ResultCard", presenter) is not FrameworkElement card)
+        if (CurrentResultPresenter.ContentTemplate?.FindName("ResultCard", CurrentResultPresenter) is not FrameworkElement card)
         {
             return false;
         }
