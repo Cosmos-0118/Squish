@@ -1,0 +1,218 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- ComboBox palette -->
+    <Color x:Key="Color.Combo.Background">#FFFFFFFF</Color>
+    <Color x:Key="Color.Combo.Border">#FFD0D5DD</Color>
+    <Color x:Key="Color.Combo.Foreground">#FF101828</Color>
+    <Color x:Key="Color.Combo.HoverBackground">#FFF8FAFC</Color>
+    <Color x:Key="Color.Combo.HoverBorder">#FFBEC4CF</Color>
+    <Color x:Key="Color.Combo.PressedBackground">#FFF2F4F7</Color>
+    <Color x:Key="Color.Combo.PressedBorder">#FF98A2B3</Color>
+    <Color x:Key="Color.Combo.DisabledBackground">#FFF5F6F7</Color>
+    <Color x:Key="Color.Combo.DisabledBorder">#FFE4E7EC</Color>
+
+    <SolidColorBrush x:Key="Brush.Combo.Background" Color="{StaticResource Color.Combo.Background}" />
+    <SolidColorBrush x:Key="Brush.Combo.Border" Color="{StaticResource Color.Combo.Border}" />
+    <SolidColorBrush x:Key="Brush.Combo.Foreground" Color="{StaticResource Color.Combo.Foreground}" />
+    <SolidColorBrush x:Key="Brush.Combo.HoverBackground" Color="{StaticResource Color.Combo.HoverBackground}" />
+    <SolidColorBrush x:Key="Brush.Combo.HoverBorder" Color="{StaticResource Color.Combo.HoverBorder}" />
+    <SolidColorBrush x:Key="Brush.Combo.PressedBackground" Color="{StaticResource Color.Combo.PressedBackground}" />
+    <SolidColorBrush x:Key="Brush.Combo.PressedBorder" Color="{StaticResource Color.Combo.PressedBorder}" />
+    <SolidColorBrush x:Key="Brush.Combo.DisabledBackground" Color="{StaticResource Color.Combo.DisabledBackground}" />
+    <SolidColorBrush x:Key="Brush.Combo.DisabledBorder" Color="{StaticResource Color.Combo.DisabledBorder}" />
+    <SolidColorBrush x:Key="Brush.Combo.PopupBackground" Color="#FFFFFFFF" />
+    <SolidColorBrush x:Key="Brush.Combo.PopupBorder" Color="#FFE4E7EC" />
+
+    <Style x:Key="ClopComboBoxItemStyle" TargetType="ComboBoxItem">
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Combo.Foreground}" />
+        <Setter Property="Padding" Value="12,8" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ComboBoxItem">
+                    <Border x:Name="ItemBorder"
+                            Background="{TemplateBinding Background}"
+                            CornerRadius="8"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="ItemBorder" Property="Background" Value="#0D1F62FF" />
+                        </Trigger>
+                        <Trigger Property="IsHighlighted" Value="True">
+                            <Setter TargetName="ItemBorder" Property="Background" Value="#191F62FF" />
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="ItemBorder" Property="Background" Value="#331F62FF" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="ItemBorder" Property="Opacity" Value="0.45" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="ClopComboBoxToggleButton" TargetType="ToggleButton">
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Combo.Foreground}" />
+        <Setter Property="Background" Value="{DynamicResource Brush.Combo.Background}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Combo.Border}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Padding" Value="4" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToggleButton">
+                    <Border x:Name="ToggleBorder"
+                            CornerRadius="12"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}">
+                        <VisualStateManager.VisualStateGroups>
+                            <VisualStateGroup x:Name="CommonStates">
+                                <VisualState x:Name="Normal" />
+                                <VisualState x:Name="PointerOver">
+                                    <Storyboard>
+                                        <ColorAnimation Storyboard.TargetName="ToggleBorder"
+                                                        Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)"
+                                                        To="{StaticResource Color.Combo.HoverBackground}"
+                                                        Duration="0:0:0.12" />
+                                        <ColorAnimation Storyboard.TargetName="ToggleBorder"
+                                                        Storyboard.TargetProperty="(Border.BorderBrush).(SolidColorBrush.Color)"
+                                                        To="{StaticResource Color.Combo.HoverBorder}"
+                                                        Duration="0:0:0.12" />
+                                    </Storyboard>
+                                </VisualState>
+                                <VisualState x:Name="Pressed">
+                                    <Storyboard>
+                                        <ColorAnimation Storyboard.TargetName="ToggleBorder"
+                                                        Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)"
+                                                        To="{StaticResource Color.Combo.PressedBackground}"
+                                                        Duration="0:0:0.05" />
+                                        <ColorAnimation Storyboard.TargetName="ToggleBorder"
+                                                        Storyboard.TargetProperty="(Border.BorderBrush).(SolidColorBrush.Color)"
+                                                        To="{StaticResource Color.Combo.PressedBorder}"
+                                                        Duration="0:0:0.05" />
+                                    </Storyboard>
+                                </VisualState>
+                            </VisualStateGroup>
+                            <VisualStateGroup x:Name="CheckStates">
+                                <VisualState x:Name="Checked">
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="Arrow"
+                                                         Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                                         To="180"
+                                                         Duration="0:0:0.12" />
+                                    </Storyboard>
+                                </VisualState>
+                                <VisualState x:Name="Unchecked">
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="Arrow"
+                                                         Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                                         To="0"
+                                                         Duration="0:0:0.12" />
+                                    </Storyboard>
+                                </VisualState>
+                            </VisualStateGroup>
+                        </VisualStateManager.VisualStateGroups>
+                        <Grid>
+                            <ContentPresenter Margin="12,0,32,0"
+                                              VerticalAlignment="Center"
+                                              HorizontalAlignment="Left"
+                                              RecognizesAccessKey="True" />
+                            <Path x:Name="Arrow"
+                                  Data="M 0 0 L 4 4 L 8 0"
+                                  StrokeThickness="2"
+                                  Stroke="{TemplateBinding Foreground}"
+                                  StrokeEndLineCap="Round"
+                                  HorizontalAlignment="Right"
+                                  VerticalAlignment="Center"
+                                  Margin="0,0,14,0"
+                                  RenderTransformOrigin="0.5,0.5">
+                                <Path.RenderTransform>
+                                    <RotateTransform Angle="0" />
+                                </Path.RenderTransform>
+                            </Path>
+                        </Grid>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="ToggleBorder" Property="Background" Value="{DynamicResource Brush.Combo.DisabledBackground}" />
+                            <Setter TargetName="ToggleBorder" Property="BorderBrush" Value="{DynamicResource Brush.Combo.DisabledBorder}" />
+                            <Setter Property="Foreground" Value="#FF98A2B3" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="ClopComboBoxStyle" TargetType="ComboBox">
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Combo.Foreground}" />
+        <Setter Property="Background" Value="{DynamicResource Brush.Combo.Background}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Combo.Border}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="ItemContainerStyle" Value="{StaticResource ClopComboBoxItemStyle}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ComboBox">
+                    <Grid>
+                        <ToggleButton x:Name="ToggleButton"
+                                      Style="{StaticResource ClopComboBoxToggleButton}"
+                                      Background="{TemplateBinding Background}"
+                                      BorderBrush="{TemplateBinding BorderBrush}"
+                                      Foreground="{TemplateBinding Foreground}"
+                                      BorderThickness="{TemplateBinding BorderThickness}"
+                                      HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                      VerticalContentAlignment="Center"
+                                      IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}"
+                                      ClickMode="Press"
+                                      Content="{TemplateBinding SelectionBoxItem}"
+                                      ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                      ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}" />
+                        <Popup x:Name="Popup"
+                               Placement="Bottom"
+                               IsOpen="{TemplateBinding IsDropDownOpen}"
+                               AllowsTransparency="True"
+                               Focusable="False"
+                               PopupAnimation="Slide">
+                            <Border x:Name="PopupBorder"
+                                    Background="{DynamicResource Brush.Combo.PopupBackground}"
+                                    BorderBrush="{DynamicResource Brush.Combo.PopupBorder}"
+                                    BorderThickness="1"
+                                    CornerRadius="12"
+                                    Padding="4"
+                                    MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}">
+                                <ScrollViewer Margin="0"
+                                              MaxHeight="260"
+                                              HorizontalScrollBarVisibility="Disabled"
+                                              VerticalScrollBarVisibility="Auto"
+                                              CanContentScroll="True">
+                                    <ItemsPresenter SnapsToDevicePixels="True" />
+                                </ScrollViewer>
+                            </Border>
+                        </Popup>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsDropDownOpen" Value="True">
+                            <Setter TargetName="PopupBorder" Property="Opacity" Value="1" />
+                        </Trigger>
+                        <Trigger Property="HasItems" Value="False">
+                            <Setter TargetName="PopupBorder" Property="MinHeight" Value="48" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="ToggleButton" Property="Opacity" Value="0.6" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Apply the modern combo style globally -->
+    <Style TargetType="ComboBox" BasedOn="{StaticResource ClopComboBoxStyle}" />
+</ResourceDictionary>

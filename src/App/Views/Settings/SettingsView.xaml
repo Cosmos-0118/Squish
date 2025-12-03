@@ -5,365 +5,495 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:loc="clr-namespace:ClopWindows.App.Localization"
+             xmlns:controls="clr-namespace:ClopWindows.App.Controls"
              mc:Ignorable="d"
              d:DesignHeight="600"
-             d:DesignWidth="800">
+             d:DesignWidth="1000">
+    <UserControl.Resources>
+        <Style x:Key="SettingsCardStyle" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource Brush.SurfaceBackground}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource Brush.SurfaceBorder}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="16"/>
+            <Setter Property="Padding" Value="24"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+        </Style>
+
+        <Style x:Key="SectionTitleText" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="16"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{DynamicResource Brush.PrimaryText}"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Margin" Value="0,0,0,16"/>
+        </Style>
+
+        <Style TargetType="TextBlock" x:Key="CardBodyText">
+            <Setter Property="Foreground" Value="{DynamicResource Brush.SecondaryText}"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+
+        <Style x:Key="SettingsTabItemStyle" TargetType="TabItem">
+            <Setter Property="Foreground" Value="{DynamicResource Brush.PrimaryText}"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Padding" Value="20,10"/>
+            <Setter Property="Margin" Value="0,0,16,0"/>
+            <Setter Property="MinWidth" Value="140"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Border x:Name="TabChrome"
+                                Padding="{TemplateBinding Padding}"
+                                CornerRadius="12"
+                                Background="{DynamicResource Brush.SurfaceBackground}"
+                                BorderThickness="1"
+                                BorderBrush="{DynamicResource Brush.SurfaceBorder}">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              ContentSource="Header"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="TabChrome" Property="Background" Value="{DynamicResource Brush.PrimaryButtonBackground}"/>
+                                <Setter TargetName="TabChrome" Property="BorderBrush" Value="{DynamicResource Brush.PrimaryButtonBackground}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource Brush.PrimaryButtonForeground}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="TabChrome" Property="Opacity" Value="0.6"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="SettingsTabControlStyle" TargetType="TabControl">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabControl">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+
+                            <controls:SmartWrapPanel Grid.Row="0"
+                                                     IsItemsHost="True"
+                                                     HorizontalSpacing="16"
+                                                     VerticalSpacing="12"
+                                                     MinColumnWidth="140"
+                                                     Padding="0,0,0,16"/>
+
+                            <Border Grid.Row="1" Background="Transparent">
+                                <ContentPresenter x:Name="PART_SelectedContentHost"
+                                                  ContentSource="SelectedContent"
+                                                  ContentTemplate="{TemplateBinding SelectedContentTemplate}"
+                                                  ContentTemplateSelector="{TemplateBinding SelectedContentTemplateSelector}"
+                                                  ContentStringFormat="{TemplateBinding SelectedContentStringFormat}"
+                                                  Margin="{TemplateBinding Padding}"/>
+                            </Border>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
     <ScrollViewer VerticalScrollBarVisibility="Auto">
-        <StackPanel Margin="32">
+        <StackPanel Margin="32,32,32,48">
             <StackPanel>
-                <TextBlock Text="{loc:Loc settings.header.title}" FontSize="24" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}"/>
-                <TextBlock Text="{loc:Loc settings.header.subtitle}" FontSize="13" Foreground="{DynamicResource Brush.SecondaryText}" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                <TextBlock Text="{loc:Loc settings.header.title}"
+                           FontSize="28"
+                           FontWeight="Bold"
+                           Foreground="{DynamicResource Brush.PrimaryText}"/>
+                <TextBlock Text="{loc:Loc settings.header.subtitle}"
+                           Style="{StaticResource CardBodyText}"
+                           FontSize="14"
+                           Margin="0,8,0,0"/>
             </StackPanel>
 
-            <Border Margin="0,24,0,0" Padding="20" Background="{DynamicResource Brush.SurfaceBackground}" BorderBrush="{DynamicResource Brush.SurfaceBorder}" BorderThickness="1" CornerRadius="12">
-                <StackPanel>
-                    <TextBlock Text="{loc:Loc settings.section.appearance}" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}"/>
-                    <StackPanel Margin="0,12,0,0">
-                        <TextBlock Text="{loc:Loc settings.theme.mode}" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}"/>
-                        <ComboBox Margin="0,6,0,0"
-                                  ItemsSource="{Binding ThemeOptions}"
-                                  SelectedItem="{Binding SelectedThemeOption}"
-                                  DisplayMemberPath="DisplayName"
-                                  AutomationProperties.Name="{loc:Loc settings.theme.mode}"
-                                  Background="{DynamicResource Brush.FieldBackground}"
-                                  BorderBrush="{DynamicResource Brush.FieldBorder}"
-                                  Foreground="{DynamicResource Brush.FieldForeground}"/>
-                    </StackPanel>
-                </StackPanel>
-            </Border>
-
-            <Border Margin="0,16,0,0" Padding="20" Background="{DynamicResource Brush.SurfaceBackground}" BorderBrush="{DynamicResource Brush.SurfaceBorder}" BorderThickness="1" CornerRadius="12">
-                <StackPanel>
-                    <TextBlock Text="{loc:Loc settings.section.floatingHud}" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}"/>
-                    <CheckBox Content="{loc:Loc settings.floatingHud.show}" Margin="0,12,0,0" IsChecked="{Binding EnableFloatingResults}"/>
-                    <CheckBox Content="{loc:Loc settings.floatingHud.autoHide}" Margin="0,8,0,0" IsChecked="{Binding AutoHideFloatingResults}"/>
-                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0" VerticalAlignment="Center">
-                        <TextBlock x:Name="FloatingHudHideAfterLabel" Text="{loc:Loc settings.floatingHud.hideAfter}" VerticalAlignment="Center" Foreground="{DynamicResource Brush.PrimaryText}"/>
-                        <TextBox Width="60"
-                                 Margin="8,0,0,0"
-                                 Text="{Binding AutoHideFloatingResultsAfter, UpdateSourceTrigger=PropertyChanged}"
-                                 Background="{DynamicResource Brush.FieldBackground}"
-                                 BorderBrush="{DynamicResource Brush.FieldBorder}"
-                                 Foreground="{DynamicResource Brush.FieldForeground}"
-                                 AutomationProperties.LabeledBy="{Binding ElementName=FloatingHudHideAfterLabel}"
-                                 AutomationProperties.HelpText="{loc:Loc settings.floatingHud.hideAfter.help}"
-                                 AutomationProperties.Name="{loc:Loc settings.autohide.seconds.accessible}"/>
-                        <TextBlock Text="{loc:Loc settings.floatingHud.hideAfterSuffix}" Margin="8,0,0,0" VerticalAlignment="Center" Foreground="{DynamicResource Brush.SecondaryText}"/>
-                    </StackPanel>
+            <TabControl Margin="0,24,0,0"
+                        Style="{StaticResource SettingsTabControlStyle}"
+                        ItemContainerStyle="{StaticResource SettingsTabItemStyle}">
+                <TabItem Header="{loc:Loc settings.section.appearance}">
                     <StackPanel Margin="0,16,0,0">
-                        <TextBlock x:Name="FloatingHudPlacementLabel"
-                                   Text="{loc:Loc settings.floatingHud.placementHeading}"
-                                   FontWeight="SemiBold"
-                                   Foreground="{DynamicResource Brush.PrimaryText}"/>
-                        <TextBlock Text="{loc:Loc settings.floatingHud.placementDescription}"
-                                   FontSize="12"
-                                   Foreground="{DynamicResource Brush.SecondaryText}"
-                                   Margin="0,4,0,12"
-                                   TextWrapping="Wrap"/>
-                        <ListBox ItemsSource="{Binding FloatingHudPlacementOptions}"
-                                 SelectedValuePath="Placement"
-                                 SelectedValue="{Binding FloatingHudPlacement, Mode=TwoWay}"
-                                 BorderThickness="0"
-                                 Background="Transparent"
-                                 Margin="0,0,0,12"
-                                 HorizontalContentAlignment="Stretch"
-                                 AutomationProperties.LabeledBy="{Binding ElementName=FloatingHudPlacementLabel}">
-                            <ListBox.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <WrapPanel/>
-                                </ItemsPanelTemplate>
-                            </ListBox.ItemsPanel>
-                            <ListBox.ItemTemplate>
-                                <DataTemplate>
-                                    <TextBlock Text="{Binding DisplayName}"
-                                               TextAlignment="Center"
-                                               FontWeight="SemiBold"/>
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
-                            <ListBox.ItemContainerStyle>
-                                <Style TargetType="ListBoxItem">
-                                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                                    <Setter Property="VerticalContentAlignment" Value="Center"/>
-                                    <Setter Property="Foreground" Value="{DynamicResource Brush.PrimaryText}"/>
-                                    <Setter Property="Template">
-                                        <Setter.Value>
-                                            <ControlTemplate TargetType="ListBoxItem">
-                                                <Border x:Name="Chrome"
-                                                        Background="{DynamicResource Brush.FieldBackground}"
-                                                        BorderBrush="{DynamicResource Brush.FieldBorder}"
-                                                        BorderThickness="1"
-                                                        CornerRadius="10"
-                                                        Margin="0,0,8,8"
-                                                        Padding="16,10">
-                                                    <ContentPresenter HorizontalAlignment="Center"
-                                                                      VerticalAlignment="Center"/>
+                        <Border Style="{StaticResource SettingsCardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="{loc:Loc settings.section.appearance}" Style="{StaticResource SectionTitleText}"/>
+                                <TextBlock Text="{loc:Loc settings.theme.mode}" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}"/>
+                                <ComboBox Margin="0,6,0,0"
+                                          ItemsSource="{Binding ThemeOptions}"
+                                          SelectedItem="{Binding SelectedThemeOption}"
+                                          DisplayMemberPath="DisplayName"
+                                          AutomationProperties.Name="{loc:Loc settings.theme.mode}"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </TabItem>
+
+                <TabItem Header="{loc:Loc settings.section.floatingHud}">
+                    <StackPanel Margin="0,16,0,0">
+                        <Border Style="{StaticResource SettingsCardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="{loc:Loc settings.section.floatingHud}" Style="{StaticResource SectionTitleText}"/>
+                                <CheckBox Content="{loc:Loc settings.floatingHud.show}" Margin="0,0,0,8" IsChecked="{Binding EnableFloatingResults}"/>
+                                <CheckBox Content="{loc:Loc settings.floatingHud.autoHide}" Margin="0,0,0,8" IsChecked="{Binding AutoHideFloatingResults}"/>
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock x:Name="FloatingHudHideAfterLabel"
+                                               Text="{loc:Loc settings.floatingHud.hideAfter}"
+                                               Foreground="{DynamicResource Brush.PrimaryText}"/>
+                                    <TextBox Width="70"
+                                             Margin="8,0,0,0"
+                                             Text="{Binding AutoHideFloatingResultsAfter, UpdateSourceTrigger=PropertyChanged}"
+                                             AutomationProperties.LabeledBy="{Binding ElementName=FloatingHudHideAfterLabel}"
+                                             AutomationProperties.HelpText="{loc:Loc settings.floatingHud.hideAfter.help}"
+                                             AutomationProperties.Name="{loc:Loc settings.autohide.seconds.accessible}"/>
+                                    <TextBlock Text="{loc:Loc settings.floatingHud.hideAfterSuffix}"
+                                               Foreground="{DynamicResource Brush.SecondaryText}"
+                                               Margin="8,0,0,0"/>
+                                </StackPanel>
+
+                                <StackPanel Margin="0,18,0,0">
+                                    <TextBlock x:Name="FloatingHudPlacementLabel"
+                                               Text="{loc:Loc settings.floatingHud.placementHeading}"
+                                               FontWeight="SemiBold"
+                                               Foreground="{DynamicResource Brush.PrimaryText}"/>
+                                    <TextBlock Text="{loc:Loc settings.floatingHud.placementDescription}"
+                                               Style="{StaticResource CardBodyText}"
+                                               Margin="0,4,0,12"/>
+                                    <ListBox ItemsSource="{Binding FloatingHudPlacementOptions}"
+                                             SelectedValuePath="Placement"
+                                             SelectedValue="{Binding FloatingHudPlacement, Mode=TwoWay}"
+                                             BorderThickness="0"
+                                             Background="Transparent"
+                                             HorizontalContentAlignment="Stretch"
+                                             AutomationProperties.LabeledBy="{Binding ElementName=FloatingHudPlacementLabel}">
+                                        <ListBox.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <WrapPanel/>
+                                            </ItemsPanelTemplate>
+                                        </ListBox.ItemsPanel>
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding DisplayName}" TextAlignment="Center" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                        <ListBox.ItemContainerStyle>
+                                            <Style TargetType="ListBoxItem">
+                                                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                                <Setter Property="VerticalContentAlignment" Value="Center"/>
+                                                <Setter Property="Foreground" Value="{DynamicResource Brush.PrimaryText}"/>
+                                                <Setter Property="Template">
+                                                    <Setter.Value>
+                                                        <ControlTemplate TargetType="ListBoxItem">
+                                                            <Border x:Name="Chrome"
+                                                                    Background="{DynamicResource Brush.FieldBackground}"
+                                                                    BorderBrush="{DynamicResource Brush.FieldBorder}"
+                                                                    BorderThickness="1"
+                                                                    CornerRadius="10"
+                                                                    Margin="0,0,10,10"
+                                                                    Padding="16,10">
+                                                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                            </Border>
+                                                            <ControlTemplate.Triggers>
+                                                                <Trigger Property="IsSelected" Value="True">
+                                                                    <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource Brush.PrimaryButtonBackground}"/>
+                                                                    <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource Brush.PrimaryButtonBackground}"/>
+                                                                    <Setter Property="Foreground" Value="{DynamicResource Brush.PrimaryButtonForeground}"/>
+                                                                </Trigger>
+                                                            </ControlTemplate.Triggers>
+                                                        </ControlTemplate>
+                                                    </Setter.Value>
+                                                </Setter>
+                                            </Style>
+                                        </ListBox.ItemContainerStyle>
+                                    </ListBox>
+                                    <TextBlock Text="{Binding FloatingHudPlacementStatus}" Style="{StaticResource CardBodyText}"/>
+                                </StackPanel>
+
+                                <Button Content="{loc:Loc settings.floatingHud.resetLayout}"
+                                        Command="{Binding ResetHudLayoutCommand}"
+                                        Margin="0,16,0,0"
+                                        HorizontalAlignment="Left"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </TabItem>
+
+                <TabItem Header="{loc:Loc settings.section.clipboard}">
+                    <StackPanel Margin="0,16,0,0">
+                        <Border Style="{StaticResource SettingsCardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="{loc:Loc settings.section.clipboard}" Style="{StaticResource SectionTitleText}"/>
+                                <CheckBox Content="{loc:Loc settings.clipboard.optimiseImages}" Margin="0,0,0,8" IsChecked="{Binding EnableClipboardOptimiser}"/>
+                                <CheckBox Content="{loc:Loc settings.clipboard.copyBack}" Margin="0,0,0,8" IsChecked="{Binding AutoCopyToClipboard}"/>
+                                <CheckBox Content="{loc:Loc settings.clipboard.copyFilePath}" Margin="0,0,0,8" IsChecked="{Binding CopyImageFilePath}"/>
+                                <CheckBox Content="{loc:Loc settings.clipboard.optimiseVideos}" Margin="0,0,0,8" IsChecked="{Binding OptimiseVideoClipboard}"/>
+                                <CheckBox Content="{loc:Loc settings.clipboard.optimisePdfs}" Margin="0,0,0,8" IsChecked="{Binding OptimisePdfClipboard}"/>
+                                <CheckBox Content="{loc:Loc settings.clipboard.optimiseFileDrops}" Margin="0,0,0,0" IsChecked="{Binding OptimiseClipboardFileDrops}"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </TabItem>
+
+                <TabItem Header="{loc:Loc settings.section.automation}">
+                    <StackPanel Margin="0,16,0,0">
+                        <Border Style="{StaticResource SettingsCardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="{loc:Loc settings.section.automation}" Style="{StaticResource SectionTitleText}"/>
+                                <CheckBox Content="{loc:Loc settings.automation.watchImages}" Margin="0,0,0,8" IsChecked="{Binding EnableAutomaticImageOptimisations}"/>
+                                <CheckBox Content="{loc:Loc settings.automation.watchVideos}" Margin="0,0,0,8" IsChecked="{Binding EnableAutomaticVideoOptimisations}"/>
+                                <CheckBox Content="{loc:Loc settings.automation.watchPdfs}" Margin="0,0,0,12" IsChecked="{Binding EnableAutomaticPdfOptimisations}"/>
+
+                                <StackPanel>
+                                    <TextBlock Text="{loc:Loc settings.automation.imageFoldersTitle}" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}"/>
+                                    <TextBlock Text="{loc:Loc settings.automation.folderSubtitle}" Style="{StaticResource CardBodyText}" Margin="0,4,0,8"/>
+                                    <ItemsControl ItemsSource="{Binding ImageDirectories}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Padding="14" Margin="0,0,0,6" Background="{DynamicResource Brush.CardBackground}" BorderBrush="{DynamicResource Brush.CardBorder}" BorderThickness="1" CornerRadius="10">
+                                                    <DockPanel LastChildFill="False">
+                                                        <TextBlock Text="{Binding}" VerticalAlignment="Center" TextWrapping="Wrap" Foreground="{DynamicResource Brush.PrimaryText}"/>
+                                                        <Button Content="{loc:Loc settings.automation.removeFolder}"
+                                                                Command="{Binding DataContext.RemoveImageDirectoryCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                                CommandParameter="{Binding}"
+                                                                Margin="12,0,0,0"
+                                                                Padding="12,4"
+                                                                DockPanel.Dock="Right"/>
+                                                    </DockPanel>
                                                 </Border>
-                                                <ControlTemplate.Triggers>
-                                                    <Trigger Property="IsSelected" Value="True">
-                                                        <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource Brush.PrimaryButtonBackground}"/>
-                                                        <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource Brush.PrimaryButtonBackground}"/>
-                                                        <Setter Property="Foreground" Value="{DynamicResource Brush.PrimaryButtonForeground}"/>
-                                                    </Trigger>
-                                                </ControlTemplate.Triggers>
-                                            </ControlTemplate>
-                                        </Setter.Value>
-                                    </Setter>
-                                </Style>
-                            </ListBox.ItemContainerStyle>
-                        </ListBox>
-                        <TextBlock Text="{Binding FloatingHudPlacementStatus}"
-                                   FontSize="12"
-                                   Foreground="{DynamicResource Brush.SecondaryText}"/>
-                        <Button Content="{loc:Loc settings.floatingHud.resetLayout}"
-                                Command="{Binding ResetHudLayoutCommand}"
-                                Padding="18,6"
-                                Margin="0,12,0,0"
-                                HorizontalAlignment="Left"/>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <TextBlock Text="{loc:Loc settings.automation.imageFoldersEmpty}">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock" BasedOn="{StaticResource CardBodyText}">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding ImageDirectories.Count}" Value="0">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                    <Button Content="{loc:Loc settings.automation.addFolder}"
+                                            Command="{Binding AddImageDirectoryCommand}"
+                                            HorizontalAlignment="Left"
+                                            Margin="0,8,0,0"/>
+                                </StackPanel>
+
+                                <StackPanel Margin="0,16,0,0">
+                                    <TextBlock Text="{loc:Loc settings.automation.videoFoldersTitle}" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}"/>
+                                    <TextBlock Text="{loc:Loc settings.automation.folderSubtitle}" Style="{StaticResource CardBodyText}" Margin="0,4,0,8"/>
+                                    <ItemsControl ItemsSource="{Binding VideoDirectories}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Padding="14" Margin="0,0,0,6" Background="{DynamicResource Brush.CardBackground}" BorderBrush="{DynamicResource Brush.CardBorder}" BorderThickness="1" CornerRadius="10">
+                                                    <DockPanel LastChildFill="False">
+                                                        <TextBlock Text="{Binding}" VerticalAlignment="Center" TextWrapping="Wrap" Foreground="{DynamicResource Brush.PrimaryText}"/>
+                                                        <Button Content="{loc:Loc settings.automation.removeFolder}"
+                                                                Command="{Binding DataContext.RemoveVideoDirectoryCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                                CommandParameter="{Binding}"
+                                                                Margin="12,0,0,0"
+                                                                Padding="12,4"
+                                                                DockPanel.Dock="Right"/>
+                                                    </DockPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <TextBlock Text="{loc:Loc settings.automation.videoFoldersEmpty}">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock" BasedOn="{StaticResource CardBodyText}">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding VideoDirectories.Count}" Value="0">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                    <Button Content="{loc:Loc settings.automation.addFolder}"
+                                            Command="{Binding AddVideoDirectoryCommand}"
+                                            HorizontalAlignment="Left"
+                                            Margin="0,8,0,0"/>
+                                </StackPanel>
+
+                                <StackPanel Margin="0,16,0,0">
+                                    <TextBlock Text="{loc:Loc settings.automation.pdfFoldersTitle}" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}"/>
+                                    <TextBlock Text="{loc:Loc settings.automation.folderSubtitle}" Style="{StaticResource CardBodyText}" Margin="0,4,0,8"/>
+                                    <ItemsControl ItemsSource="{Binding PdfDirectories}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Padding="14" Margin="0,0,0,6" Background="{DynamicResource Brush.CardBackground}" BorderBrush="{DynamicResource Brush.CardBorder}" BorderThickness="1" CornerRadius="10">
+                                                    <DockPanel LastChildFill="False">
+                                                        <TextBlock Text="{Binding}" VerticalAlignment="Center" TextWrapping="Wrap" Foreground="{DynamicResource Brush.PrimaryText}"/>
+                                                        <Button Content="{loc:Loc settings.automation.removeFolder}"
+                                                                Command="{Binding DataContext.RemovePdfDirectoryCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                                CommandParameter="{Binding}"
+                                                                Margin="12,0,0,0"
+                                                                Padding="12,4"
+                                                                DockPanel.Dock="Right"/>
+                                                    </DockPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <TextBlock Text="{loc:Loc settings.automation.pdfFoldersEmpty}">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock" BasedOn="{StaticResource CardBodyText}">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding PdfDirectories.Count}" Value="0">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                    <Button Content="{loc:Loc settings.automation.addFolder}"
+                                            Command="{Binding AddPdfDirectoryCommand}"
+                                            HorizontalAlignment="Left"
+                                            Margin="0,8,0,0"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
-                </StackPanel>
-            </Border>
+                </TabItem>
 
-            <Border Margin="0,16,0,0" Padding="20" Background="{DynamicResource Brush.SurfaceBackground}" BorderBrush="{DynamicResource Brush.SurfaceBorder}" BorderThickness="1" CornerRadius="12">
-                <StackPanel>
-                    <TextBlock Text="{loc:Loc settings.section.clipboard}" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}"/>
-                    <CheckBox Content="{loc:Loc settings.clipboard.optimiseImages}" Margin="0,12,0,0" IsChecked="{Binding EnableClipboardOptimiser}"/>
-                    <CheckBox Content="{loc:Loc settings.clipboard.copyBack}" Margin="0,8,0,0" IsChecked="{Binding AutoCopyToClipboard}"/>
-                    <CheckBox Content="{loc:Loc settings.clipboard.copyFilePath}" Margin="0,8,0,0" IsChecked="{Binding CopyImageFilePath}"/>
-                    <CheckBox Content="{loc:Loc settings.clipboard.optimiseVideos}" Margin="0,8,0,0" IsChecked="{Binding OptimiseVideoClipboard}"/>
-                    <CheckBox Content="{loc:Loc settings.clipboard.optimisePdfs}" Margin="0,8,0,0" IsChecked="{Binding OptimisePdfClipboard}"/>
-                    <CheckBox Content="{loc:Loc settings.clipboard.optimiseFileDrops}" Margin="0,8,0,0" IsChecked="{Binding OptimiseClipboardFileDrops}"/>
-                </StackPanel>
-            </Border>
-
-            <Border Margin="0,16,0,0" Padding="20" Background="{DynamicResource Brush.SurfaceBackground}" BorderBrush="{DynamicResource Brush.SurfaceBorder}" BorderThickness="1" CornerRadius="12">
-                <StackPanel>
-                    <TextBlock Text="{loc:Loc settings.section.automation}" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}"/>
-                    <CheckBox Content="{loc:Loc settings.automation.watchImages}" Margin="0,12,0,0" IsChecked="{Binding EnableAutomaticImageOptimisations}"/>
-                    <CheckBox Content="{loc:Loc settings.automation.watchVideos}" Margin="0,8,0,0" IsChecked="{Binding EnableAutomaticVideoOptimisations}"/>
-                    <CheckBox Content="{loc:Loc settings.automation.watchPdfs}" Margin="0,8,0,0" IsChecked="{Binding EnableAutomaticPdfOptimisations}"/>
-
+                <TabItem Header="{loc:Loc settings.section.optimisation}">
                     <StackPanel Margin="0,16,0,0">
-                        <TextBlock Text="{loc:Loc settings.automation.imageFoldersTitle}" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}"/>
-                        <TextBlock Text="{loc:Loc settings.automation.folderSubtitle}" FontSize="12" Foreground="{DynamicResource Brush.SecondaryText}" Margin="0,4,0,8" TextWrapping="Wrap"/>
-                        <ItemsControl ItemsSource="{Binding ImageDirectories}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Padding="14" MinHeight="48" Margin="0,0,0,6" Background="{DynamicResource Brush.CardBackground}" BorderBrush="{DynamicResource Brush.CardBorder}" BorderThickness="1" CornerRadius="6">
-                                        <DockPanel>
-                                            <TextBlock Text="{Binding}"
-                                                       VerticalAlignment="Center"
-                                                       Margin="0,0,8,0"
-                                                       TextWrapping="Wrap"
-                                                       Foreground="{DynamicResource Brush.PrimaryText}"/>
-                                            <Button Content="{loc:Loc settings.automation.removeFolder}" Command="{Binding DataContext.RemoveImageDirectoryCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" Padding="10,4" Margin="8,0,0,0" DockPanel.Dock="Right"/>
-                                        </DockPanel>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                        <TextBlock Text="{loc:Loc settings.automation.imageFoldersEmpty}" Margin="0,4,0,0" FontSize="12" Foreground="{DynamicResource Brush.SecondaryText}">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding ImageDirectories.Count}" Value="0">
-                                            <Setter Property="Visibility" Value="Visible"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
-                        <Button Content="{loc:Loc settings.automation.addFolder}" Command="{Binding AddImageDirectoryCommand}" Margin="0,8,0,0" Padding="16,6" HorizontalAlignment="Left"/>
+                        <Border Style="{StaticResource SettingsCardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="{loc:Loc settings.section.optimisation}" Style="{StaticResource SectionTitleText}"/>
+                                <CheckBox Content="{loc:Loc settings.optimisation.forceFullImage}" Margin="0,0,0,8" IsChecked="{Binding ForceFullImageOptimisations}"/>
+                                <TextBlock Text="{loc:Loc settings.optimisation.forceFullImage.subtitle}"
+                                           Style="{StaticResource CardBodyText}"
+                                           Margin="24,4,0,12"/>
+                                <CheckBox Content="{loc:Loc settings.optimisation.autoConvertDocuments}" Margin="0,0,0,8" IsChecked="{Binding AutoConvertDocumentsToPdf}"/>
+                                <TextBlock Text="{loc:Loc settings.optimisation.autoConvertDocuments.subtitle}"
+                                           Style="{StaticResource CardBodyText}"
+                                           Margin="24,4,0,12"/>
+                                <TextBlock Text="{loc:Loc settings.optimisation.videoPreset.title}" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}"/>
+                                <TextBlock Text="{Binding VideoPresetSubtitle}" Style="{StaticResource CardBodyText}" Margin="0,4,0,12"/>
+                                <ListBox ItemsSource="{Binding VideoEncoderPresetOptions}"
+                                         SelectedItem="{Binding SelectedVideoEncoderPreset}"
+                                         BorderThickness="0"
+                                         Background="Transparent"
+                                         HorizontalContentAlignment="Stretch">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Padding="14" Margin="0,0,0,10" Background="{DynamicResource Brush.FieldBackground}" BorderBrush="{DynamicResource Brush.FieldBorder}" BorderThickness="1" CornerRadius="12">
+                                                <StackPanel>
+                                                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}"/>
+                                                    <TextBlock Text="{Binding Description}" Style="{StaticResource CardBodyText}" Margin="0,4,0,0"/>
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
+                </TabItem>
 
+                <TabItem Header="{loc:Loc settings.section.output}">
                     <StackPanel Margin="0,16,0,0">
-                        <TextBlock Text="{loc:Loc settings.automation.videoFoldersTitle}" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}"/>
-                        <TextBlock Text="{loc:Loc settings.automation.folderSubtitle}" FontSize="12" Foreground="{DynamicResource Brush.SecondaryText}" Margin="0,4,0,8" TextWrapping="Wrap"/>
-                        <ItemsControl ItemsSource="{Binding VideoDirectories}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Padding="14" MinHeight="48" Margin="0,0,0,6" Background="{DynamicResource Brush.CardBackground}" BorderBrush="{DynamicResource Brush.CardBorder}" BorderThickness="1" CornerRadius="6">
-                                        <DockPanel>
-                                            <TextBlock Text="{Binding}"
-                                                       VerticalAlignment="Center"
-                                                       Margin="0,0,8,0"
-                                                       TextWrapping="Wrap"
-                                                       Foreground="{DynamicResource Brush.PrimaryText}"/>
-                                            <Button Content="{loc:Loc settings.automation.removeFolder}" Command="{Binding DataContext.RemoveVideoDirectoryCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" Padding="10,4" Margin="8,0,0,0" DockPanel.Dock="Right"/>
-                                        </DockPanel>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                        <TextBlock Text="{loc:Loc settings.automation.videoFoldersEmpty}" Margin="0,4,0,0" FontSize="12" Foreground="{DynamicResource Brush.SecondaryText}">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding VideoDirectories.Count}" Value="0">
-                                            <Setter Property="Visibility" Value="Visible"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
-                        <Button Content="{loc:Loc settings.automation.addFolder}" Command="{Binding AddVideoDirectoryCommand}" Margin="0,8,0,0" Padding="16,6" HorizontalAlignment="Left"/>
+                        <Border Style="{StaticResource SettingsCardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="{loc:Loc settings.section.output}" Style="{StaticResource SectionTitleText}"/>
+                                <CheckBox Content="{loc:Loc settings.output.replaceInPlace}" Margin="0,0,0,8" IsChecked="{Binding ReplaceOptimisedFilesInPlace}"/>
+                                <TextBlock Text="{loc:Loc settings.output.replaceInPlace.subtitle}" Style="{StaticResource CardBodyText}" Margin="24,4,0,12"/>
+                                <CheckBox Content="{loc:Loc settings.output.deleteConverted}" Margin="0,0,0,8" IsChecked="{Binding DeleteOriginalAfterConversion}" IsEnabled="{Binding ReplaceOptimisedFilesInPlace}"/>
+                                <TextBlock Text="{loc:Loc settings.output.deleteConverted.subtitle}" Style="{StaticResource CardBodyText}" Margin="24,4,0,0"/>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
+                </TabItem>
 
+                <TabItem Header="{loc:Loc settings.section.preservation}">
                     <StackPanel Margin="0,16,0,0">
-                        <TextBlock Text="{loc:Loc settings.automation.pdfFoldersTitle}" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}"/>
-                        <TextBlock Text="{loc:Loc settings.automation.folderSubtitle}" FontSize="12" Foreground="{DynamicResource Brush.SecondaryText}" Margin="0,4,0,8" TextWrapping="Wrap"/>
-                        <ItemsControl ItemsSource="{Binding PdfDirectories}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Padding="14" MinHeight="48" Margin="0,0,0,6" Background="{DynamicResource Brush.CardBackground}" BorderBrush="{DynamicResource Brush.CardBorder}" BorderThickness="1" CornerRadius="6">
-                                        <DockPanel>
-                                            <TextBlock Text="{Binding}"
-                                                       VerticalAlignment="Center"
-                                                       Margin="0,0,8,0"
-                                                       TextWrapping="Wrap"
-                                                       Foreground="{DynamicResource Brush.PrimaryText}"/>
-                                            <Button Content="{loc:Loc settings.automation.removeFolder}" Command="{Binding DataContext.RemovePdfDirectoryCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" Padding="10,4" Margin="8,0,0,0" DockPanel.Dock="Right"/>
-                                        </DockPanel>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                        <TextBlock Text="{loc:Loc settings.automation.pdfFoldersEmpty}" Margin="0,4,0,0" FontSize="12" Foreground="{DynamicResource Brush.SecondaryText}">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding PdfDirectories.Count}" Value="0">
-                                            <Setter Property="Visibility" Value="Visible"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
-                        <Button Content="{loc:Loc settings.automation.addFolder}" Command="{Binding AddPdfDirectoryCommand}" Margin="0,8,0,0" Padding="16,6" HorizontalAlignment="Left"/>
+                        <Border Style="{StaticResource SettingsCardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="{loc:Loc settings.section.preservation}" Style="{StaticResource SectionTitleText}"/>
+                                <CheckBox Content="{loc:Loc settings.preservation.preserveDates}" Margin="0,0,0,8" IsChecked="{Binding PreserveDates}"/>
+                                <CheckBox Content="{loc:Loc settings.preservation.stripMetadata}" IsChecked="{Binding StripMetadata}"/>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
-                </StackPanel>
-            </Border>
+                </TabItem>
 
-            <Border Margin="0,16,0,0" Padding="20" Background="{DynamicResource Brush.SurfaceBackground}" BorderBrush="{DynamicResource Brush.SurfaceBorder}" BorderThickness="1" CornerRadius="12">
-                <StackPanel>
-                    <TextBlock Text="{loc:Loc settings.section.optimisation}" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}"/>
-                    <CheckBox Content="{loc:Loc settings.optimisation.forceFullImage}" Margin="0,12,0,0" IsChecked="{Binding ForceFullImageOptimisations}"/>
-                    <TextBlock Text="{loc:Loc settings.optimisation.forceFullImage.subtitle}" FontSize="12" Foreground="{DynamicResource Brush.SecondaryText}" Margin="24,4,0,0" TextWrapping="Wrap"/>
-                    <CheckBox Content="{loc:Loc settings.optimisation.autoConvertDocuments}" Margin="0,12,0,0" IsChecked="{Binding AutoConvertDocumentsToPdf}"/>
-                    <TextBlock Text="{loc:Loc settings.optimisation.autoConvertDocuments.subtitle}" FontSize="12" Foreground="{DynamicResource Brush.SecondaryText}" Margin="24,4,0,0" TextWrapping="Wrap"/>
+                <TabItem Header="{loc:Loc settings.section.shortcuts}">
                     <StackPanel Margin="0,16,0,0">
-                        <TextBlock Text="{loc:Loc settings.optimisation.videoPreset.title}" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}"/>
-                        <TextBlock Text="{Binding VideoPresetSubtitle}" FontSize="12" Foreground="{DynamicResource Brush.SecondaryText}" Margin="0,4,0,12" TextWrapping="Wrap"/>
-                        <ListBox ItemsSource="{Binding VideoEncoderPresetOptions}"
-                                 SelectedItem="{Binding SelectedVideoEncoderPreset}"
-                                 BorderThickness="0"
-                                 Background="Transparent"
-                                 HorizontalContentAlignment="Stretch">
-                            <ListBox.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Padding="14"
-                                            Margin="0,0,0,8"
-                                            Background="{DynamicResource Brush.FieldBackground}"
-                                            BorderBrush="{DynamicResource Brush.FieldBorder}"
-                                            BorderThickness="1"
-                                            CornerRadius="10">
-                                        <StackPanel>
-                                            <TextBlock Text="{Binding Title}"
-                                                       FontWeight="SemiBold"
-                                                       Foreground="{DynamicResource Brush.PrimaryText}"/>
-                                            <TextBlock Text="{Binding Description}"
-                                                       FontSize="12"
-                                                       Margin="0,4,0,0"
-                                                       TextWrapping="Wrap"
-                                                       Foreground="{DynamicResource Brush.SecondaryText}"/>
-                                        </StackPanel>
-                                    </Border>
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
-                        </ListBox>
+                        <Border Style="{StaticResource SettingsCardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="{loc:Loc settings.shortcuts.app}" Style="{StaticResource SectionTitleText}"/>
+                                <TextBlock Text="{loc:Loc settings.shortcuts.subtitle}" Style="{StaticResource CardBodyText}" Margin="0,6,0,12"/>
+                                <ItemsControl ItemsSource="{Binding AppShortcutPreferences}" AutomationProperties.HelpText="{loc:Loc settings.shortcuts.list.help}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Padding="14" Margin="0,0,0,10" Background="{DynamicResource Brush.CardBackground}" BorderBrush="{DynamicResource Brush.CardBorder}" BorderThickness="1" CornerRadius="12">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel>
+                                                        <TextBlock Text="{Binding Description}" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}" TextWrapping="Wrap"/>
+                                                        <TextBlock Text="{Binding DefaultBindingLabel}" Style="{StaticResource CardBodyText}" Margin="0,4,0,0"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0">
+                                                        <TextBlock Text="{Binding CurrentBinding}" Foreground="{DynamicResource Brush.PrimaryText}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                                        <Button Content="{loc:Loc settings.shortcuts.change}" Command="{Binding CaptureCommand}" Padding="14,4"/>
+                                                        <Button Content="{loc:Loc settings.shortcuts.clear}" Command="{Binding ClearCommand}" Padding="12,4" Margin="8,0,0,0"/>
+                                                        <Button Content="{loc:Loc settings.shortcuts.reset}" Command="{Binding ResetCommand}" Padding="12,4" Margin="8,0,0,0"/>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource SettingsCardStyle}" Margin="0,16,0,0">
+                            <StackPanel>
+                                <TextBlock Text="{loc:Loc settings.shortcuts.global}" Style="{StaticResource SectionTitleText}"/>
+                                <TextBlock Text="{loc:Loc settings.shortcuts.subtitle}" Style="{StaticResource CardBodyText}" Margin="0,6,0,12"/>
+                                <ItemsControl ItemsSource="{Binding GlobalShortcutPreferences}" AutomationProperties.HelpText="{loc:Loc settings.shortcuts.list.help}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Padding="14" Margin="0,0,0,10" Background="{DynamicResource Brush.CardBackground}" BorderBrush="{DynamicResource Brush.CardBorder}" BorderThickness="1" CornerRadius="12">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel>
+                                                        <TextBlock Text="{Binding Description}" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}" TextWrapping="Wrap"/>
+                                                        <TextBlock Text="{Binding DefaultBindingLabel}" Style="{StaticResource CardBodyText}" Margin="0,4,0,0"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0">
+                                                        <TextBlock Text="{Binding CurrentBinding}" Foreground="{DynamicResource Brush.PrimaryText}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                                        <Button Content="{loc:Loc settings.shortcuts.change}" Command="{Binding CaptureCommand}" Padding="14,4"/>
+                                                        <Button Content="{loc:Loc settings.shortcuts.clear}" Command="{Binding ClearCommand}" Padding="12,4" Margin="8,0,0,0"/>
+                                                        <Button Content="{loc:Loc settings.shortcuts.reset}" Command="{Binding ResetCommand}" Padding="12,4" Margin="8,0,0,0"/>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
-                </StackPanel>
-            </Border>
-
-            <Border Margin="0,16,0,0" Padding="20" Background="{DynamicResource Brush.SurfaceBackground}" BorderBrush="{DynamicResource Brush.SurfaceBorder}" BorderThickness="1" CornerRadius="12">
-                <StackPanel>
-                    <TextBlock Text="{loc:Loc settings.section.output}" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}"/>
-                    <CheckBox Content="{loc:Loc settings.output.replaceInPlace}" Margin="0,12,0,0" IsChecked="{Binding ReplaceOptimisedFilesInPlace}"/>
-                    <TextBlock Text="{loc:Loc settings.output.replaceInPlace.subtitle}" FontSize="12" Margin="24,4,0,0" Foreground="{DynamicResource Brush.SecondaryText}" TextWrapping="Wrap"/>
-                    <CheckBox Content="{loc:Loc settings.output.deleteConverted}" Margin="0,12,0,0" IsChecked="{Binding DeleteOriginalAfterConversion}" IsEnabled="{Binding ReplaceOptimisedFilesInPlace}"/>
-                    <TextBlock Text="{loc:Loc settings.output.deleteConverted.subtitle}" FontSize="12" Margin="24,4,0,0" Foreground="{DynamicResource Brush.SecondaryText}" TextWrapping="Wrap"/>
-                </StackPanel>
-            </Border>
-
-            <Border Margin="0,16,0,0" Padding="20" Background="{DynamicResource Brush.SurfaceBackground}" BorderBrush="{DynamicResource Brush.SurfaceBorder}" BorderThickness="1" CornerRadius="12">
-                <StackPanel>
-                    <TextBlock Text="{loc:Loc settings.section.preservation}" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}"/>
-                    <CheckBox Content="{loc:Loc settings.preservation.preserveDates}" Margin="0,12,0,0" IsChecked="{Binding PreserveDates}"/>
-                    <CheckBox Content="{loc:Loc settings.preservation.stripMetadata}" Margin="0,8,0,0" IsChecked="{Binding StripMetadata}"/>
-                </StackPanel>
-            </Border>
-
-            <Border Margin="0,16,0,0" Padding="20" Background="{DynamicResource Brush.SurfaceBackground}" BorderBrush="{DynamicResource Brush.SurfaceBorder}" BorderThickness="1" CornerRadius="12">
-                <StackPanel>
-                    <TextBlock Text="{loc:Loc settings.section.shortcuts}" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}"/>
-                    <TextBlock Text="{loc:Loc settings.shortcuts.subtitle}" FontSize="13" Foreground="{DynamicResource Brush.SecondaryText}" Margin="0,6,0,0" TextWrapping="Wrap"/>
-
-                    <TextBlock Text="{loc:Loc settings.shortcuts.app}" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}" Margin="0,18,0,0"/>
-                    <ItemsControl ItemsSource="{Binding AppShortcutPreferences}" Margin="0,10,0,0" AutomationProperties.HelpText="{loc:Loc settings.shortcuts.list.help}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <Border Padding="12" Margin="0,0,0,8" Background="{DynamicResource Brush.CardBackground}" BorderBrush="{DynamicResource Brush.CardBorder}" BorderThickness="1" CornerRadius="8">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel>
-                                            <TextBlock Text="{Binding Description}" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}"/>
-                                            <TextBlock Text="{Binding DefaultBindingLabel}" Foreground="{DynamicResource Brush.MutedText}" FontSize="12" Margin="0,4,0,0"/>
-                                        </StackPanel>
-                                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                            <TextBlock Text="{Binding CurrentBinding}" Foreground="{DynamicResource Brush.PrimaryText}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                            <Button Content="{loc:Loc settings.shortcuts.change}" Command="{Binding CaptureCommand}" Margin="4,0,0,0" Padding="14,4"/>
-                                            <Button Content="{loc:Loc settings.shortcuts.clear}" Command="{Binding ClearCommand}" Margin="8,0,0,0" Padding="12,4"/>
-                                            <Button Content="{loc:Loc settings.shortcuts.reset}" Command="{Binding ResetCommand}" Margin="8,0,0,0" Padding="12,4"/>
-                                        </StackPanel>
-                                    </Grid>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-
-                    <TextBlock Text="{loc:Loc settings.shortcuts.global}" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}" Margin="0,18,0,0"/>
-                    <ItemsControl ItemsSource="{Binding GlobalShortcutPreferences}" Margin="0,10,0,0" AutomationProperties.HelpText="{loc:Loc settings.shortcuts.list.help}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <Border Padding="12" Margin="0,0,0,8" Background="{DynamicResource Brush.CardBackground}" BorderBrush="{DynamicResource Brush.CardBorder}" BorderThickness="1" CornerRadius="8">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel>
-                                            <TextBlock Text="{Binding Description}" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}"/>
-                                            <TextBlock Text="{Binding DefaultBindingLabel}" Foreground="{DynamicResource Brush.MutedText}" FontSize="12" Margin="0,4,0,0"/>
-                                        </StackPanel>
-                                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                            <TextBlock Text="{Binding CurrentBinding}" Foreground="{DynamicResource Brush.PrimaryText}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                            <Button Content="{loc:Loc settings.shortcuts.change}" Command="{Binding CaptureCommand}" Margin="4,0,0,0" Padding="14,4"/>
-                                            <Button Content="{loc:Loc settings.shortcuts.clear}" Command="{Binding ClearCommand}" Margin="8,0,0,0" Padding="12,4"/>
-                                            <Button Content="{loc:Loc settings.shortcuts.reset}" Command="{Binding ResetCommand}" Margin="8,0,0,0" Padding="12,4"/>
-                                        </StackPanel>
-                                    </Grid>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </StackPanel>
-            </Border>
-
+                </TabItem>
+            </TabControl>
         </StackPanel>
     </ScrollViewer>
 </UserControl>
