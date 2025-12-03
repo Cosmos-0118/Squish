@@ -253,7 +253,7 @@
                     <TextBlock Text="{loc:Loc settings.optimisation.forceFullImage.subtitle}" FontSize="12" Foreground="{DynamicResource Brush.SecondaryText}" Margin="24,4,0,0" TextWrapping="Wrap"/>
                     <StackPanel Margin="0,16,0,0">
                         <TextBlock Text="{loc:Loc settings.optimisation.videoPreset.title}" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}"/>
-                        <TextBlock Text="{loc:Loc settings.optimisation.videoPreset.subtitle}" FontSize="12" Foreground="{DynamicResource Brush.SecondaryText}" Margin="0,4,0,12" TextWrapping="Wrap"/>
+                        <TextBlock Text="{Binding VideoPresetSubtitle}" FontSize="12" Foreground="{DynamicResource Brush.SecondaryText}" Margin="0,4,0,12" TextWrapping="Wrap"/>
                         <ListBox ItemsSource="{Binding VideoEncoderPresetOptions}"
                                  SelectedItem="{Binding SelectedVideoEncoderPreset}"
                                  BorderThickness="0"

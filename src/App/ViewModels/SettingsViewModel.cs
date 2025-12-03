@@ -5,6 +5,7 @@ using System.Linq;
 using ClopWindows.App.Infrastructure;
 using ClopWindows.App.Localization;
 using ClopWindows.App.Services;
+using ClopWindows.Core.Optimizers;
 using ClopWindows.Core.Settings;
 
 namespace ClopWindows.App.ViewModels;
@@ -35,11 +36,13 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     private ThemeOptionViewModel? _selectedThemeOption;
     private VideoEncoderPresetOptionViewModel? _selectedVideoEncoderPreset;
     private FloatingHudPlacement _floatingHudPlacement;
+    private readonly string _gpuLabel;
 
     public IReadOnlyList<ShortcutPreferenceViewModel> AppShortcutPreferences { get; }
     public IReadOnlyList<ShortcutPreferenceViewModel> GlobalShortcutPreferences { get; }
     public IReadOnlyList<ThemeOptionViewModel> ThemeOptions { get; }
     public IReadOnlyList<VideoEncoderPresetOptionViewModel> VideoEncoderPresetOptions { get; }
+    public string VideoPresetSubtitle { get; }
     public RelayCommand ResetHudLayoutCommand { get; }
     public IReadOnlyList<FloatingHudPlacementOptionViewModel> FloatingHudPlacementOptions { get; }
     public ObservableCollection<string> ImageDirectories { get; }
@@ -61,7 +64,9 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         ResetHudLayoutCommand = new RelayCommand(_ => ResetHudLayout(), _ => EnableFloatingResults);
         FloatingHudPlacementOptions = new ReadOnlyCollection<FloatingHudPlacementOptionViewModel>(CreatePlacementOptions());
         ThemeOptions = new ReadOnlyCollection<ThemeOptionViewModel>(CreateThemeOptions());
-        VideoEncoderPresetOptions = new ReadOnlyCollection<VideoEncoderPresetOptionViewModel>(CreateVideoEncoderPresetOptions());
+        _gpuLabel = DetermineGpuLabel();
+        VideoEncoderPresetOptions = new ReadOnlyCollection<VideoEncoderPresetOptionViewModel>(CreateVideoEncoderPresetOptions(_gpuLabel));
+        VideoPresetSubtitle = BuildVideoPresetSubtitle(_gpuLabel);
         ImageDirectories = new ObservableCollection<string>();
         VideoDirectories = new ObservableCollection<string>();
         PdfDirectories = new ObservableCollection<string>();
@@ -546,16 +551,23 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         SettingsHost.Set(key, target.ToArray());
     }
 
-    private static List<VideoEncoderPresetOptionViewModel> CreateVideoEncoderPresetOptions()
+    private static List<VideoEncoderPresetOptionViewModel> CreateVideoEncoderPresetOptions(string gpuLabel)
     {
+        var label = string.IsNullOrWhiteSpace(gpuLabel) ? string.Empty : gpuLabel;
         return new List<VideoEncoderPresetOptionViewModel>
         {
             new(VideoEncoderPreset.Auto, ClopStringCatalog.Get("settings.optimisation.videoPreset.auto.title"), ClopStringCatalog.Get("settings.optimisation.videoPreset.auto.description")),
             new(VideoEncoderPreset.Cpu, ClopStringCatalog.Get("settings.optimisation.videoPreset.cpu.title"), ClopStringCatalog.Get("settings.optimisation.videoPreset.cpu.description")),
-            new(VideoEncoderPreset.GpuQuality, ClopStringCatalog.Get("settings.optimisation.videoPreset.gpuQuality.title"), ClopStringCatalog.Get("settings.optimisation.videoPreset.gpuQuality.description")),
-            new(VideoEncoderPreset.GpuSimple, ClopStringCatalog.Get("settings.optimisation.videoPreset.gpuSimple.title"), ClopStringCatalog.Get("settings.optimisation.videoPreset.gpuSimple.description")),
-            new(VideoEncoderPreset.GpuCqp, ClopStringCatalog.Get("settings.optimisation.videoPreset.gpuCqp.title"), ClopStringCatalog.Get("settings.optimisation.videoPreset.gpuCqp.description"))
+            new(VideoEncoderPreset.GpuQuality, ReplaceGpuLabel(ClopStringCatalog.Get("settings.optimisation.videoPreset.gpuQuality.title"), label), ClopStringCatalog.Get("settings.optimisation.videoPreset.gpuQuality.description")),
+            new(VideoEncoderPreset.GpuSimple, ReplaceGpuLabel(ClopStringCatalog.Get("settings.optimisation.videoPreset.gpuSimple.title"), label), ClopStringCatalog.Get("settings.optimisation.videoPreset.gpuSimple.description")),
+            new(VideoEncoderPreset.GpuCqp, ReplaceGpuLabel(ClopStringCatalog.Get("settings.optimisation.videoPreset.gpuCqp.title"), label), ClopStringCatalog.Get("settings.optimisation.videoPreset.gpuCqp.description"))
         };
+    }
+
+    private static string BuildVideoPresetSubtitle(string gpuLabel)
+    {
+        var subtitle = ClopStringCatalog.Get("settings.optimisation.videoPreset.subtitle");
+        return ReplaceGpuLabel(subtitle, gpuLabel);
     }
 
     private static List<ThemeOptionViewModel> CreateThemeOptions()
@@ -600,5 +612,49 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
 
         var token = char.ToLowerInvariant(suffix[0]) + suffix[1..];
         return $"settings.floatingHud.{prefix}.{token}";
+    }
+
+    private static string DetermineGpuLabel()
+    {
+        try
+        {
+            var options = VideoOptimiserOptions.Default.WithHardwareOverride();
+            var caps = options.HardwareOverride;
+            if (caps is null)
+            {
+                return string.Empty;
+            }
+
+            if (caps.SupportsHevcNvenc || caps.SupportsNvenc)
+            {
+                return "NVIDIA";
+            }
+
+            if (caps.SupportsHevcAmf || caps.SupportsAmf)
+            {
+                return "AMD";
+            }
+
+            if (caps.SupportsHevcQsv || caps.SupportsQsv)
+            {
+                return "Intel";
+            }
+        }
+        catch
+        {
+            // Hardware detection is best-effort; fall back to existing copy when probing fails.
+        }
+
+        return string.Empty;
+    }
+
+    private static string ReplaceGpuLabel(string source, string gpuLabel)
+    {
+        if (string.IsNullOrWhiteSpace(source) || string.IsNullOrWhiteSpace(gpuLabel))
+        {
+            return source;
+        }
+
+        return source.Replace("AMD", gpuLabel, StringComparison.OrdinalIgnoreCase);
     }
 }
