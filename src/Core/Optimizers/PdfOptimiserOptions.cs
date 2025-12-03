@@ -86,8 +86,8 @@ public sealed record PdfOptimiserOptions
             var baseDir = GetBaseDirectory();
             var ghostscriptSegments = new[]
             {
-                new[] { "tools", "ghostscript", "gswin64c.exe" },
-                new[] { "tools", "ghostscript", "bin", "gswin64c.exe" }
+                new[] { "tools", "ghostscript", "bin", "gswin64c.exe" },
+                new[] { "tools", "ghostscript", "gswin64c.exe" }
             };
 
             foreach (var segments in ghostscriptSegments)
@@ -180,8 +180,8 @@ public sealed record PdfOptimiserOptions
             var baseDir = GetBaseDirectory();
             var qpdfSegments = new[]
             {
-                new[] { "tools", "qpdf", "qpdf.exe" },
-                new[] { "tools", "qpdf", "bin", "qpdf.exe" }
+                new[] { "tools", "qpdf", "bin", "qpdf.exe" },
+                new[] { "tools", "qpdf", "qpdf.exe" }
             };
 
             foreach (var segments in qpdfSegments)

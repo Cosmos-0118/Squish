@@ -1523,7 +1523,10 @@ internal sealed class ExternalVideoToolchain : IVideoToolchain
 
         if (plan.UseTwoPass)
         {
-            var firstPassOutput = FilePath.TempFile("clop-pass", ".tmp", addUniqueSuffix: true);
+            var firstPassExtension = string.IsNullOrWhiteSpace(plan.OutputExtension)
+                ? null
+                : plan.OutputExtension;
+            var firstPassOutput = FilePath.TempFile("clop-pass", firstPassExtension, addUniqueSuffix: true);
             var passLogBase = Path.Combine(Path.GetTempPath(), $"clop-pass-{Guid.NewGuid():N}");
 
             try

@@ -210,8 +210,8 @@ public sealed record VideoOptimiserOptions
             new[] { "CLOP_FFMPEG", "FFMPEG_EXECUTABLE" },
             new[]
             {
-                new[] { "tools", "ffmpeg", "ffmpeg.exe" },
-                new[] { "tools", "ffmpeg", "bin", "ffmpeg.exe" }
+                new[] { "tools", "ffmpeg", "bin", "ffmpeg.exe" },
+                new[] { "tools", "ffmpeg", "ffmpeg.exe" }
             },
             "ffmpeg.exe",
             "ffmpeg");
@@ -223,8 +223,8 @@ public sealed record VideoOptimiserOptions
             new[] { "CLOP_FFPROBE", "FFPROBE_EXECUTABLE" },
             new[]
             {
-                new[] { "tools", "ffmpeg", "ffprobe.exe" },
-                new[] { "tools", "ffmpeg", "bin", "ffprobe.exe" }
+                new[] { "tools", "ffmpeg", "bin", "ffprobe.exe" },
+                new[] { "tools", "ffmpeg", "ffprobe.exe" }
             },
             "ffprobe.exe",
             "ffprobe");
