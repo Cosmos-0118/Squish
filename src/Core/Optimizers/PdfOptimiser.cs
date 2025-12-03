@@ -162,7 +162,7 @@ public sealed class PdfOptimiser : IOptimiser
 
     private static FilePath BuildOutputPath(FilePath source) => BuildCopyOutputPath(source, "pdf");
 
-    private static FilePath BuildCopyOutputPath(FilePath source, string extension)
+    internal static FilePath BuildCopyOutputPath(FilePath source, string extension)
     {
         var stem = source.Stem;
         if (!stem.EndsWith(".clop", StringComparison.OrdinalIgnoreCase))

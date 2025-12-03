@@ -13,7 +13,7 @@
 ## Current focus
 
 - **Feature parity:** Matching floating HUD behaviour, drop-zone overlays, and preset actions described in `docs/architecture.md`.
-- **Media pipelines:** Porting `pngquant`, `mozjpeg`, `libwebp`, `libavif`, `ffmpeg`, `ghostscript`, and `qpdf` flows (see `docs/windows-deps.md` and `tools/tools-manifest.json`).
+- **Media pipelines:** Porting `pngquant`, `mozjpeg`, `libwebp`, `libavif`, `ffmpeg`, `ghostscript`, `qpdf`, and the new LibreOffice-powered document pipeline (see `docs/windows-deps.md` and `tools/tools-manifest.json`).
 - **Automation:** Wiring the CLI (`src/CliBridge`) and Explorer integrations so Windows users can script Clop just like macOS Shortcuts users do.
 - **Reliability:** Shared logging, migrations, and settings live in `src/Core` so both the GUI app and the background service see the same configuration.
 
@@ -37,7 +37,7 @@
    pwsh scripts/fetch-tools.ps1
    ```
 
-   The script downloads `ffmpeg`, `mozjpeg`, `libwebp`, `libavif`, `ghostscript`, `qpdf`, and copies them during app startup into `%LOCALAPPDATA%\Clop\bin`.
+   The script downloads `ffmpeg`, `mozjpeg`, `libwebp`, `libavif`, `ghostscript`, `qpdf`, and `LibreOffice`, then copies the needed binaries during app startup into `%LOCALAPPDATA%\Clop\bin`.
 
 3. Open `src/ClopWindows.sln` in Visual Studio 2022 (or run `dotnet build src/ClopWindows.sln`).
 4. Set `App/ClopWindows.App` as the startup project for the WPF shell and `BackgroundService/ClopWindows.BackgroundService` for watcher testing.
@@ -65,5 +65,18 @@ dotnet test src/ClopWindows.sln
 - Massive credit to <a href="https://github.com/FuzzyIdeas/Clop">Clop for macOS</a> by the LowTechGuys team. This Windows port uses their work as a reference implementation for behaviour, UI flow, and third-party binary choices.
 - Please keep their original license header and notices intact when reusing or submitting patches. If you like this work, consider supporting the macOS team first.
 - Clop for Windows inherits the licensing terms documented in `LICENSE` plus the third-party notices in `THIRD_PARTY_NOTICES.md` and `tools/licenses/`.
+
+### Third-party tool credits
+
+| Tool                    | Purpose                                                    | Upstream                                         | License                      |
+| ----------------------- | ---------------------------------------------------------- | ------------------------------------------------ | ---------------------------- |
+| FFmpeg                  | Video/GIF re-encoding, audio stripping, metadata probes    | <https://ffmpeg.org/>                            | GPL / LGPL (build-dependent) |
+| mozjpeg                 | Progressive JPEG encoding when advanced codecs are enabled | <https://github.com/mozilla/mozjpeg>             | IJG / BSD-style              |
+| libwebp (`cwebp`)       | Static + animated WebP output                              | <https://developers.google.com/speed/webp>       | BSD 3-Clause                 |
+| libavif (`avifenc`)     | AVIF encoding for advanced codec pipeline                  | <https://github.com/AOMediaCodec/libavif>        | BSD 2-Clause                 |
+| pngquant                | Palette quantisation for PNG workflows                     | <https://pngquant.org/>                          | GPL v3 / Commercial          |
+| qpdf                    | Optional PDF linearisation before Ghostscript              | <https://github.com/qpdf/qpdf>                   | Apache 2.0                   |
+| Ghostscript             | Core PDF optimisation/rasterisation engine                 | <https://www.ghostscript.com/>                   | AGPL v3                      |
+| LibreOffice (`soffice`) | Document-to-PDF conversion prior to optimisation           | <https://www.libreoffice.org/about-us/licenses/> | MPL 2.0 / LGPL v3+           |
 
 If you spot mismatches with the macOS experience or want to help wire up parity items, open an issue or a draft PR. Thanks for following along while I build this hobby project!

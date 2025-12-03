@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Globalization;
+using System.Linq;
 using System.Windows.Threading;
 using ClopWindows.App.Localization;
 using ClopWindows.App.Infrastructure;
@@ -57,7 +58,8 @@ public sealed class CompareViewModel : ObservableObject, IDisposable
         {
             var supportedLabel = ClopStringCatalog.Get("compare.dialog.filterSupported");
             var allFilesLabel = ClopStringCatalog.Get("compare.dialog.filterAll");
-            var filter = string.Format(CultureInfo.InvariantCulture, "{0}|*.png;*.jpg;*.jpeg;*.webp;*.avif;*.heic;*.bmp;*.gif;*.tiff;*.tif;*.mov;*.mp4;*.mkv;*.webm;*.pdf|{1}|*.*", supportedLabel, allFilesLabel);
+            var supportedPattern = BuildSupportedFilterPattern();
+            var filter = string.Format(CultureInfo.InvariantCulture, "{0}|{2}|{1}|*.*", supportedLabel, allFilesLabel, supportedPattern);
 
             var dialog = new Microsoft.Win32.OpenFileDialog
             {
@@ -140,6 +142,11 @@ public sealed class CompareViewModel : ObservableObject, IDisposable
             return ItemType.Pdf;
         }
 
+        if (ShouldConvertDocuments() && MediaFormats.IsDocument(path))
+        {
+            return ItemType.Document;
+        }
+
         return null;
     }
 
@@ -172,6 +179,21 @@ public sealed class CompareViewModel : ObservableObject, IDisposable
             }
             OnPropertyChanged(nameof(RecentItems));
         });
+    }
+
+    private static bool ShouldConvertDocuments() => SettingsHost.Get(SettingsRegistry.AutoConvertDocumentsToPdf);
+
+    private static string BuildSupportedFilterPattern()
+    {
+        static IEnumerable<string> ToPatterns(IEnumerable<string> extensions) => extensions.Select(ext => $"*.{ext}");
+
+        var patterns = ToPatterns(MediaFormats.ImageExtensionNames)
+            .Concat(ToPatterns(MediaFormats.VideoExtensionNames))
+            .Concat(ToPatterns(MediaFormats.PdfExtensionNames))
+            .Concat(ToPatterns(MediaFormats.DocumentExtensionNames))
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+
+        return string.Join(';', patterns);
     }
 
     private static RecentOptimisationViewModel BuildSummary(OptimisationRequest request, FilePath outputPath, OptimisationResult result)

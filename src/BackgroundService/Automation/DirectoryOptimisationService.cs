@@ -38,6 +38,7 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
     private volatile bool _autoImages;
     private volatile bool _autoVideos;
     private volatile bool _autoPdfs;
+    private volatile bool _autoConvertDocuments;
 
     private string[] _imageDirectories = Array.Empty<string>();
     private string[] _videoDirectories = Array.Empty<string>();
@@ -233,16 +234,25 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
             return;
         }
 
+        var resolvedType = ResolveItemType(fileEvent.ItemType, path);
+        if (resolvedType is null)
+        {
+            _activePaths.TryRemove(path.Value, out _);
+            return;
+        }
+
+        var itemType = resolvedType.Value;
+
         var enqueued = false;
         var reservedSlot = false;
         RetryReason? retryReason = null;
 
         try
         {
-            if (sizeHint.HasValue && !WithinSizeLimit(fileEvent.ItemType, sizeHint.Value))
+            if (sizeHint.HasValue && !WithinSizeLimit(itemType, sizeHint.Value))
             {
-                _logger.LogInformation("Skipping {Path}; size {Size:0.0} MB exceeds limit for {Type}.", path.Value, sizeHint.Value / (1024d * 1024d), fileEvent.ItemType);
-                return;
+                _logger.LogInformation("Skipping {Path}; size {Size:0.0} MB exceeds limit for {Type}.", path.Value, sizeHint.Value / (1024d * 1024d), itemType);
+                goto Complete;
             }
 
             var info = await WaitForFileReadyAsync(path, token).ConfigureAwait(false);
@@ -250,26 +260,26 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
             {
                 _logger.LogDebug("File {Path} was not ready for optimisation (attempt {Attempt}).", path.Value, fileEvent.Attempts + 1);
                 retryReason = RetryReason.FileBusy;
-                return;
+                goto Complete;
             }
 
-            if (!WithinSizeLimit(fileEvent.ItemType, info.Length))
+            if (!WithinSizeLimit(itemType, info.Length))
             {
-                _logger.LogInformation("Skipping {Path}; size {Size:0.0} MB exceeds limit for {Type}.", path.Value, info.Length / (1024d * 1024d), fileEvent.ItemType);
-                return;
+                _logger.LogInformation("Skipping {Path}; size {Size:0.0} MB exceeds limit for {Type}.", path.Value, info.Length / (1024d * 1024d), itemType);
+                goto Complete;
             }
 
             if (MatchesRecentFingerprint(path))
             {
                 _logger.LogTrace("Skipping {Path}; matches fingerprint from a recent optimisation.", path.Value);
-                return;
+                goto Complete;
             }
 
-            if (!TryReserveSlot(fileEvent.ItemType))
+            if (!TryReserveSlot(itemType))
             {
-                _logger.LogInformation("Deferring optimisation for {Path}; maximum concurrent {Type} jobs reached.", path.Value, fileEvent.ItemType);
+                _logger.LogInformation("Deferring optimisation for {Path}; maximum concurrent {Type} jobs reached.", path.Value, itemType);
                 retryReason = RetryReason.QueueBusy;
-                return;
+                goto Complete;
             }
 
             reservedSlot = true;
@@ -277,15 +287,15 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
             var metadata = new Dictionary<string, object?>(StringComparer.Ordinal)
             {
                 ["source"] = "watcher",
-                ["watcher.type"] = fileEvent.ItemType.ToString(),
+                ["watcher.type"] = itemType.ToString(),
                 ["watcher.root"] = fileEvent.RootDirectory.Value
             };
 
             OutputBehaviourSettings.ApplyTo(metadata);
             VideoEncoderPresetSettings.ApplyTo(metadata);
 
-            var request = new OptimisationRequest(fileEvent.ItemType, path, metadata: metadata);
-            _pending[request.RequestId] = new DirectoryRequestContext(fileEvent.ItemType, path);
+            var request = new OptimisationRequest(itemType, path, metadata: metadata);
+            _pending[request.RequestId] = new DirectoryRequestContext(itemType, path);
 
             _coordinator.Enqueue(request);
             enqueued = true;
@@ -297,14 +307,15 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
                 _activePaths.TryRemove(path.Value, out _);
                 if (reservedSlot)
                 {
-                    ReleaseSlot(fileEvent.ItemType);
+                    ReleaseSlot(itemType);
                 }
             }
+        }
 
-            if (retryReason is { } reason)
-            {
-                ScheduleRetry(fileEvent, reason);
-            }
+    Complete:
+        if (retryReason is { } reason)
+        {
+            ScheduleRetry(fileEvent, reason);
         }
     }
 
@@ -330,8 +341,21 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
         {
             ItemType.Image => MediaFormats.IsImage(path),
             ItemType.Video => MediaFormats.IsVideo(path),
-            ItemType.Pdf => MediaFormats.IsPdf(path),
+            ItemType.Pdf => MediaFormats.IsPdf(path) || (_autoConvertDocuments && MediaFormats.IsDocument(path)),
+            ItemType.Document => MediaFormats.IsDocument(path),
             _ => false
+        };
+    }
+
+    private ItemType? ResolveItemType(ItemType watcherType, FilePath path)
+    {
+        return watcherType switch
+        {
+            ItemType.Image when MediaFormats.IsImage(path) => ItemType.Image,
+            ItemType.Video when MediaFormats.IsVideo(path) => ItemType.Video,
+            ItemType.Pdf when MediaFormats.IsPdf(path) => ItemType.Pdf,
+            ItemType.Pdf when _autoConvertDocuments && MediaFormats.IsDocument(path) => ItemType.Document,
+            _ => null
         };
     }
 
@@ -343,6 +367,7 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
             ItemType.Image => _maxImageSizeMb <= 0 || sizeMb <= _maxImageSizeMb,
             ItemType.Video => _maxVideoSizeMb <= 0 || sizeMb <= _maxVideoSizeMb,
             ItemType.Pdf => _maxPdfSizeMb <= 0 || sizeMb <= _maxPdfSizeMb,
+            ItemType.Document => _maxPdfSizeMb <= 0 || sizeMb <= _maxPdfSizeMb,
             _ => false
         };
     }
@@ -491,6 +516,7 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
         ItemType.Image => _maxImageFileCount,
         ItemType.Video => _maxVideoFileCount,
         ItemType.Pdf => _maxPdfFileCount,
+        ItemType.Document => _maxPdfFileCount,
         _ => 0
     };
 
@@ -558,6 +584,7 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
                string.Equals(name, SettingsRegistry.MaxImageSizeMb.Name, StringComparison.Ordinal) ||
                string.Equals(name, SettingsRegistry.MaxVideoSizeMb.Name, StringComparison.Ordinal) ||
                string.Equals(name, SettingsRegistry.MaxPdfSizeMb.Name, StringComparison.Ordinal) ||
+               string.Equals(name, SettingsRegistry.AutoConvertDocumentsToPdf.Name, StringComparison.Ordinal) ||
                string.Equals(name, SettingsRegistry.MaxImageFileCount.Name, StringComparison.Ordinal) ||
                string.Equals(name, SettingsRegistry.MaxVideoFileCount.Name, StringComparison.Ordinal) ||
                string.Equals(name, SettingsRegistry.MaxPdfFileCount.Name, StringComparison.Ordinal) ||
@@ -573,6 +600,7 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
             _autoImages = SettingsHost.Get(SettingsRegistry.EnableAutomaticImageOptimisations);
             _autoVideos = SettingsHost.Get(SettingsRegistry.EnableAutomaticVideoOptimisations);
             _autoPdfs = SettingsHost.Get(SettingsRegistry.EnableAutomaticPdfOptimisations);
+            _autoConvertDocuments = SettingsHost.Get(SettingsRegistry.AutoConvertDocumentsToPdf);
             _imageDirectories = SettingsHost.Get(SettingsRegistry.ImageDirs) ?? Array.Empty<string>();
             _videoDirectories = SettingsHost.Get(SettingsRegistry.VideoDirs) ?? Array.Empty<string>();
             _pdfDirectories = SettingsHost.Get(SettingsRegistry.PdfDirs) ?? Array.Empty<string>();

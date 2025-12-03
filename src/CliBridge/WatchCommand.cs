@@ -10,6 +10,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Linq;
 using ClopWindows.Core.Optimizers;
+using ClopWindows.Core.Settings;
 using ClopWindows.Core.Shared;
 
 namespace ClopWindows.CliBridge;
@@ -169,13 +170,16 @@ internal sealed class WatchCommandHandler
             RemoveAudio = _options.RemoveAudio
         }).WithHardwareOverride();
         var pdfOptions = PdfOptimiserOptions.Default with { AggressiveByDefault = _options.Aggressive };
+        var pdfOptimiser = new PdfOptimiser(pdfOptions);
+        var documentOptions = DocumentConversionOptions.Default;
 
         await using var coordinator = new OptimisationCoordinator(
             new IOptimiser[]
             {
                 new ImageOptimiser(imageOptions),
                 new VideoOptimiser(videoOptions),
-                new PdfOptimiser(pdfOptions)
+                pdfOptimiser,
+                new DocumentOptimiser(documentOptions, pdfOptimiser: pdfOptimiser)
             },
             Math.Max(1, Environment.ProcessorCount / 2));
 
@@ -535,9 +539,17 @@ internal sealed class WatchCommandHandler
             return true;
         }
 
+        if (ShouldConvertDocuments() && MediaFormats.IsDocument(path))
+        {
+            type = ItemType.Document;
+            return true;
+        }
+
         type = ItemType.Unknown;
         return false;
     }
+
+    private static bool ShouldConvertDocuments() => SettingsHost.Get(SettingsRegistry.AutoConvertDocumentsToPdf);
 
     private static bool IsWithinWorkRoot(FilePath path)
     {

@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 using ClopWindows.Core.Optimizers;
+using ClopWindows.Core.Settings;
 using ClopWindows.Core.Shared;
 using ClopWindows.Core.Shared.Logging;
 
@@ -22,6 +23,8 @@ internal static class Program
             Console.Error.WriteLine("Clop CLI requires Windows 7 or later.");
             return 1;
         }
+
+        SettingsHost.EnsureInitialized();
 
         var root = new RootCommand("Clop for Windows CLI");
         root.Name = "clop";
@@ -173,13 +176,16 @@ internal sealed class OptimiseCommandHandler
             RemoveAudio = _options.RemoveAudio
         }).WithHardwareOverride();
         var pdfOptions = PdfOptimiserOptions.Default with { AggressiveByDefault = _options.Aggressive };
+        var pdfOptimiser = new PdfOptimiser(pdfOptions);
+        var documentOptions = DocumentConversionOptions.Default;
 
         await using var coordinator = new OptimisationCoordinator(
             new IOptimiser[]
             {
                 new ImageOptimiser(imageOptions),
                 new VideoOptimiser(videoOptions),
-                new PdfOptimiser(pdfOptions)
+                pdfOptimiser,
+                new DocumentOptimiser(documentOptions, pdfOptimiser: pdfOptimiser)
             },
             Math.Max(1, Environment.ProcessorCount / 2));
 
@@ -264,7 +270,7 @@ internal sealed class OptimiseCommandHandler
             return metadata;
         }
 
-        if (type == ItemType.Pdf)
+        if (type == ItemType.Pdf || type == ItemType.Document)
         {
             return new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
             {
@@ -402,6 +408,11 @@ internal sealed class TargetResolver
             return ItemType.Pdf;
         }
 
+        if (ShouldConvertDocuments() && MediaFormats.IsDocument(extension))
+        {
+            return ItemType.Document;
+        }
+
         return null;
     }
 
@@ -420,6 +431,8 @@ internal sealed class TargetResolver
         }
         return value;
     }
+
+    private static bool ShouldConvertDocuments() => SettingsHost.Get(SettingsRegistry.AutoConvertDocumentsToPdf);
 }
 
 internal sealed class TypeFilter
@@ -512,6 +525,13 @@ internal sealed class TypeFilter
             case "pdf":
             case "pdfs":
                 foreach (var ext in MediaFormats.PdfExtensionNames)
+                {
+                    yield return ext;
+                }
+                yield break;
+            case "document":
+            case "documents":
+                foreach (var ext in MediaFormats.DocumentExtensionNames)
                 {
                     yield return ext;
                 }

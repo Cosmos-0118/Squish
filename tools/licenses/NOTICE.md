@@ -13,6 +13,7 @@ changes are applied.
 | libavif     | https://github.com/AOMediaCodec/libavif  | BSD 2-Clause                                  | Alliance for Open Media's `windows-artifacts.zip` provides `avifenc.exe`.             |
 | Ghostscript | https://www.ghostscript.com/             | GNU AGPL v3.0                                 | Commercial licenses available from Artifex.                                           |
 | qpdf        | https://github.com/qpdf/qpdf             | Apache License 2.0                            | Official `qpdf-12.2.0-msvc64` archives include NOTICE + DLL dependencies.             |
+| LibreOffice | https://www.libreoffice.org/             | MPL 2.0 / LGPL v3+                            | Headless `soffice` used for DOC/XLS/PPT → PDF conversion.                             |
 
 Each entry below reproduces the text required by the upstream license.
 
@@ -69,3 +70,15 @@ from Artifex (<https://artifex.com/licensing/>).
 qpdf is licensed under the Apache License 2.0. Source code and Windows binaries
 are published at <https://github.com/qpdf/qpdf>. Redistributions must include the
 Apache 2.0 license text and the upstream NOTICE file.
+
+---
+
+## LibreOffice — MPL 2.0 or LGPL v3+
+
+LibreOffice is dual-licensed under the Mozilla Public License 2.0 and the GNU
+Lesser General Public License v3 or later. The upstream installer bundles the
+complete license stack inside `license.txt`; copies of the MPL 2.0 and LGPL 3.0
+texts are mirrored in this folder. Clop distributes the untouched MSI payload
+to provide `program/soffice.com` for document-to-PDF conversion. Refer to
+<https://www.libreoffice.org/about-us/licenses/> for attribution guidelines and
+commercial support options.

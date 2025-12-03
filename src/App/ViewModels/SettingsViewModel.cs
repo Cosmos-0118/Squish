@@ -26,6 +26,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     private bool _enableAutomaticImageOptimisations;
     private bool _enableAutomaticVideoOptimisations;
     private bool _enableAutomaticPdfOptimisations;
+    private bool _autoConvertDocumentsToPdf;
     private bool _replaceOptimisedFilesInPlace;
     private bool _deleteOriginalAfterConversion;
     private bool _forceFullImageOptimisations;
@@ -325,6 +326,18 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         }
     }
 
+    public bool AutoConvertDocumentsToPdf
+    {
+        get => _autoConvertDocumentsToPdf;
+        set
+        {
+            if (SetProperty(ref _autoConvertDocumentsToPdf, value) && !_suppressStoreUpdates)
+            {
+                SettingsHost.Set(SettingsRegistry.AutoConvertDocumentsToPdf, value);
+            }
+        }
+    }
+
     public bool ForceFullImageOptimisations
     {
         get => _forceFullImageOptimisations;
@@ -377,6 +390,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         EnableAutomaticImageOptimisations = SettingsHost.Get(SettingsRegistry.EnableAutomaticImageOptimisations);
         EnableAutomaticVideoOptimisations = SettingsHost.Get(SettingsRegistry.EnableAutomaticVideoOptimisations);
         EnableAutomaticPdfOptimisations = SettingsHost.Get(SettingsRegistry.EnableAutomaticPdfOptimisations);
+        AutoConvertDocumentsToPdf = SettingsHost.Get(SettingsRegistry.AutoConvertDocumentsToPdf);
         ForceFullImageOptimisations = SettingsHost.Get(SettingsRegistry.ForceFullImageOptimisations);
         RefreshDirectoryCollections();
         var themeMode = SettingsHost.Get(SettingsRegistry.AppThemeMode);
@@ -442,6 +456,9 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
                 break;
             case var name when name == SettingsRegistry.EnableAutomaticPdfOptimisations.Name:
                 EnableAutomaticPdfOptimisations = SettingsHost.Get(SettingsRegistry.EnableAutomaticPdfOptimisations);
+                break;
+            case var name when name == SettingsRegistry.AutoConvertDocumentsToPdf.Name:
+                AutoConvertDocumentsToPdf = SettingsHost.Get(SettingsRegistry.AutoConvertDocumentsToPdf);
                 break;
             case var name when name == SettingsRegistry.ForceFullImageOptimisations.Name:
                 ForceFullImageOptimisations = SettingsHost.Get(SettingsRegistry.ForceFullImageOptimisations);

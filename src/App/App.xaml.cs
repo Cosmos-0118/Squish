@@ -43,6 +43,7 @@ public partial class App : System.Windows.Application
                 services.AddSingleton<IOptimiser, ImageOptimiser>();
                 services.AddSingleton<IOptimiser>(_ => new VideoOptimiser(VideoOptimiserOptions.Default.WithHardwareOverride()));
                 services.AddSingleton<IOptimiser, PdfOptimiser>();
+                services.AddSingleton<IOptimiser, DocumentOptimiser>();
 
                 services.AddSingleton(provider =>
                 {

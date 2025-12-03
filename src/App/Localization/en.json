@@ -70,6 +70,8 @@
   "settings.automation.pickFolder": "Choose a folder to watch",
   "settings.optimisation.forceFullImage": "Always re-encode images",
   "settings.optimisation.forceFullImage.subtitle": "Skip the Windows fast path so Clop recompresses every image even when the original already looks optimal.",
+  "settings.optimisation.autoConvertDocuments": "Convert documents to PDF automatically",
+  "settings.optimisation.autoConvertDocuments.subtitle": "Uses LibreOffice (if available) to convert DOC, PPT, XLS, CSV, and similar files to PDF before optimisation.",
   "settings.optimisation.videoPreset.title": "Video encoder preset",
   "settings.optimisation.videoPreset.subtitle": "Pick whether Clop should stay on the CPU or tap your AMD GPU for HEVC encodes.",
   "settings.optimisation.videoPreset.auto.title": "Auto (recommended)",

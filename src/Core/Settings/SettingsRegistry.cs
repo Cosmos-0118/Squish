@@ -21,6 +21,7 @@ public static class SettingsRegistry
     public static readonly SettingKey<bool> OptimiseClipboardFileDrops = Bool("optimiseClipboardFileDrops", false);
     public static readonly SettingKey<bool> OptimiseImagePathClipboard = Bool("optimiseImagePathClipboard", false);
     public static readonly SettingKey<bool> OptimisePdfClipboard = Bool("optimisePdfClipboard", true);
+    public static readonly SettingKey<bool> AutoConvertDocumentsToPdf = Bool("autoConvertDocumentsToPdf", true);
     public static readonly SettingKey<bool> StripMetadata = Bool("stripMetadata", true);
     public static readonly SettingKey<bool> PreserveDates = Bool("preserveDates", true);
     public static readonly SettingKey<bool> PreserveColorMetadata = Bool("preserveColorMetadata", true);
@@ -134,6 +135,7 @@ public static class SettingsRegistry
         OptimiseVideoClipboard,
         OptimiseClipboardFileDrops,
         OptimisePdfClipboard,
+        AutoConvertDocumentsToPdf,
         OptimiseImagePathClipboard,
         StripMetadata,
         PreserveDates,

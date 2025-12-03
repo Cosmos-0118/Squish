@@ -27,5 +27,6 @@ The script downloads each archive, verifies the SHA256 (when provided), extracts
 - `libwebp/`
 - `libavif/`
 - `qpdf/`
+- `libreoffice/`
 
 Keep large binaries out of Git when possible; commit only the README, checksum, and license files while storing the actual payloads in release artifacts or package feeds.

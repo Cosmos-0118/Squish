@@ -147,11 +147,22 @@ public static class MediaFormats
         "pdf"
     };
 
+    private static readonly HashSet<string> DocumentExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "doc", "docx", "docm", "dot", "dotm", "dotx",
+        "rtf", "odt", "ott", "fodt",
+        "ppt", "pptx", "pptm", "pot", "potx", "odp", "otp", "fodp",
+        "xls", "xlsx", "xlsm", "xlsb", "xlt", "xltx", "ods", "ots", "fods",
+        "csv", "tsv", "txt", "html", "htm"
+    };
+
     public static IReadOnlyCollection<string> ImageExtensionNames => ImageExtensions;
 
     public static IReadOnlyCollection<string> VideoExtensionNames => VideoExtensions;
 
     public static IReadOnlyCollection<string> PdfExtensionNames => PdfExtensions;
+
+    public static IReadOnlyCollection<string> DocumentExtensionNames => DocumentExtensions;
 
     public static IReadOnlySet<string> ImageVideoFormats { get; } = ImageExtensions.Union(VideoExtensions, StringComparer.OrdinalIgnoreCase).ToHashSet();
 
@@ -166,6 +177,10 @@ public static class MediaFormats
     public static bool IsPdf(FilePath path) => IsPdf(path.Extension);
 
     public static bool IsPdf(string? extension) => !string.IsNullOrWhiteSpace(extension) && PdfExtensions.Contains(extension.TrimStart('.'));
+
+    public static bool IsDocument(FilePath path) => IsDocument(path.Extension);
+
+    public static bool IsDocument(string? extension) => !string.IsNullOrWhiteSpace(extension) && DocumentExtensions.Contains(extension.TrimStart('.'));
 }
 
 public enum CropOrientation

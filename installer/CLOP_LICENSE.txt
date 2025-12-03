@@ -29,6 +29,7 @@ installation directory at `tools/<name>/`. A summary is provided below:
   • libavif (`avifenc`) — BSD 2-Clause, https://github.com/AOMediaCodec/libavif
   • Ghostscript — AGPL v3.0, https://www.ghostscript.com/
   • qpdf — Apache License 2.0, https://github.com/qpdf/qpdf
+  • LibreOffice — MPL 2.0 / LGPL v3+, https://www.libreoffice.org/
 
 If you plan to distribute proprietary builds that include any of the
 above GPL/AGPL components, you must either comply with their copyleft

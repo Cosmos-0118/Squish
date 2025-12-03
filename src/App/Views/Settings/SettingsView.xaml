@@ -251,6 +251,8 @@
                     <TextBlock Text="{loc:Loc settings.section.optimisation}" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}"/>
                     <CheckBox Content="{loc:Loc settings.optimisation.forceFullImage}" Margin="0,12,0,0" IsChecked="{Binding ForceFullImageOptimisations}"/>
                     <TextBlock Text="{loc:Loc settings.optimisation.forceFullImage.subtitle}" FontSize="12" Foreground="{DynamicResource Brush.SecondaryText}" Margin="24,4,0,0" TextWrapping="Wrap"/>
+                    <CheckBox Content="{loc:Loc settings.optimisation.autoConvertDocuments}" Margin="0,12,0,0" IsChecked="{Binding AutoConvertDocumentsToPdf}"/>
+                    <TextBlock Text="{loc:Loc settings.optimisation.autoConvertDocuments.subtitle}" FontSize="12" Foreground="{DynamicResource Brush.SecondaryText}" Margin="24,4,0,0" TextWrapping="Wrap"/>
                     <StackPanel Margin="0,16,0,0">
                         <TextBlock Text="{loc:Loc settings.optimisation.videoPreset.title}" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}"/>
                         <TextBlock Text="{Binding VideoPresetSubtitle}" FontSize="12" Foreground="{DynamicResource Brush.SecondaryText}" Margin="0,4,0,12" TextWrapping="Wrap"/>

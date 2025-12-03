@@ -22,4 +22,6 @@ internal sealed record ClipboardItem(
     public bool IsVideo => ItemType == ItemType.Video;
 
     public bool IsPdf => ItemType == ItemType.Pdf;
+
+    public bool IsDocument => ItemType == ItemType.Document;
 }
