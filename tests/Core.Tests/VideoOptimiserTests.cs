@@ -242,6 +242,86 @@ public sealed class VideoOptimiserTests : IDisposable
         Assert.Equal("webm", plan.OutputExtension);
     }
 
+    [Fact]
+    public void BuildVideoCodecArgumentsIncludesColorMetadataWhenEnabled()
+    {
+        var options = VideoOptimiserOptions.Default with { PreserveColorMetadata = true };
+        var selection = VideoEncoderSelection.Hardware(
+            VideoCodec.Hevc,
+            "hevc_amf",
+            "mp4",
+            "p010le",
+            "d3d11va",
+            null,
+            24,
+            Array.Empty<string>(),
+            supportsTwoPass: false,
+            suggestedLookahead: 0,
+            sceneCutAware: false);
+
+        var video = new VideoStreamInfo(
+            "hevc",
+            null,
+            "p010le",
+            "bt2020nc",
+            "smpte2084",
+            "bt2020",
+            "limited",
+            3840,
+            2160,
+            12_000_000,
+            60,
+            true,
+            false);
+        var probe = new VideoProbeInfo("mp4", "mp4", null, null, null, video, null);
+
+        var args = VideoOptimiser.BuildVideoCodecArguments(options, selection, aggressive: false, lookahead: null, probe).ToList();
+
+        Assert.Contains("-color_range", args);
+        Assert.Equal("tv", args[args.IndexOf("-color_range") + 1]);
+        Assert.Contains("-colorspace", args);
+        Assert.Equal("bt2020nc", args[args.IndexOf("-colorspace") + 1]);
+        Assert.Contains("-color_trc", args);
+        Assert.Equal("smpte2084", args[args.IndexOf("-color_trc") + 1]);
+        Assert.Contains("-color_primaries", args);
+        Assert.Equal("bt2020", args[args.IndexOf("-color_primaries") + 1]);
+    }
+
+    [Fact]
+    public void BuildVideoCodecArgumentsSkipsColorMetadataWhenDisabled()
+    {
+        var options = VideoOptimiserOptions.Default with { PreserveColorMetadata = false };
+        var selection = VideoEncoderSelection.Software(
+            VideoCodec.Hevc,
+            "libx265",
+            "mp4",
+            "yuv420p10le",
+            24);
+
+        var video = new VideoStreamInfo(
+            "hevc",
+            null,
+            "p010le",
+            "bt709",
+            "bt709",
+            "bt709",
+            "pc",
+            1920,
+            1080,
+            6_000_000,
+            30,
+            false,
+            false);
+        var probe = new VideoProbeInfo("mp4", "mp4", null, null, null, video, null);
+
+        var args = VideoOptimiser.BuildVideoCodecArguments(options, selection, aggressive: false, lookahead: null, probe);
+
+        Assert.DoesNotContain("-color_range", args);
+        Assert.DoesNotContain("-colorspace", args);
+        Assert.DoesNotContain("-color_trc", args);
+        Assert.DoesNotContain("-color_primaries", args);
+    }
+
     public void Dispose()
     {
         foreach (var file in _filesToCleanup)
@@ -283,7 +363,7 @@ public sealed class VideoOptimiserTests : IDisposable
 
     private static VideoProbeInfo CreateProbeInfo(string videoCodec, string audioCodec, string format)
     {
-        var video = new VideoStreamInfo(videoCodec, "", "yuv420p", "bt709", 1920, 1080, 6_000_000, 30, false, false);
+        var video = new VideoStreamInfo(videoCodec, "", "yuv420p", "bt709", "bt709", "bt709", "tv", 1920, 1080, 6_000_000, 30, false, false);
         var audio = new AudioStreamInfo(audioCodec, "", 2, 48_000, 256_000);
         return new VideoProbeInfo(format, format, 10, 6_500_000, 8_000_000, video, audio);
     }

@@ -184,6 +184,8 @@ public sealed record VideoOptimiserOptions
     public bool StripMetadata { get; init; }
         = false;
 
+    public bool PreserveColorMetadata { get; init; } = true;
+
     public string DefaultVideoExtension { get; init; } = "mp4";
 
     public bool EnableGifExport { get; init; } = true;

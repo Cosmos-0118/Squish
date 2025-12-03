@@ -122,7 +122,7 @@ public sealed class VideoOptimiser : IOptimiser
                 TryDelete(tempOutput);
 
                 var softwareFallback = plan.SoftwareFallback!;
-                var fallbackArgs = BuildVideoCodecArguments(_options, softwareFallback, plan.AggressiveQuality, plan.LookaheadFrames);
+                var fallbackArgs = BuildVideoCodecArguments(_options, softwareFallback, plan.AggressiveQuality, plan.LookaheadFrames, plan.SourceProbe);
                 var fallbackPlan = plan with
                 {
                     Encoder = softwareFallback,
@@ -430,7 +430,7 @@ public sealed class VideoOptimiser : IOptimiser
             ? CreateSoftwareSelection(options, encoderSelection.Codec, aggressive, forceMp4, requestedExtension)
             : null;
 
-        var videoCodecArgs = BuildVideoCodecArguments(options, encoderSelection, aggressive, lookahead);
+        var videoCodecArgs = BuildVideoCodecArguments(options, encoderSelection, aggressive, lookahead, probeInfo);
 
         var plan = new VideoOptimiserPlan(
             request.SourcePath,
@@ -823,7 +823,7 @@ public sealed class VideoOptimiser : IOptimiser
         return extension.Equals("webm", StringComparison.OrdinalIgnoreCase) ? options.AudioEncoderOpus : options.AudioEncoderAac;
     }
 
-    internal static IReadOnlyList<string> BuildVideoCodecArguments(VideoOptimiserOptions options, VideoEncoderSelection selection, bool aggressive, int? lookahead)
+    internal static IReadOnlyList<string> BuildVideoCodecArguments(VideoOptimiserOptions options, VideoEncoderSelection selection, bool aggressive, int? lookahead, VideoProbeInfo? sourceProbe)
     {
         var args = new List<string>();
 
@@ -921,7 +921,67 @@ public sealed class VideoOptimiser : IOptimiser
             args.AddRange(selection.AdditionalArguments);
         }
 
+        AppendColorMetadata(options, sourceProbe, args);
+
         return args;
+    }
+
+    private static void AppendColorMetadata(VideoOptimiserOptions options, VideoProbeInfo? probeInfo, List<string> args)
+    {
+        if (!options.PreserveColorMetadata)
+        {
+            return;
+        }
+
+        var video = probeInfo?.Video;
+        if (video is null)
+        {
+            return;
+        }
+
+        TryAppendColorArgument(args, "-color_range", NormalizeColorRange(video.ColorRange));
+        TryAppendColorArgument(args, "-colorspace", NormalizeColorValue(video.ColorSpace));
+        TryAppendColorArgument(args, "-color_trc", NormalizeColorValue(video.ColorTransfer));
+        TryAppendColorArgument(args, "-color_primaries", NormalizeColorValue(video.ColorPrimaries));
+    }
+
+    private static void TryAppendColorArgument(List<string> args, string flag, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || ContainsArgument(args, flag))
+        {
+            return;
+        }
+
+        args.Add(flag);
+        args.Add(value);
+    }
+
+    private static bool ContainsArgument(List<string> args, string flag)
+        => args.Any(token => token.Equals(flag, StringComparison.OrdinalIgnoreCase));
+
+    private static string? NormalizeColorRange(string? range)
+    {
+        if (string.IsNullOrWhiteSpace(range))
+        {
+            return null;
+        }
+
+        return range.Trim().ToLowerInvariant() switch
+        {
+            "limited" or "limitedrange" or "tv" => "tv",
+            "full" or "fullrange" or "jpeg" or "pc" => "pc",
+            _ => range.Trim().ToLowerInvariant()
+        };
+    }
+
+    private static string? NormalizeColorValue(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return value.Trim().ToLowerInvariant();
     }
 
     private static void AppendBitrateArguments(List<string> args, int targetKbps, VideoOptimiserOptions options)
@@ -1065,7 +1125,7 @@ public sealed class VideoOptimiser : IOptimiser
         }
 
         var updatedEncoder = plan.Encoder with { TargetBitrateKbps = next };
-        var updatedArgs = BuildVideoCodecArguments(options, updatedEncoder, plan.AggressiveQuality, plan.LookaheadFrames);
+        var updatedArgs = BuildVideoCodecArguments(options, updatedEncoder, plan.AggressiveQuality, plan.LookaheadFrames, plan.SourceProbe);
         return plan with { Encoder = updatedEncoder, VideoCodecArguments = updatedArgs };
     }
 
@@ -1601,7 +1661,7 @@ internal sealed class ExternalVideoToolchain : IVideoToolchain
 
         TryDelete(tempOutput);
 
-        var fallbackArgs = VideoOptimiser.BuildVideoCodecArguments(_options, plan.SoftwareFallback, plan.AggressiveQuality, plan.LookaheadFrames);
+        var fallbackArgs = VideoOptimiser.BuildVideoCodecArguments(_options, plan.SoftwareFallback, plan.AggressiveQuality, plan.LookaheadFrames, plan.SourceProbe);
         var fallbackPlan = plan with
         {
             Encoder = plan.SoftwareFallback,

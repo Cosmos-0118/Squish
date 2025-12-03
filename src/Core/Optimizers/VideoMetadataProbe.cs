@@ -122,17 +122,20 @@ internal static class VideoProbeParser
         var codec = stream.TryGetProperty("codec_name", out var cn) ? cn.GetString() : null;
         var profile = stream.TryGetProperty("profile", out var profileElement) ? profileElement.GetString() : null;
         var pixFmt = stream.TryGetProperty("pix_fmt", out var pix) ? pix.GetString() : null;
-        var colorSpace = stream.TryGetProperty("color_space", out var color) ? color.GetString() : null;
+        var colorSpace = stream.TryGetProperty("color_space", out var colorSpaceElement) ? colorSpaceElement.GetString() : null;
+        var colorTransfer = stream.TryGetProperty("color_transfer", out var transferElement) ? transferElement.GetString() : null;
+        var colorPrimaries = stream.TryGetProperty("color_primaries", out var primariesElement) ? primariesElement.GetString() : null;
+        var colorRange = stream.TryGetProperty("color_range", out var rangeElement) ? rangeElement.GetString() : null;
         var width = ParseInt(stream, "width");
         var height = ParseInt(stream, "height");
         var bitrate = ParseLong(stream, "bit_rate");
         var avgFrameRate = ParseFraction(stream.TryGetProperty("avg_frame_rate", out var afr) ? afr.GetString() : null);
         var rFrameRate = ParseFraction(stream.TryGetProperty("r_frame_rate", out var rfr) ? rfr.GetString() : null);
         var frameRate = avgFrameRate ?? rFrameRate;
-        var isHdr = stream.TryGetProperty("color_transfer", out var transfer) && transfer.GetString()?.Contains("smpte", StringComparison.OrdinalIgnoreCase) == true;
+        var isHdr = colorTransfer?.Contains("smpte", StringComparison.OrdinalIgnoreCase) == true;
         var isInterlaced = stream.TryGetProperty("field_order", out var field) && !string.Equals(field.GetString(), "progressive", StringComparison.OrdinalIgnoreCase);
 
-        return new VideoStreamInfo(codec, profile, pixFmt, colorSpace, width, height, bitrate, frameRate, isHdr, isInterlaced);
+        return new VideoStreamInfo(codec, profile, pixFmt, colorSpace, colorTransfer, colorPrimaries, colorRange, width, height, bitrate, frameRate, isHdr, isInterlaced);
     }
 
     private static AudioStreamInfo ReadAudioStream(JsonElement stream)
