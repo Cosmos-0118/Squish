@@ -49,11 +49,18 @@ public sealed class KeyboardShortcutService : IDisposable
         _window.SourceInitialized += OnSourceInitialized;
         _window.Closed += OnWindowClosed;
         _isAttached = true;
+
+        InitializeWindowSource();
     }
 
     private void OnSourceInitialized(object? sender, EventArgs e)
     {
-        if (_window is null)
+        InitializeWindowSource();
+    }
+
+    private void InitializeWindowSource()
+    {
+        if (_window is null || _source is not null)
         {
             return;
         }
@@ -65,12 +72,13 @@ public sealed class KeyboardShortcutService : IDisposable
             return;
         }
 
-        _source = HwndSource.FromHwnd(handle);
-        if (_source is null)
+        var source = HwndSource.FromHwnd(handle);
+        if (source is null)
         {
             return;
         }
 
+        _source = source;
         _source.AddHook(WndProc);
 
         RebuildHotkeys(handle);

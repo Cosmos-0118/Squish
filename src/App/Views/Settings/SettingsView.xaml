@@ -6,6 +6,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:loc="clr-namespace:ClopWindows.App.Localization"
              xmlns:controls="clr-namespace:ClopWindows.App.Controls"
+             xmlns:core="clr-namespace:ClopWindows.Core.Settings;assembly=ClopWindows.Core"
              mc:Ignorable="d"
              d:DesignHeight="600"
              d:DesignWidth="1000">
@@ -100,6 +101,12 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <LinearGradientBrush x:Key="Brush.VideoPresetSelectedBackground" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#FF5C5BFF" Offset="0"/>
+            <GradientStop Color="#FF7C5BFF" Offset="1"/>
+        </LinearGradientBrush>
+        <DropShadowEffect x:Key="Effect.MediumElevation" Color="#33000000" BlurRadius="20" ShadowDepth="0" RenderingBias="Quality"/>
     </UserControl.Resources>
 
     <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -385,15 +392,113 @@
                                          SelectedItem="{Binding SelectedVideoEncoderPreset}"
                                          BorderThickness="0"
                                          Background="Transparent"
-                                         HorizontalContentAlignment="Stretch">
+                                         HorizontalContentAlignment="Stretch"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                         Margin="0,4,0,0">
+                                    <ListBox.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <WrapPanel IsItemsHost="True"/>
+                                        </ItemsPanelTemplate>
+                                    </ListBox.ItemsPanel>
+                                    <ListBox.ItemContainerStyle>
+                                        <Style TargetType="ListBoxItem">
+                                            <Setter Property="Padding" Value="0"/>
+                                            <Setter Property="Margin" Value="0,0,16,16"/>
+                                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                            <Setter Property="VerticalContentAlignment" Value="Stretch"/>
+                                            <Setter Property="Template">
+                                                <Setter.Value>
+                                                    <ControlTemplate TargetType="ListBoxItem">
+                                                        <Border x:Name="Card"
+                                                                Background="{DynamicResource Brush.FieldBackground}"
+                                                                BorderBrush="{DynamicResource Brush.FieldBorder}"
+                                                                BorderThickness="1"
+                                                                CornerRadius="18"
+                                                                SnapsToDevicePixels="True">
+                                                            <ContentPresenter HorizontalAlignment="Stretch"
+                                                                              VerticalAlignment="Stretch"
+                                                                              Margin="0"/>
+                                                        </Border>
+                                                        <ControlTemplate.Triggers>
+                                                            <Trigger Property="IsMouseOver" Value="True">
+                                                                <Setter TargetName="Card" Property="BorderBrush" Value="{DynamicResource Brush.PrimaryButtonBackground}"/>
+                                                            </Trigger>
+                                                            <Trigger Property="IsFocused" Value="True">
+                                                                <Setter TargetName="Card" Property="BorderBrush" Value="{DynamicResource Brush.PrimaryButtonBackground}"/>
+                                                            </Trigger>
+                                                            <Trigger Property="IsSelected" Value="True">
+                                                                <Setter TargetName="Card" Property="Background" Value="{StaticResource Brush.VideoPresetSelectedBackground}"/>
+                                                                <Setter TargetName="Card" Property="BorderBrush" Value="{StaticResource Brush.VideoPresetSelectedBackground}"/>
+                                                                <Setter TargetName="Card" Property="Effect" Value="{StaticResource Effect.MediumElevation}"/>
+                                                            </Trigger>
+                                                            <Trigger Property="IsEnabled" Value="False">
+                                                                <Setter TargetName="Card" Property="Opacity" Value="0.6"/>
+                                                            </Trigger>
+                                                        </ControlTemplate.Triggers>
+                                                    </ControlTemplate>
+                                                </Setter.Value>
+                                            </Setter>
+                                        </Style>
+                                    </ListBox.ItemContainerStyle>
                                     <ListBox.ItemTemplate>
                                         <DataTemplate>
-                                            <Border Padding="14" Margin="0,0,0,10" Background="{DynamicResource Brush.FieldBackground}" BorderBrush="{DynamicResource Brush.FieldBorder}" BorderThickness="1" CornerRadius="12">
-                                                <StackPanel>
-                                                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}"/>
-                                                    <TextBlock Text="{Binding Description}" Style="{StaticResource CardBodyText}" Margin="0,4,0,0"/>
+                                            <Grid Margin="18">
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                </Grid.RowDefinitions>
+                                                <Border x:Name="RecommendedPill"
+                                                        Background="#26FFFFFF"
+                                                        Padding="10,4"
+                                                        CornerRadius="12"
+                                                        HorizontalAlignment="Left"
+                                                        Visibility="Collapsed">
+                                                    <TextBlock Text="{loc:Loc settings.optimisation.videoPreset.recommended}"
+                                                               FontSize="11"
+                                                               FontWeight="SemiBold">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Setter Property="Foreground" Value="{DynamicResource Brush.PrimaryText}"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
+                                                                        <Setter Property="Foreground" Value="White"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+                                                </Border>
+                                                <StackPanel Grid.Row="1" Margin="0,12,0,0">
+                                                    <TextBlock Text="{Binding Title}" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Setter Property="Foreground" Value="{DynamicResource Brush.PrimaryText}"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
+                                                                        <Setter Property="Foreground" Value="White"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+                                                    <TextBlock Text="{Binding Description}" Margin="0,6,0,0" TextWrapping="Wrap">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock" BasedOn="{StaticResource CardBodyText}">
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
+                                                                        <Setter Property="Foreground" Value="#F2F2FF"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
                                                 </StackPanel>
-                                            </Border>
+                                            </Grid>
+                                            <DataTemplate.Triggers>
+                                                <DataTrigger Binding="{Binding Preset}" Value="{x:Static core:VideoEncoderPreset.Auto}">
+                                                    <Setter TargetName="RecommendedPill" Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </DataTemplate.Triggers>
                                         </DataTemplate>
                                     </ListBox.ItemTemplate>
                                 </ListBox>

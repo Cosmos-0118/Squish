@@ -74,6 +74,7 @@
   "settings.optimisation.autoConvertDocuments.subtitle": "Uses LibreOffice (if available) to convert DOC, PPT, XLS, CSV, and similar files to PDF before optimisation.",
   "settings.optimisation.videoPreset.title": "Video encoder preset",
   "settings.optimisation.videoPreset.subtitle": "Pick whether Clop should stay on the CPU or tap your AMD GPU for HEVC encodes.",
+  "settings.optimisation.videoPreset.recommended": "Recommended",
   "settings.optimisation.videoPreset.auto.title": "Auto (recommended)",
   "settings.optimisation.videoPreset.auto.description": "Detects available GPUs automatically and falls back to software when needed.",
   "settings.optimisation.videoPreset.cpu.title": "CPU · Software only",

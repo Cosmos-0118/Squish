@@ -19,6 +19,23 @@ pwsh scripts/fetch-tools.ps1 -WriteMissingChecksums # auto-fill manifest SHA256 
 
 The script downloads each archive, verifies the SHA256 (when provided), extracts it into `tools/<name>/`, and writes `.toolinfo.json` metadata so CI can detect whether a specific version is already staged.
 
+Nightly or rolling releases can specify dynamic hashes by adding a `checksumSource` block to the manifest entry:
+
+```json
+{
+  "name": "ffmpeg",
+  "url": "https://example/releases/download/latest/package.zip",
+  "archiveType": "zip",
+  "destination": "ffmpeg",
+  "checksumSource": {
+    "url": "https://example/releases/download/latest/checksums.sha256",
+    "fileName": "package.zip"
+  }
+}
+```
+
+When this block is present, `fetch-tools.ps1` downloads the checksum manifest, parses the SHA256 that matches `fileName`, and enforces it automatically so future upstream rotations do not require manual manifest updates.
+
 ## Subfolders
 
 - `ffmpeg/`

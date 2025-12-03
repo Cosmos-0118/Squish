@@ -115,6 +115,88 @@ function Invoke-InstallerProcess {
     }
 }
 
+$checksumContentCache = @{}
+
+function Resolve-ExpectedChecksum([psobject]$tool) {
+    if ($tool.PSObject.Properties['sha256'] -and $tool.sha256) {
+        return $tool.sha256.ToLowerInvariant()
+    }
+
+    if (-not $tool.PSObject.Properties['checksumSource']) {
+        return $null
+    }
+
+    $source = $tool.checksumSource
+    if (-not $source.PSObject.Properties['url'] -or [string]::IsNullOrWhiteSpace($source.url)) {
+        throw "checksumSource for $($tool.name) must include a url."
+    }
+
+    $url = $source.url
+    if (-not $checksumContentCache.ContainsKey($url)) {
+        Write-Host "    Downloading checksum manifest: $url"
+        $response = Invoke-WebRequest -Uri $url -UseBasicParsing
+        $rawContent = $response.Content
+        if ($rawContent -is [byte[]]) {
+            $encoding = [System.Text.Encoding]::UTF8
+            $contentType = $null
+            if ($response.PSObject.Properties['ContentType']) {
+                $contentType = $response.ContentType
+            }
+            elseif ($response.Headers -and $response.Headers['Content-Type']) {
+                $contentType = $response.Headers['Content-Type']
+            }
+
+            if ($contentType -and ($contentType -match 'charset=([^;]+)')) {
+                try {
+                    $encoding = [System.Text.Encoding]::GetEncoding($Matches[1])
+                }
+                catch {
+                    Write-Warning "    Unknown charset '$($Matches[1])' in checksum manifest. Falling back to UTF-8."
+                }
+            }
+
+            $checksumContentCache[$url] = $encoding.GetString($rawContent)
+        }
+        else {
+            $checksumContentCache[$url] = $rawContent
+        }
+    }
+
+    $content = $checksumContentCache[$url]
+    if ([string]::IsNullOrWhiteSpace($content)) {
+        throw "Checksum manifest at $url was empty."
+    }
+
+    $explicitPattern = $null
+    if ($source.PSObject.Properties['pattern']) {
+        $explicitPattern = $source.pattern
+    }
+
+    if ($explicitPattern) {
+        $regex = [System.Text.RegularExpressions.Regex]::new($explicitPattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase -bor [System.Text.RegularExpressions.RegexOptions]::Multiline)
+        $match = $regex.Match($content)
+        if (-not $match.Success -or -not $match.Groups['sha256']) {
+            throw "Pattern '$explicitPattern' did not yield a checksum for $($tool.name)."
+        }
+        return $match.Groups['sha256'].Value.ToLowerInvariant()
+    }
+
+    if (-not $source.PSObject.Properties['fileName'] -or [string]::IsNullOrWhiteSpace($source.fileName)) {
+        throw "checksumSource for $($tool.name) must specify either pattern or fileName."
+    }
+
+    $needle = $source.fileName
+    $lineRegex = [System.Text.RegularExpressions.Regex]::new('^(?<sha>[0-9a-f]{64})\s+\*?(?<file>.+)$', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase -bor [System.Text.RegularExpressions.RegexOptions]::Multiline)
+    foreach ($match in $lineRegex.Matches($content)) {
+        $manifestFileName = $match.Groups['file'].Value.Trim()
+        if ($manifestFileName -eq $needle) {
+            return $match.Groups['sha'].Value.Trim().ToLowerInvariant()
+        }
+    }
+
+    throw "Checksum entry for '$needle' not found in manifest at $url."
+}
+
 if (-not (Test-Path -LiteralPath $ManifestPath)) {
     throw "Manifest not found: $ManifestPath"
 }
@@ -220,12 +302,22 @@ foreach ($tool in $tools) {
             $computedSha = Get-Checksum -Path $downloadPath
             Write-Host "    SHA256: $computedSha"
 
-            if ($tool.sha256 -and -not $SkipChecksum) {
-                if ($computedSha -ne $tool.sha256.ToLowerInvariant()) {
-                    throw "Checksum mismatch for $($tool.name). Expected $($tool.sha256)"
+            $expectedSha = $null
+            if (-not $SkipChecksum) {
+                try {
+                    $expectedSha = Resolve-ExpectedChecksum($tool)
+                }
+                catch {
+                    throw $_
                 }
             }
-            elseif (-not $SkipChecksum) {
+
+            if (-not $SkipChecksum -and $expectedSha) {
+                if ($computedSha -ne $expectedSha) {
+                    throw "Checksum mismatch for $($tool.name). Expected $expectedSha"
+                }
+            }
+            elseif (-not $SkipChecksum -and -not $expectedSha) {
                 Write-Warning "    Manifest missing SHA256. Add '$computedSha' for $($tool.name) or run with -WriteMissingChecksums."
                 if ($WriteMissingChecksums) {
                     $tool.sha256 = $computedSha
