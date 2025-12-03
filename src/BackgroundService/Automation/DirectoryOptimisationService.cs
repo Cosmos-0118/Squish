@@ -32,6 +32,7 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
 
     private Task? _processingTask;
     private const int MaxRetryAttempts = 24;
+    private static readonly TimeSpan QueueRetryDelay = TimeSpan.FromSeconds(2);
 
     private volatile bool _paused;
     private volatile bool _autoImages;
@@ -234,7 +235,7 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
 
         var enqueued = false;
         var reservedSlot = false;
-        var retryRequested = false;
+        RetryReason? retryReason = null;
 
         try
         {
@@ -248,7 +249,7 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
             if (info is null)
             {
                 _logger.LogDebug("File {Path} was not ready for optimisation (attempt {Attempt}).", path.Value, fileEvent.Attempts + 1);
-                retryRequested = true;
+                retryReason = RetryReason.FileBusy;
                 return;
             }
 
@@ -266,7 +267,8 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
 
             if (!TryReserveSlot(fileEvent.ItemType))
             {
-                _logger.LogWarning("Skipping {Path}; maximum concurrent {Type} jobs reached.", path.Value, fileEvent.ItemType);
+                _logger.LogInformation("Deferring optimisation for {Path}; maximum concurrent {Type} jobs reached.", path.Value, fileEvent.ItemType);
+                retryReason = RetryReason.QueueBusy;
                 return;
             }
 
@@ -299,9 +301,9 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
                 }
             }
 
-            if (retryRequested)
+            if (retryReason is { } reason)
             {
-                ScheduleRetry(fileEvent);
+                ScheduleRetry(fileEvent, reason);
             }
         }
     }
@@ -685,16 +687,21 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
         }
     }
 
-    private void ScheduleRetry(FileEvent fileEvent)
+    private void ScheduleRetry(FileEvent fileEvent, RetryReason reason)
     {
-        if (fileEvent.Attempts >= MaxRetryAttempts)
+        if (reason == RetryReason.FileBusy && fileEvent.Attempts >= MaxRetryAttempts)
         {
             _logger.LogWarning("Skipping {Path}; file remained busy after {Attempts} attempts.", fileEvent.Path.Value, fileEvent.Attempts);
             return;
         }
 
-        var next = fileEvent with { Attempts = fileEvent.Attempts + 1 };
-        var delay = TimeSpan.FromMilliseconds(Math.Min(5000, 250 * next.Attempts));
+        var next = reason == RetryReason.FileBusy
+            ? fileEvent with { Attempts = fileEvent.Attempts + 1 }
+            : fileEvent;
+
+        var delay = reason == RetryReason.FileBusy
+            ? TimeSpan.FromMilliseconds(Math.Min(5000, 250 * Math.Max(1, next.Attempts)))
+            : QueueRetryDelay;
 
         _ = Task.Run(async () =>
         {
@@ -748,6 +755,12 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
     private readonly record struct DirectoryRequestContext(ItemType ItemType, FilePath Path);
 
     private readonly record struct FileEvent(ItemType ItemType, FilePath Path, FilePath RootDirectory, DateTimeOffset ObservedAt, int Attempts = 0);
+
+    private enum RetryReason
+    {
+        FileBusy,
+        QueueBusy
+    }
 
     private sealed class DirectoryWatcher : IDisposable
     {

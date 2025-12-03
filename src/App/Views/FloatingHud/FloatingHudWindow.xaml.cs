@@ -95,12 +95,12 @@ public partial class FloatingHudWindow : Window
             return false;
         }
 
-        if (CurrentResultPresenter?.Content != viewModel)
+        if (ResultItemsControl is null || !ResultItemsControl.Items.Contains(viewModel))
         {
             return false;
         }
 
-        var card = GetResultCard();
+        var card = GetResultCard(viewModel);
         if (card is null)
         {
             return false;
@@ -123,15 +123,26 @@ public partial class FloatingHudWindow : Window
         return true;
     }
 
-    private FrameworkElement? GetResultCard()
+    private FrameworkElement? GetResultCard(FloatingResultViewModel viewModel)
     {
-        if (CurrentResultPresenter is null)
+        if (ResultItemsControl is null)
         {
             return null;
         }
 
-        CurrentResultPresenter.ApplyTemplate();
-        return FindDescendantByName(CurrentResultPresenter, "ResultCard");
+        if (ResultItemsControl.ItemContainerGenerator.ContainerFromItem(viewModel) is not FrameworkElement container)
+        {
+            ResultItemsControl.UpdateLayout();
+            container = ResultItemsControl.ItemContainerGenerator.ContainerFromItem(viewModel) as FrameworkElement;
+        }
+
+        if (container is null)
+        {
+            return null;
+        }
+
+        container.ApplyTemplate();
+        return FindDescendantByName(container, "ResultCard");
     }
 
     private static FrameworkElement? FindDescendantByName(DependencyObject parent, string name)

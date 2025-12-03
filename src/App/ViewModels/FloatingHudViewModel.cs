@@ -13,7 +13,6 @@ public sealed class FloatingHudViewModel : ObservableObject
     public const double MaxWindowHeight = 520d;
 
     private readonly ObservableCollection<FloatingResultViewModel> _results;
-    private FloatingResultViewModel? _currentResult;
     private double _windowWidth;
     private double _windowHeight;
     private bool _suppressSettingsSync;
@@ -44,20 +43,6 @@ public sealed class FloatingHudViewModel : ObservableObject
     public ObservableCollection<FloatingResultViewModel> Results => _results;
 
     public bool HasResults => _results.Count > 0;
-
-    public FloatingResultViewModel? CurrentResult
-    {
-        get => _currentResult;
-        private set
-        {
-            if (SetProperty(ref _currentResult, value))
-            {
-                OnPropertyChanged(nameof(HasCurrentResult));
-            }
-        }
-    }
-
-    public bool HasCurrentResult => CurrentResult is not null;
 
     public double WindowWidth
     {
@@ -105,25 +90,22 @@ public sealed class FloatingHudViewModel : ObservableObject
 
     private void OnResultsChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        UpdateCurrentResult();
+        OnPropertyChanged(nameof(HasResults));
     }
 
     internal void InsertResult(FloatingResultViewModel viewModel)
     {
         _results.Insert(0, viewModel);
-        UpdateCurrentResult();
     }
 
     internal void RemoveResult(FloatingResultViewModel viewModel)
     {
         _results.Remove(viewModel);
-        UpdateCurrentResult();
     }
 
     internal void ClearResults()
     {
         _results.Clear();
-        UpdateCurrentResult();
     }
 
     internal void ResetLayout()
@@ -163,11 +145,5 @@ public sealed class FloatingHudViewModel : ObservableObject
         {
             _suppressSettingsSync = false;
         }
-    }
-
-    private void UpdateCurrentResult()
-    {
-        CurrentResult = _results.Count > 0 ? _results[0] : null;
-        OnPropertyChanged(nameof(HasResults));
     }
 }
