@@ -4,7 +4,7 @@
       "name": "ffmpeg",
       "version": "master-latest-gpl",
       "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip",
-      "sha256": "0c7c3d6c31a0a516ae39ac410e057239ff4caeaa2c9efdc4edd56b612ad0fffc",
+      "sha256": "6235901cd9e80b0825869e7bb6ced2d5aea4f7b459e9dc470bef9823933bb939",
       "archiveType": "zip",
       "destination": "ffmpeg"
     },
