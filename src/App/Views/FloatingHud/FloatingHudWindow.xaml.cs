@@ -100,7 +100,8 @@ public partial class FloatingHudWindow : Window
             return false;
         }
 
-        if (CurrentResultPresenter.ContentTemplate?.FindName("ResultCard", CurrentResultPresenter) is not FrameworkElement card)
+        var card = GetResultCard();
+        if (card is null)
         {
             return false;
         }
@@ -120,6 +121,42 @@ public partial class FloatingHudWindow : Window
 
         card.BeginAnimation(OpacityProperty, animation);
         return true;
+    }
+
+    private FrameworkElement? GetResultCard()
+    {
+        if (CurrentResultPresenter is null)
+        {
+            return null;
+        }
+
+        CurrentResultPresenter.ApplyTemplate();
+        return FindDescendantByName(CurrentResultPresenter, "ResultCard");
+    }
+
+    private static FrameworkElement? FindDescendantByName(DependencyObject parent, string name)
+    {
+        if (parent is FrameworkElement fe && string.Equals(fe.Name, name, StringComparison.Ordinal))
+        {
+            return fe;
+        }
+
+        var count = VisualTreeHelper.GetChildrenCount(parent);
+        for (var i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            if (child is null)
+            {
+                continue;
+            }
+
+            if (FindDescendantByName(child, name) is FrameworkElement match)
+            {
+                return match;
+            }
+        }
+
+        return null;
     }
 
     private void OnResultCardMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
