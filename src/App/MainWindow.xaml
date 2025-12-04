@@ -5,7 +5,6 @@
     xmlns:loc="clr-namespace:ClopWindows.App.Localization"
     xmlns:infra="clr-namespace:ClopWindows.App.Infrastructure"
     Title="Clop for Windows"
-        Icon="pack://application:,,,/ClopWindows;component/Assets/Brand/Assets.xcassets/AppIcon.appiconset/icon_256x256.png"
         Width="980"
         Height="640"
         MinWidth="820"

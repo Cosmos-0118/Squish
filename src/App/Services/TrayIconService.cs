@@ -1,7 +1,6 @@
 using System;
 using System.ComponentModel;
 using System.Drawing;
-using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Resources;
 using ClopWindows.App.Localization;
@@ -12,7 +11,7 @@ namespace ClopWindows.App.Services;
 
 public sealed class TrayIconService : IDisposable
 {
-    private const string TrayIconPackUri = "pack://application:,,,/ClopWindows;component/Assets/Brand/Assets.xcassets/MenubarIcon.imageset/clop-menubar.png";
+    private const string TrayIconPackUri = "pack://application:,,,/ClopWindows;component/Assets/Brand/ClopMark.ico";
 
     private readonly ILogger<TrayIconService> _logger;
     private readonly System.Windows.Forms.NotifyIcon _notifyIcon;
@@ -266,24 +265,13 @@ public sealed class TrayIconService : IDisposable
                 return (Icon)SystemIcons.Application.Clone();
             }
 
-            using var bitmap = new Bitmap(resource.Stream);
-            var hIcon = bitmap.GetHicon();
-            var icon = Icon.FromHandle(hIcon);
-            var clone = (Icon)icon.Clone();
-            icon.Dispose();
-            NativeMethods.DestroyIcon(hIcon);
-            return clone;
+            using var icon = new Icon(resource.Stream);
+            return (Icon)icon.Clone();
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to load tray icon from {PackUri}", TrayIconPackUri);
             return (Icon)SystemIcons.Application.Clone();
         }
-    }
-
-    private static class NativeMethods
-    {
-        [DllImport("user32.dll")]
-        public static extern bool DestroyIcon(IntPtr handle);
     }
 }

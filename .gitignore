@@ -76,3 +76,6 @@ coverage*
 *.msixupload
 *.zip
 !artifacts/ghostscript-10.05.0.zip
+
+# Python virtual environment
+.venv/
