@@ -13,6 +13,8 @@ namespace ClopWindows.App.ViewModels;
 public sealed class SettingsViewModel : ObservableObject, IDisposable
 {
     private bool _enableFloatingResults;
+    private bool _runInBackground;
+    private bool _openAtStartup;
     private bool _autoHideFloatingResults;
     private int _autoHideFloatingResultsAfter;
     private bool _enableClipboardOptimiser;
@@ -137,6 +139,30 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
                 SettingsHost.Set(SettingsRegistry.EnableFloatingResults, value);
             }
             ResetHudLayoutCommand.RaiseCanExecuteChanged();
+        }
+    }
+
+    public bool RunInBackground
+    {
+        get => _runInBackground;
+        set
+        {
+            if (SetProperty(ref _runInBackground, value) && !_suppressStoreUpdates)
+            {
+                SettingsHost.Set(SettingsRegistry.RunInBackground, value);
+            }
+        }
+    }
+
+    public bool OpenAtStartup
+    {
+        get => _openAtStartup;
+        set
+        {
+            if (SetProperty(ref _openAtStartup, value) && !_suppressStoreUpdates)
+            {
+                SettingsHost.Set(SettingsRegistry.OpenAtStartup, value);
+            }
         }
     }
 
@@ -374,6 +400,8 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         _suppressStoreUpdates = true;
 
         EnableFloatingResults = SettingsHost.Get(SettingsRegistry.EnableFloatingResults);
+        RunInBackground = SettingsHost.Get(SettingsRegistry.RunInBackground);
+        OpenAtStartup = SettingsHost.Get(SettingsRegistry.OpenAtStartup);
         AutoHideFloatingResults = SettingsHost.Get(SettingsRegistry.AutoHideFloatingResults);
         AutoHideFloatingResultsAfter = SettingsHost.Get(SettingsRegistry.AutoHideFloatingResultsAfter);
         FloatingHudPlacement = SettingsHost.Get(SettingsRegistry.FloatingHudPlacement);
@@ -408,6 +436,12 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         {
             case var name when name == SettingsRegistry.EnableFloatingResults.Name:
                 EnableFloatingResults = SettingsHost.Get(SettingsRegistry.EnableFloatingResults);
+                break;
+            case var name when name == SettingsRegistry.RunInBackground.Name:
+                RunInBackground = SettingsHost.Get(SettingsRegistry.RunInBackground);
+                break;
+            case var name when name == SettingsRegistry.OpenAtStartup.Name:
+                OpenAtStartup = SettingsHost.Get(SettingsRegistry.OpenAtStartup);
                 break;
             case var name when name == SettingsRegistry.AutoHideFloatingResults.Name:
                 AutoHideFloatingResults = SettingsHost.Get(SettingsRegistry.AutoHideFloatingResults);

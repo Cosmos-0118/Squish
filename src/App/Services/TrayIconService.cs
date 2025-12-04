@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Resources;
 using ClopWindows.App.Localization;
+using ClopWindows.Core.Settings;
 using Microsoft.Extensions.Logging;
 
 namespace ClopWindows.App.Services;
@@ -21,6 +22,7 @@ public sealed class TrayIconService : IDisposable
     private bool _exitRequested;
     private bool _disposed;
     private bool _balloonShown;
+    private bool _runInBackground;
 
     public TrayIconService(ILogger<TrayIconService> logger)
     {
@@ -44,6 +46,9 @@ public sealed class TrayIconService : IDisposable
         _contextMenu.Items.Add(exitItem);
 
         _notifyIcon.DoubleClick += (_, _) => ShowMainWindow();
+
+        _runInBackground = SettingsHost.Get(SettingsRegistry.RunInBackground);
+        SettingsHost.SettingChanged += OnSettingChanged;
     }
 
     public void Initialize(MainWindow mainWindow)
@@ -64,7 +69,7 @@ public sealed class TrayIconService : IDisposable
         _mainWindow.Closing += OnMainWindowClosing;
         _mainWindow.StateChanged += OnMainWindowStateChanged;
 
-        _notifyIcon.Visible = true;
+        UpdateTrayVisibility();
     }
 
     public void ShowMainWindow()
@@ -92,6 +97,11 @@ public sealed class TrayIconService : IDisposable
 
     private void HideToTray()
     {
+        if (!_runInBackground)
+        {
+            return;
+        }
+
         if (_mainWindow is null)
         {
             return;
@@ -152,6 +162,24 @@ public sealed class TrayIconService : IDisposable
             return;
         }
 
+        if (!_runInBackground)
+        {
+            _exitRequested = true;
+            _notifyIcon.Visible = false;
+            System.Windows.Application.Current?.Dispatcher.BeginInvoke(new Action(() =>
+            {
+                try
+                {
+                    System.Windows.Application.Current?.Shutdown();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to shut down application when closing window.");
+                }
+            }));
+            return;
+        }
+
         e.Cancel = true;
         HideToTray();
     }
@@ -163,7 +191,12 @@ public sealed class TrayIconService : IDisposable
             return;
         }
 
-        if (_mainWindow.WindowState == WindowState.Minimized && !_exitRequested)
+        if (!_runInBackground || _exitRequested)
+        {
+            return;
+        }
+
+        if (_mainWindow.WindowState == WindowState.Minimized)
         {
             HideToTray();
         }
@@ -178,6 +211,8 @@ public sealed class TrayIconService : IDisposable
 
         _disposed = true;
 
+        SettingsHost.SettingChanged -= OnSettingChanged;
+
         if (_mainWindow is not null)
         {
             _mainWindow.Closing -= OnMainWindowClosing;
@@ -188,6 +223,36 @@ public sealed class TrayIconService : IDisposable
         _notifyIcon.Dispose();
         _contextMenu.Dispose();
         _trayIcon.Dispose();
+    }
+
+    private void UpdateTrayVisibility()
+    {
+        var shouldShow = _runInBackground && !_disposed && _mainWindow is not null;
+        if (_notifyIcon.Visible == shouldShow)
+        {
+            return;
+        }
+
+        _notifyIcon.Visible = shouldShow;
+    }
+
+    private void OnSettingChanged(object? sender, SettingChangedEventArgs e)
+    {
+        if (e.Name != SettingsRegistry.RunInBackground.Name)
+        {
+            return;
+        }
+
+        var desired = e.Value is bool flag ? flag : SettingsHost.Get(SettingsRegistry.RunInBackground);
+        _runInBackground = desired;
+        _ = System.Windows.Application.Current?.Dispatcher.BeginInvoke(new Action(() =>
+        {
+            UpdateTrayVisibility();
+            if (!_runInBackground)
+            {
+                ShowMainWindow();
+            }
+        }));
     }
 
     private Icon LoadTrayIconOrDefault()

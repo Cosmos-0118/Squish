@@ -71,12 +71,14 @@ public partial class App : System.Windows.Application
                 services.AddSingleton<MainWindow>();
                 services.AddSingleton<TrayIconService>();
                 services.AddSingleton<ThemeManager>();
+                services.AddSingleton<StartupRegistrationService>();
             })
             .Build();
 
         _host.Start();
 
         _ = _host.Services.GetRequiredService<ThemeManager>();
+        _ = _host.Services.GetRequiredService<StartupRegistrationService>();
 
         DispatcherUnhandledException += OnDispatcherUnhandledException;
         AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;

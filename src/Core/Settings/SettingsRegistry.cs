@@ -15,6 +15,7 @@ public static class SettingsRegistry
     public static readonly SettingKey<bool> FinishedOnboarding = Bool("finishedOnboarding", false);
     public static readonly SettingKey<bool> ShowMenubarIcon = Bool("showMenubarIcon", true);
     public static readonly SettingKey<bool> EnableFloatingResults = Bool("enableFloatingResults", true);
+    public static readonly SettingKey<bool> RunInBackground = Bool("runInBackground", true);
     public static readonly SettingKey<bool> OptimiseTiff = Bool("optimiseTIFF", true);
     public static readonly SettingKey<bool> EnableClipboardOptimiser = Bool("enableClipboardOptimiser", true);
     public static readonly SettingKey<bool> OptimiseVideoClipboard = Bool("optimiseVideoClipboard", true);
@@ -106,6 +107,7 @@ public static class SettingsRegistry
 
     public static readonly SettingKey<bool> AutoCopyToClipboard = Bool("autoCopyToClipboard", true);
     public static readonly SettingKey<bool> CliInstalled = Bool("cliInstalled", true);
+    public static readonly SettingKey<bool> OpenAtStartup = Bool("openAtStartup", false);
     public static readonly SettingKey<bool> EnableCrossAppAutomation = Bool("enableCrossAppAutomation", true);
     public static readonly SettingKey<int> AutomationHttpPort = Int("automationHttpPort", 58732);
     public static readonly SettingKey<string> AutomationAccessToken = new("automationAccessToken", string.Empty);
@@ -130,6 +132,7 @@ public static class SettingsRegistry
         FinishedOnboarding,
         ShowMenubarIcon,
         EnableFloatingResults,
+        RunInBackground,
         OptimiseTiff,
         EnableClipboardOptimiser,
         OptimiseVideoClipboard,
@@ -207,6 +210,7 @@ public static class SettingsRegistry
         FloatingHudHeight,
         AutoCopyToClipboard,
         CliInstalled,
+        OpenAtStartup,
         EnableCrossAppAutomation,
         AutomationHttpPort,
         AutomationAccessToken,
