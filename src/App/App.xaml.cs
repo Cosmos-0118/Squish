@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Windows;
 using ClopWindows.App.Infrastructure;
 using ClopWindows.App.Services;
@@ -20,13 +21,34 @@ namespace ClopWindows.App;
 
 public partial class App : System.Windows.Application
 {
+    private const string SingleInstanceMutexName = "ClopWindows.App.SingleInstance";
+    internal const string BackgroundLaunchArgument = "--background";
+
     private IHost? _host;
     private IDisposable? _sharedLogScope;
     private TrayIconService? _trayIconService;
+    private Mutex? _instanceMutex;
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        if (!TryAcquireSingleInstanceMutex())
+        {
+            System.Windows.MessageBox.Show(
+                "Clop is already running in the system tray.",
+                "Clop",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+
+            Shutdown();
+            return;
+        }
+
         base.OnStartup(e);
+        var launchToTray = ShouldLaunchSilently(e.Args);
+        if (launchToTray)
+        {
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+        }
         SettingsHost.EnsureInitialized();
         ShortcutCatalog.Initialize();
 
@@ -87,9 +109,13 @@ public partial class App : System.Windows.Application
         hudController.Initialize();
 
         var mainWindow = _host.Services.GetRequiredService<MainWindow>();
+        MainWindow = mainWindow;
         _trayIconService = _host.Services.GetRequiredService<TrayIconService>();
         _trayIconService.Initialize(mainWindow);
-        mainWindow.Show();
+        if (!launchToTray)
+        {
+            mainWindow.Show();
+        }
     }
 
     protected override async void OnExit(ExitEventArgs e)
@@ -115,6 +141,13 @@ public partial class App : System.Windows.Application
         _sharedLogScope?.Dispose();
         _sharedLogScope = null;
 
+        if (_instanceMutex is not null)
+        {
+            _instanceMutex.ReleaseMutex();
+            _instanceMutex.Dispose();
+            _instanceMutex = null;
+        }
+
         base.OnExit(e);
     }
 
@@ -126,5 +159,32 @@ public partial class App : System.Windows.Application
     private void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
     {
         Log.Error("Unhandled exception", e.ExceptionObject);
+    }
+
+    private bool TryAcquireSingleInstanceMutex()
+    {
+        _instanceMutex = new Mutex(initiallyOwned: true, SingleInstanceMutexName, out var createdNew);
+
+        if (createdNew)
+        {
+            return true;
+        }
+
+        _instanceMutex.Dispose();
+        _instanceMutex = null;
+        return false;
+    }
+
+    private static bool ShouldLaunchSilently(IReadOnlyList<string> args)
+    {
+        foreach (var arg in args)
+        {
+            if (string.Equals(arg, BackgroundLaunchArgument, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

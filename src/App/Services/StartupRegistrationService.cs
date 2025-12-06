@@ -71,7 +71,9 @@ public sealed class StartupRegistrationService : IDisposable
         }
 
         executable ??= Path.Combine(AppContext.BaseDirectory, "ClopWindows.App.exe");
-        return $"\"{Path.GetFullPath(executable)}\"";
+        var executablePath = $"\"{Path.GetFullPath(executable)}\"";
+        var backgroundArg = global::ClopWindows.App.App.BackgroundLaunchArgument;
+        return $"{executablePath} {backgroundArg}";
     }
 
     public void Dispose()
