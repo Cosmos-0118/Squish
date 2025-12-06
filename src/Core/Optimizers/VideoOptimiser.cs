@@ -392,7 +392,7 @@ public sealed class VideoOptimiser : IOptimiser
         var playbackSpeed = ReadDouble(metadata, "video.playbackSpeed");
         var maxWidth = ReadInt(metadata, "video.maxWidth");
         var maxHeight = ReadInt(metadata, "video.maxHeight");
-        var aggressive = ReadBool(metadata, "video.aggressive") ?? options.AggressiveQuality;
+        var aggressive = ReadBool(metadata, OptimisationMetadata.VideoAggressive) ?? options.AggressiveQuality;
         var gifWidth = ReadInt(metadata, "video.gifMaxWidth") ?? options.GifMaxWidth;
         var gifFps = ReadInt(metadata, "video.gifFps") ?? options.GifFps;
         var gifQuality = ReadInt(metadata, "video.gifQuality") ?? options.GifQuality;
@@ -643,7 +643,7 @@ public sealed class VideoOptimiser : IOptimiser
             return parsed;
         }
 
-        if (options.PreferAnimatedWebpForHighQuality && (ReadBool(metadata, "video.aggressive") ?? options.AggressiveQuality))
+        if (options.PreferAnimatedWebpForHighQuality && (ReadBool(metadata, OptimisationMetadata.VideoAggressive) ?? options.AggressiveQuality))
         {
             return AnimatedExportFormat.AnimatedWebp;
         }
@@ -1354,7 +1354,8 @@ public sealed class VideoOptimiser : IOptimiser
 
     private static int AdjustHardwareQuality(int baseline, bool aggressive, int offset = 2)
     {
-        return aggressive ? Math.Max(0, baseline - offset) : baseline;
+        // Higher quality index usually means lower bitrate with these presets; push it up when aggressive is requested.
+        return aggressive ? baseline + offset : baseline;
     }
 
 
@@ -1395,7 +1396,8 @@ public sealed class VideoOptimiser : IOptimiser
 
     private static int AdjustSoftwareCrf(int baseline, bool aggressive, int offset = 4)
     {
-        return aggressive ? Math.Max(0, baseline - offset) : baseline;
+        // Higher CRF yields smaller outputs; when aggressive, raise the CRF to target smaller files instead of just higher fidelity.
+        return aggressive ? baseline + offset : baseline;
     }
 
     private static bool? ReadBool(IReadOnlyDictionary<string, object?> metadata, string key)

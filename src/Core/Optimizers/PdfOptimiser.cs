@@ -122,7 +122,7 @@ public sealed class PdfOptimiser : IOptimiser
     private static PdfOptimiserPlan BuildPlan(OptimisationRequest request, PdfOptimiserOptions options)
     {
         var metadata = request.Metadata;
-        var aggressive = ReadBool(metadata, "pdf.aggressive") ?? options.AggressiveByDefault;
+        var aggressive = ReadBool(metadata, OptimisationMetadata.PdfAggressive) ?? options.AggressiveByDefault;
         var stripMetadata = ReadBool(metadata, "pdf.stripMetadata") ?? options.StripMetadata;
         var preserveTimestamps = ReadBool(metadata, "pdf.preserveTimestamps") ?? options.PreserveTimestamps;
 

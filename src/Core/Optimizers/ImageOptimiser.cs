@@ -20,6 +20,7 @@ namespace ClopWindows.Core.Optimizers;
 public sealed class ImageOptimiser : IOptimiser
 {
     private const int MinJpegFallbackQuality = 48;
+    private const int AggressiveJpegQuality = 68;
 
     private readonly ImageOptimiserOptions _options;
     private readonly AdvancedCodecRunner _advancedCodecRunner;
@@ -67,7 +68,9 @@ public sealed class ImageOptimiser : IOptimiser
             return OptimisationResult.Unsupported(request.RequestId);
         }
 
-        var fastPathResult = await TryFastPathAsync(request, extension, context, cancellationToken).ConfigureAwait(false);
+        var targetJpegQuality = ResolveTargetJpegQuality(request.Metadata);
+
+        var fastPathResult = await TryFastPathAsync(request, extension, targetJpegQuality, context, cancellationToken).ConfigureAwait(false);
         if (fastPathResult is not null)
         {
             return fastPathResult;
@@ -82,7 +85,7 @@ public sealed class ImageOptimiser : IOptimiser
         var hasAlpha = HasVisibleAlpha(originalImage);
         var isAnimated = processedImage.Frames.Count > 1;
         var contentProfile = ImageContentAnalyzer.Analyse(originalImage, hasAlpha);
-        var saveProfile = DetermineSaveProfile(extension, contentProfile, hasAlpha, isAnimated);
+        var saveProfile = DetermineSaveProfile(extension, contentProfile, hasAlpha, isAnimated, targetJpegQuality);
 
         if (_options.DownscaleRetina && NeedsRetinaDownscale(originalImage))
         {
@@ -116,7 +119,7 @@ public sealed class ImageOptimiser : IOptimiser
         AdvancedCodecResult? advancedResult = null;
         if (_advancedCodecRunner.HasAnyCodec)
         {
-            stagingForCodecs = await StageForAdvancedCodecsAsync(processedImage, saveProfile, cancellationToken).ConfigureAwait(false);
+            stagingForCodecs = await StageForAdvancedCodecsAsync(processedImage, saveProfile, targetJpegQuality, cancellationToken).ConfigureAwait(false);
             if (stagingForCodecs is not null)
             {
                 advancedResult = await _advancedCodecRunner.TryEncodeAsync(stagingForCodecs.Value, saveProfile, _options, contentProfile, cancellationToken).ConfigureAwait(false);
@@ -133,7 +136,7 @@ public sealed class ImageOptimiser : IOptimiser
         {
             if (string.Equals(saveProfile.Extension, "jpg", StringComparison.OrdinalIgnoreCase))
             {
-                var tuned = await TryReduceJpegSizeAsync(processedImage, originalSize, _options.TargetJpegQuality, cancellationToken).ConfigureAwait(false);
+                var tuned = await TryReduceJpegSizeAsync(processedImage, originalSize, targetJpegQuality, cancellationToken).ConfigureAwait(false);
                 if (tuned is not null)
                 {
                     TryDelete(candidate);
@@ -183,7 +186,7 @@ public sealed class ImageOptimiser : IOptimiser
         return new OptimisationResult(request.RequestId, OptimisationStatus.Succeeded, outputPath, message, DateTime.UtcNow - started);
     }
 
-    private async Task<OptimisationResult?> TryFastPathAsync(OptimisationRequest request, string extension, OptimiserExecutionContext context, CancellationToken token)
+    private async Task<OptimisationResult?> TryFastPathAsync(OptimisationRequest request, string extension, int targetJpegQuality, OptimiserExecutionContext context, CancellationToken token)
     {
         if (OptimisationMetadata.GetFlag(request.Metadata, OptimisationMetadata.ImageForceFullOptimisation))
         {
@@ -200,7 +203,7 @@ public sealed class ImageOptimiser : IOptimiser
             return null;
         }
 
-        var outcome = await WicImageTranscoder.TryTranscodeAsync(request.SourcePath, extension, _options.WicFastPath, _options.TargetJpegQuality, token).ConfigureAwait(false);
+        var outcome = await WicImageTranscoder.TryTranscodeAsync(request.SourcePath, extension, _options.WicFastPath, targetJpegQuality, token).ConfigureAwait(false);
         if (outcome is null)
         {
             return null;
@@ -260,9 +263,9 @@ public sealed class ImageOptimiser : IOptimiser
         return new OptimisationResult(request.RequestId, OptimisationStatus.Succeeded, finalOutput, message);
     }
 
-    private ImageSaveProfile DetermineSaveProfile(string sourceExtension, ImageContentProfile contentProfile, bool hasAlpha, bool isAnimated)
+    private ImageSaveProfile DetermineSaveProfile(string sourceExtension, ImageContentProfile contentProfile, bool hasAlpha, bool isAnimated, int targetJpegQuality)
     {
-        var jpegQuality = Math.Clamp(_options.TargetJpegQuality, 30, 100);
+        var jpegQuality = Math.Clamp(targetJpegQuality, 30, 100);
 
         if (isAnimated || string.Equals(sourceExtension, "gif", StringComparison.OrdinalIgnoreCase))
         {
@@ -479,7 +482,7 @@ public sealed class ImageOptimiser : IOptimiser
         await image.SaveAsync(output, profile.CreateEncoder(), token).ConfigureAwait(false);
     }
 
-    private async Task<FilePath?> StageForAdvancedCodecsAsync(Image<Rgba32> image, ImageSaveProfile saveProfile, CancellationToken token)
+    private async Task<FilePath?> StageForAdvancedCodecsAsync(Image<Rgba32> image, ImageSaveProfile saveProfile, int targetJpegQuality, CancellationToken token)
     {
         if (!_advancedCodecRunner.HasAnyCodec)
         {
@@ -488,12 +491,23 @@ public sealed class ImageOptimiser : IOptimiser
 
         var stageExtension = saveProfile.Extension is "jpg" or "jpeg" ? "jpg" : "png";
         var encoderProfile = stageExtension is "jpg"
-            ? ImageSaveProfile.ForJpeg("Advanced codec staging", Math.Clamp(_options.TargetJpegQuality, 60, 95))
+            ? ImageSaveProfile.ForJpeg("Advanced codec staging", Math.Clamp(targetJpegQuality, 60, 95))
             : ImageSaveProfile.ForPng("Advanced codec staging", PngCompressionLevel.BestCompression);
 
         var stagePath = FilePath.TempFile("clop-stage", stageExtension, addUniqueSuffix: true);
         await SaveWithEncoderAsync(image, stagePath, encoderProfile, token).ConfigureAwait(false);
         return stagePath;
+    }
+
+    private int ResolveTargetJpegQuality(IReadOnlyDictionary<string, object?> metadata)
+    {
+        var quality = _options.TargetJpegQuality;
+        if (OptimisationMetadata.GetFlag(metadata, OptimisationMetadata.ImageAggressive))
+        {
+            quality = Math.Min(quality, AggressiveJpegQuality);
+        }
+
+        return quality;
     }
 
     private async Task<(FilePath Path, long Size)?> TryReduceJpegSizeAsync(Image<Rgba32> image, long maxBytes, int startingQuality, CancellationToken token)

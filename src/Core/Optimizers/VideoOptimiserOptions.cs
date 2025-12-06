@@ -68,7 +68,7 @@ public sealed record VideoOptimiserOptions
 
     public string SoftwareEncoderHevc { get; init; } = "libx265";
 
-    public string SoftwareEncoderAv1 { get; init; } = "svtav1";
+    public string SoftwareEncoderAv1 { get; init; } = "libsvtav1";
 
     public string SoftwareEncoderVp9 { get; init; } = "libvpx-vp9";
 

@@ -111,6 +111,7 @@ public sealed class CompareViewModel : ObservableObject, IDisposable
 
                 OutputBehaviourSettings.ApplyTo(metadata);
                 VideoEncoderPresetSettings.ApplyTo(metadata);
+                AggressiveOptimisationHelper.Apply(itemType.Value, filePath, metadata);
 
                 var request = new OptimisationRequest(itemType.Value, filePath, metadata: metadata);
                 _trackedRequests[request.RequestId] = request;

@@ -265,6 +265,7 @@ public sealed class ShortcutsBridge : IAsyncDisposable
 
             OutputBehaviourSettings.ApplyTo(metadata);
             VideoEncoderPresetSettings.ApplyTo(metadata);
+            AggressiveOptimisationHelper.Apply(target.Type, target.Path, metadata, payload.Aggressive ? true : null);
 
             var request = new OptimisationRequest(target.Type, target.Path, metadata: metadata);
             var ticket = _coordinator.Enqueue(request);

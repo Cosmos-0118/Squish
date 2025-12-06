@@ -285,7 +285,7 @@ foreach ($tool in $tools) {
             }
         }
 
-        $usingLocalArchive = $localArchivePath -ne $null
+        $usingLocalArchive = $null -ne $localArchivePath
         if ($usingLocalArchive) {
             $downloadPath = $localArchivePath
             $computedSha = Get-Checksum -Path $downloadPath
@@ -347,7 +347,13 @@ foreach ($tool in $tools) {
                     $sourcePath = Join-Path -Path $expandDir -ChildPath $effectiveContentRoot
                 }
                 else {
-                    $sourcePath = $expandDir
+                    $items = @(Get-ChildItem -LiteralPath $expandDir)
+                    if ($items.Count -eq 1 -and $items[0].PSIsContainer) {
+                        $sourcePath = $items[0].FullName
+                    }
+                    else {
+                        $sourcePath = $expandDir
+                    }
                 }
                 Copy-Item -Path (Join-Path $sourcePath '*') -Destination $dest -Recurse -Force
                 Remove-Item -Recurse -Force -LiteralPath $expandDir

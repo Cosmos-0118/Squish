@@ -414,6 +414,7 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
 
         OutputBehaviourSettings.ApplyTo(metadata);
         VideoEncoderPresetSettings.ApplyTo(metadata);
+        AggressiveOptimisationHelper.Apply(item.ItemType, item.SourcePath, metadata);
 
         var request = new OptimisationRequest(item.ItemType, item.SourcePath, metadata: metadata);
         _pending[request.RequestId] = item;

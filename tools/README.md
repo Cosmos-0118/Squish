@@ -36,6 +36,8 @@ Nightly or rolling releases can specify dynamic hashes by adding a `checksumSour
 
 When this block is present, `fetch-tools.ps1` downloads the checksum manifest, parses the SHA256 that matches `fileName`, and enforces it automatically so future upstream rotations do not require manual manifest updates.
 
+The bundled ffmpeg entry points at the `ffmpeg-git-full.7z` build from gyan.dev so hardware-less installs still ship the `libsvtav1` encoder. Re-run the helper whenever upstream refreshes the archive to ensure aggressive video optimisations keep working.
+
 ## Subfolders
 
 - `ffmpeg/`
