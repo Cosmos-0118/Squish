@@ -121,6 +121,8 @@ public static class SettingsRegistry
     public static readonly SettingKey<string> ShortcutShowMainWindow = new("shortcutShowMainWindow", "Ctrl+Shift+Space");
     public static readonly SettingKey<string> ShortcutToggleFloatingResults = new("shortcutToggleFloatingResults", "Ctrl+Shift+F");
     public static readonly SettingKey<string> ShortcutToggleClipboardOptimiser = new("shortcutToggleClipboardOptimiser", "Ctrl+Shift+C");
+    public static readonly SettingKey<string> ShortcutToggleAutomationPause = new("shortcutToggleAutomationPause", "Ctrl+Shift+P");
+    public static readonly SettingKey<string> ShortcutToggleAggressiveOptimisation = new("shortcutToggleAggressiveOptimisation", "Ctrl+Shift+A");
 
     public static readonly SettingKey<List<CropSize>> SavedCropSizes = new("savedCropSizes", DefaultCropSizes);
     public static readonly SettingKey<bool> PauseAutomaticOptimisations = Bool("pauseAutomaticOptimisations", false);
@@ -223,6 +225,8 @@ public static class SettingsRegistry
         ShortcutShowMainWindow,
         ShortcutToggleFloatingResults,
         ShortcutToggleClipboardOptimiser,
+        ShortcutToggleAutomationPause,
+        ShortcutToggleAggressiveOptimisation,
         SavedCropSizes,
         PauseAutomaticOptimisations,
         SyncSettingsCloud,

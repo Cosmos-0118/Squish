@@ -6,6 +6,8 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
 using ClopWindows.App.Infrastructure;
+using ClopWindows.App.Localization;
+using ClopWindows.App.ViewModels;
 using ClopWindows.Core.Settings;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -14,6 +16,15 @@ namespace ClopWindows.App.Services;
 
 public sealed class KeyboardShortcutService : IDisposable
 {
+    private static readonly SettingKey<bool>[] AggressiveOptimisationSettings =
+    {
+        SettingsRegistry.UseAggressiveOptimisationMp4,
+        SettingsRegistry.UseAggressiveOptimisationJpeg,
+        SettingsRegistry.UseAggressiveOptimisationPng,
+        SettingsRegistry.UseAggressiveOptimisationGif,
+        SettingsRegistry.UseAggressiveOptimisationPdf
+    };
+
     private readonly IServiceProvider _serviceProvider;
     private readonly FloatingHudController _hudController;
     private readonly ILogger<KeyboardShortcutService> _logger;
@@ -135,6 +146,12 @@ public sealed class KeyboardShortcutService : IDisposable
             case GlobalShortcutAction.ToggleClipboardWatcher:
                 System.Windows.Application.Current?.Dispatcher.BeginInvoke(new Action(ToggleClipboardWatcher));
                 break;
+            case GlobalShortcutAction.ToggleAutomationPause:
+                System.Windows.Application.Current?.Dispatcher.BeginInvoke(new Action(ToggleAutomationPause));
+                break;
+            case GlobalShortcutAction.ToggleAggressiveOptimisation:
+                System.Windows.Application.Current?.Dispatcher.BeginInvoke(new Action(ToggleAggressiveOptimisation));
+                break;
         }
     }
 
@@ -195,6 +212,53 @@ public sealed class KeyboardShortcutService : IDisposable
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to toggle clipboard watcher via hotkey.");
+        }
+    }
+
+    private void ToggleAutomationPause()
+    {
+        try
+        {
+            var paused = SettingsHost.Get(SettingsRegistry.PauseAutomaticOptimisations);
+            var newValue = !paused;
+            SettingsHost.Set(SettingsRegistry.PauseAutomaticOptimisations, newValue);
+
+            var title = ClopStringCatalog.Get("hud.notification.automation.title");
+            var messageKey = newValue
+                ? "hud.notification.automation.paused"
+                : "hud.notification.automation.resumed";
+            var message = ClopStringCatalog.Get(messageKey);
+            var style = newValue ? FloatingHudNotificationStyle.Warning : FloatingHudNotificationStyle.Success;
+            _hudController.ShowNotification(title, message, style);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to toggle automatic optimisations via hotkey.");
+        }
+    }
+
+    private void ToggleAggressiveOptimisation()
+    {
+        try
+        {
+            var currentlyEnabled = AggressiveOptimisationSettings.All(key => SettingsHost.Get(key));
+            var newValue = !currentlyEnabled;
+            foreach (var key in AggressiveOptimisationSettings)
+            {
+                SettingsHost.Set(key, newValue);
+            }
+
+            var title = ClopStringCatalog.Get("hud.notification.aggressive.title");
+            var messageKey = newValue
+                ? "hud.notification.aggressive.enabled"
+                : "hud.notification.aggressive.disabled";
+            var message = ClopStringCatalog.Get(messageKey);
+            var style = newValue ? FloatingHudNotificationStyle.Success : FloatingHudNotificationStyle.Info;
+            _hudController.ShowNotification(title, message, style);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to toggle aggressive optimisation via hotkey.");
         }
     }
 

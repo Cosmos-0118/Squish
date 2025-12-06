@@ -70,7 +70,23 @@ public static class ShortcutCatalog
             SettingsRegistry.ShortcutToggleClipboardOptimiser,
             ModifierKeys.Control | ModifierKeys.Shift,
             Key.C,
-            GlobalShortcutAction.ToggleClipboardWatcher)
+            GlobalShortcutAction.ToggleClipboardWatcher),
+        new ShortcutDefinition(
+            ShortcutId.ToggleAutomationPause,
+            ShortcutScope.Global,
+            "Pause automation",
+            SettingsRegistry.ShortcutToggleAutomationPause,
+            ModifierKeys.Control | ModifierKeys.Shift,
+            Key.P,
+            GlobalShortcutAction.ToggleAutomationPause),
+        new ShortcutDefinition(
+            ShortcutId.ToggleAggressiveOptimisation,
+            ShortcutScope.Global,
+            "Toggle aggressive optimisation",
+            SettingsRegistry.ShortcutToggleAggressiveOptimisation,
+            ModifierKeys.Control | ModifierKeys.Shift,
+            Key.A,
+            GlobalShortcutAction.ToggleAggressiveOptimisation)
     };
 
     private static readonly ReadOnlyDictionary<ShortcutId, ShortcutDefinition> DefinitionMap =
@@ -370,14 +386,18 @@ public enum ShortcutId
     ShowSettingsNavigation,
     ShowMainWindow,
     ToggleFloatingResults,
-    ToggleClipboardOptimiser
+    ToggleClipboardOptimiser,
+    ToggleAutomationPause,
+    ToggleAggressiveOptimisation
 }
 
 public enum GlobalShortcutAction
 {
     ShowMainWindow,
     ToggleFloatingResults,
-    ToggleClipboardWatcher
+    ToggleClipboardWatcher,
+    ToggleAutomationPause,
+    ToggleAggressiveOptimisation
 }
 
 public sealed record GlobalShortcutBinding(ShortcutId Id, string Description, ModifierKeys Modifiers, Key Key, GlobalShortcutAction Action);

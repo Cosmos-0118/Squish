@@ -181,6 +181,27 @@ public sealed class FloatingResultViewModel : ObservableObject
         }
     }
 
+    public void ApplyNotification(string title, string? subtitle, string message, FloatingHudNotificationStyle style)
+    {
+        SourcePath = null;
+        SourceTag = string.Empty;
+        StartedAt = DateTimeOffset.UtcNow;
+        DisplayName = title;
+        Subtitle = subtitle;
+        StatusText = message;
+        Progress = 0d;
+        Duration = null;
+        IsRunning = false;
+        IsSuccess = style == FloatingHudNotificationStyle.Success;
+        IsFailure = style == FloatingHudNotificationStyle.Warning;
+        StatusBrush = style switch
+        {
+            FloatingHudNotificationStyle.Success => SuccessBrush,
+            FloatingHudNotificationStyle.Warning => FailureBrush,
+            _ => RunningBrush
+        };
+    }
+
     private static string? BuildSizeSummary(FilePath? outputPath, long? originalBytes)
     {
         if (originalBytes is null || outputPath is null)
@@ -268,4 +289,11 @@ public sealed class FloatingResultViewModel : ObservableObject
         brush.Freeze();
         return brush;
     }
+}
+
+public enum FloatingHudNotificationStyle
+{
+    Info,
+    Success,
+    Warning
 }

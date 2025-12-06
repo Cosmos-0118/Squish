@@ -15,6 +15,7 @@ namespace ClopWindows.App.Services;
 public sealed class FloatingHudController : IDisposable
 {
     private const int MaxVisibleResults = 6;
+    private static readonly TimeSpan DefaultNotificationDuration = TimeSpan.FromSeconds(4);
 
     private readonly FloatingHudViewModel _viewModel;
     private readonly FloatingHudWindow _window;
@@ -104,6 +105,26 @@ public sealed class FloatingHudController : IDisposable
         {
             _viewModel.ResetLayout();
             PositionWindow();
+            EnsureVisible(forceShow: true);
+        });
+    }
+
+    public void ShowNotification(string title, string message, FloatingHudNotificationStyle style = FloatingHudNotificationStyle.Info, TimeSpan? duration = null, string? subtitle = null)
+    {
+        ThrowIfDisposed();
+
+        Dispatch(() =>
+        {
+            var requestId = $"notification::{Guid.NewGuid():N}";
+            var viewModel = new FloatingResultViewModel(requestId, DismissResult);
+            viewModel.ApplyNotification(title, subtitle, message, style);
+
+            _results[requestId] = viewModel;
+            _viewModel.InsertResult(viewModel);
+            TrimOverflow();
+
+            var dismissAfter = duration ?? DefaultNotificationDuration;
+            ScheduleNotificationDismiss(viewModel, dismissAfter);
             EnsureVisible(forceShow: true);
         });
     }
@@ -382,6 +403,48 @@ public sealed class FloatingHudController : IDisposable
             try
             {
                 await Task.Delay(TimeSpan.FromSeconds(clampedSeconds), cts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                cts.Dispose();
+                return;
+            }
+
+            Dispatch(() =>
+            {
+                if (!_dismissDelays.Remove(viewModel.RequestId))
+                {
+                    cts.Dispose();
+                    return;
+                }
+
+                cts.Dispose();
+                BeginDismissal(viewModel);
+            });
+        });
+    }
+
+    private void ScheduleNotificationDismiss(FloatingResultViewModel viewModel, TimeSpan duration)
+    {
+        CancelDismissTimer(viewModel.RequestId);
+
+        if (duration <= TimeSpan.Zero)
+        {
+            duration = TimeSpan.FromSeconds(1);
+        }
+
+        var clamped = duration > TimeSpan.FromSeconds(30)
+            ? TimeSpan.FromSeconds(30)
+            : duration;
+
+        var cts = new CancellationTokenSource();
+        _dismissDelays[viewModel.RequestId] = cts;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(clamped, cts.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
