@@ -5,10 +5,11 @@
     xmlns:loc="clr-namespace:ClopWindows.App.Localization"
     xmlns:infra="clr-namespace:ClopWindows.App.Infrastructure"
     Title="Clop for Windows"
-        Width="980"
-        Height="640"
-        MinWidth="820"
-        MinHeight="520"
+        Width="1040"
+        Height="680"
+        MinWidth="860"
+        MinHeight="540"
+    Padding="12"
     Background="{DynamicResource Brush.WindowBackground}">
     <Window.Resources>
         <infra:AdaptiveSidebarWidthConverter x:Key="AdaptiveSidebarWidthConverter"
@@ -17,9 +18,9 @@
                                              WidthRatio="0.24"/>
 
         <Style x:Key="AdaptiveSidebarCardStyle" TargetType="Border">
-            <Setter Property="Margin" Value="16,16,8,16"/>
-            <Setter Property="Padding" Value="24"/>
-            <Setter Property="CornerRadius" Value="24"/>
+            <Setter Property="Margin" Value="16,16,12,16"/>
+            <Setter Property="Padding" Value="28"/>
+            <Setter Property="CornerRadius" Value="26"/>
             <Setter Property="SnapsToDevicePixels" Value="True"/>
             <Setter Property="Width">
                 <Setter.Value>
@@ -40,7 +41,7 @@
     </Window.Resources>
     <Grid>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="Auto" MinWidth="220"/>
+            <ColumnDefinition Width="Auto" MinWidth="240"/>
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
 
@@ -55,11 +56,11 @@
                         Opacity="0.35"
                         Margin="-12"/>
                 <DockPanel>
-                    <StackPanel DockPanel.Dock="Top">
-                        <TextBlock Text="{loc:Loc app.name}" FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Brush.NavigationTitle}"/>
-                        <TextBlock Text="{loc:Loc app.tagline}" FontSize="12" Foreground="{DynamicResource Brush.NavigationSubtitle}" Margin="0,4,0,24" TextWrapping="Wrap"/>
+                    <StackPanel DockPanel.Dock="Top" Margin="0,0,0,12">
+                        <TextBlock Text="{loc:Loc app.name}" FontSize="28" FontWeight="Bold" Foreground="{DynamicResource Brush.NavigationTitle}"/>
+                        <TextBlock Text="{loc:Loc app.tagline}" FontSize="13" Foreground="{DynamicResource Brush.NavigationSubtitle}" Margin="0,6,0,28" TextWrapping="Wrap"/>
                         <Border Background="{DynamicResource Brush.NavigationBorder}" Height="1" Opacity="0.5" CornerRadius="1"/>
-                        <TextBlock Text="{loc:Loc navigation.section.label}" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource Brush.NavigationSubtitle}" Margin="0,18,0,6" TextWrapping="Wrap" TextOptions.TextFormattingMode="Ideal"/>
+                        <TextBlock Text="{loc:Loc navigation.section.label}" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.NavigationSubtitle}" Margin="0,18,0,8" TextWrapping="Wrap" TextOptions.TextFormattingMode="Ideal"/>
                     </StackPanel>
 
                     <ListBox ItemsSource="{Binding NavigationItems}"
@@ -68,15 +69,21 @@
                              Background="Transparent"
                              Foreground="{DynamicResource Brush.NavigationTitle}"
                              HorizontalContentAlignment="Stretch"
-                             Margin="0,8,0,0"
+                             Margin="0,12,0,0"
+                             Padding="4"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                              ScrollViewer.VerticalScrollBarVisibility="Hidden"
                              AutomationProperties.HelpText="{loc:Loc navigation.list.help}">
+                        <ListBox.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Margin="0" />
+                            </ItemsPanelTemplate>
+                        </ListBox.ItemsPanel>
                         <ListBox.ItemTemplate>
                             <DataTemplate>
-                                <StackPanel>
-                                    <TextBlock Text="{Binding Title}" FontSize="14" FontWeight="SemiBold" Foreground="{DynamicResource Brush.NavigationTitle}"/>
-                                    <TextBlock Text="{Binding Subtitle}" FontSize="12" Margin="0,4,0,0" TextWrapping="Wrap">
+                                <StackPanel Margin="4,2,4,10">
+                                    <TextBlock Text="{Binding Title}" FontSize="15" FontWeight="SemiBold" Foreground="{DynamicResource Brush.NavigationTitle}" TextOptions.TextFormattingMode="Ideal"/>
+                                    <TextBlock Text="{Binding Subtitle}" FontSize="12.5" Margin="0,6,0,0" TextWrapping="Wrap">
                                         <TextBlock.Style>
                                             <Style TargetType="TextBlock">
                                                 <Setter Property="Foreground" Value="{DynamicResource Brush.NavigationSubtitle}"/>
@@ -93,14 +100,14 @@
                         </ListBox.ItemTemplate>
                         <ListBox.ItemContainerStyle>
                             <Style TargetType="ListBoxItem">
-                                <Setter Property="Padding" Value="0"/>
+                                <Setter Property="Padding" Value="2"/>
                                 <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
                                 <Setter Property="Template">
                                     <Setter.Value>
                                         <ControlTemplate TargetType="ListBoxItem">
                                             <Grid>
-                                                <Border x:Name="Indicator" Width="4" CornerRadius="4" HorizontalAlignment="Left" Margin="0" Background="{DynamicResource Brush.NavigationIndicator}" Opacity="0"/>
-                                                <Border x:Name="Container" Background="Transparent" CornerRadius="12" Margin="8,0,0,8" Padding="12,10">
+                                                <Border x:Name="Indicator" Width="4" CornerRadius="6" HorizontalAlignment="Left" Margin="0" Background="{DynamicResource Brush.NavigationIndicator}" Opacity="0"/>
+                                                <Border x:Name="Container" Background="Transparent" CornerRadius="14" Margin="10,0,0,10" Padding="14,12">
                                                     <ContentPresenter/>
                                                 </Border>
                                             </Grid>
@@ -111,6 +118,7 @@
                                                 <Trigger Property="IsSelected" Value="True">
                                                     <Setter TargetName="Container" Property="Background" Value="{DynamicResource Brush.NavigationItemSelectedBackground}"/>
                                                     <Setter TargetName="Indicator" Property="Opacity" Value="1"/>
+                                                    <Setter Property="Foreground" Value="{DynamicResource Brush.NavigationTitle}"/>
                                                 </Trigger>
                                             </ControlTemplate.Triggers>
                                         </ControlTemplate>
@@ -123,7 +131,7 @@
             </Grid>
         </Border>
 
-        <Border Grid.Column="1" Margin="0" Background="{DynamicResource Brush.ContentBackground}">
+        <Border Grid.Column="1" Margin="6" Padding="24" Background="{DynamicResource Brush.ContentBackground}" CornerRadius="20">
             <ContentControl Content="{Binding CurrentView}"/>
         </Border>
     </Grid>

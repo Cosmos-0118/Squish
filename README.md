@@ -1,21 +1,14 @@
 <h1 align="center">Clop for Windows</h1>
 <p align="center">Clipboard, image, video, and PDF optimisation for Windows 11</p>
-<p align="center"><em>⚠️ Still under heavy development &mdash; this is a personal hobby port.</em></p>
+<p align="center"><em>⚠️ Stable enough for daily use, but expect occasional bugs while we keep polishing.</em></p>
 
-> I am building this project in my spare time to bring the Clop experience to Windows. There are no production-ready builds yet; expect breaking changes, missing UI polish, and the occasional rough edge while parity with the macOS app solidifies.
+> The Windows port is usable today and tracks the macOS experience closely. Features are in place, but you may still hit rough edges or small regressions as we continue to refine parity and performance.
 
 ## Why this port exists
 
 - macOS already has an excellent experience with <a href="https://github.com/FuzzyIdeas/Clop">Clop for Mac</a>. Windows creators deserve the same clipboard-first workflow, so this repo tracks a feature-for-feature reimplementation.
 - The codebase mirrors the Swift architecture: a WPF shell for the HUD, a background worker that watches the clipboard and file system, a CLI bridge for automation, and shared optimisers in `src/Core`.
 - I keep the naming, file layout, and behaviour intentionally close to the upstream project to make it easy to diff and credit the original authors.
-
-## Current focus
-
-- **Feature parity:** Matching floating HUD behaviour, drop-zone overlays, and preset actions described in `docs/architecture.md`.
-- **Media pipelines:** Porting `pngquant`, `mozjpeg`, `libwebp`, `libavif`, `ffmpeg`, `ghostscript`, `qpdf`, and the new LibreOffice-powered document pipeline (see `docs/windows-deps.md` and `tools/tools-manifest.json`).
-- **Automation:** Wiring the CLI (`src/CliBridge`) and Explorer integrations so Windows users can script Clop just like macOS Shortcuts users do.
-- **Reliability:** Shared logging, migrations, and settings live in `src/Core` so both the GUI app and the background service see the same configuration.
 
 ## Where things live
 

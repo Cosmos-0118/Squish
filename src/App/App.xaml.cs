@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Windows;
+using System.Windows.Interop;
 using ClopWindows.App.Infrastructure;
 using ClopWindows.App.Services;
 using ClopWindows.App.ViewModels;
@@ -109,9 +110,16 @@ public partial class App : System.Windows.Application
         hudController.Initialize();
 
         var mainWindow = _host.Services.GetRequiredService<MainWindow>();
+        var shortcutService = _host.Services.GetRequiredService<KeyboardShortcutService>();
         MainWindow = mainWindow;
         _trayIconService = _host.Services.GetRequiredService<TrayIconService>();
         _trayIconService.Initialize(mainWindow);
+
+        // Ensure the main window has a handle so global shortcuts can register even when launching to tray.
+        var handleHelper = new WindowInteropHelper(mainWindow);
+        handleHelper.EnsureHandle();
+        shortcutService.Attach(mainWindow);
+
         if (!launchToTray)
         {
             mainWindow.Show();

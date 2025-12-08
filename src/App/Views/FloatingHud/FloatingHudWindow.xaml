@@ -13,8 +13,8 @@
         ShowInTaskbar="False"
         ShowActivated="False"
         Topmost="True"
-        MinHeight="180"
-        MinWidth="320"
+        MinHeight="150"
+        MinWidth="280"
         Width="{Binding WindowWidth, Mode=TwoWay}"
         Height="{Binding WindowHeight, Mode=TwoWay}"
         AutomationProperties.Name="{loc:Loc hud.title}"
@@ -22,8 +22,8 @@
     <shell:WindowChrome.WindowChrome>
         <shell:WindowChrome CaptionHeight="0"
                              GlassFrameThickness="0"
-                             CornerRadius="14"
-                             ResizeBorderThickness="8"
+                             CornerRadius="12"
+                             ResizeBorderThickness="6"
                              UseAeroCaptionButtons="False"/>
     </shell:WindowChrome.WindowChrome>
     <Window.Resources>
@@ -103,7 +103,7 @@
     </Window.Resources>
 
     <Border Background="{DynamicResource Brush.HudBackground}"
-            CornerRadius="24"
+            CornerRadius="18"
             Padding="0"
             Effect="{StaticResource HudShadow}">
         <Grid>
@@ -115,7 +115,7 @@
 
             <Grid x:Name="TitleBar"
                 Grid.Row="0"
-                Margin="20,16,20,8"
+                Margin="14,12,14,6"
                 MouseLeftButtonDown="OnTitleBarMouseDown">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition/>
@@ -125,11 +125,11 @@
                     <TextBlock Text="{loc:Loc hud.title}"
                                FontWeight="SemiBold"
                                Foreground="{DynamicResource Brush.HudTextPrimary}"
-                               FontSize="13"/>
+                               FontSize="12"/>
                     <TextBlock Text="{loc:Loc hud.subtitle}"
-                               Margin="0,2,0,0"
+                               Margin="0,1,0,0"
                                Foreground="{DynamicResource Brush.HudTextSecondary}"
-                               FontSize="11"/>
+                               FontSize="10.5"/>
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal">
                     <Button Style="{StaticResource IconButtonStyle}"
@@ -140,11 +140,11 @@
                 </StackPanel>
             </Grid>
 
-            <Border Grid.Row="1"
-                    Margin="20,0,20,16"
-                    Padding="6"
+                <Border Grid.Row="1"
+                    Margin="14,0,14,10"
+                    Padding="4"
                     Background="{DynamicResource Brush.HudCardBorder}"
-                    CornerRadius="16">
+                    CornerRadius="14">
                 <Grid>
                     <ScrollViewer Margin="4"
                                   Visibility="{Binding HasResults, Converter={StaticResource BooleanToVisibilityConverter}}"
@@ -171,8 +171,8 @@
                                             Background="{DynamicResource Brush.HudCardBackground}"
                                             BorderBrush="#2EFFFFFF"
                                             BorderThickness="1"
-                                            CornerRadius="18"
-                                            Padding="16"
+                                            CornerRadius="14"
+                                            Padding="12"
                                             Cursor="Hand"
                                             MouseLeftButtonDown="OnResultCardMouseLeftButtonDown"
                                             MouseLeftButtonUp="OnResultCardMouseLeftButtonUp"
@@ -183,15 +183,15 @@
                                                 <ColumnDefinition/>
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
-                                            <StackPanel Orientation="Vertical" Margin="0,0,12,0">
+                                            <StackPanel Orientation="Vertical" Margin="0,0,10,0">
                                                 <TextBlock Text="{Binding DisplayName}"
-                                                           FontWeight="Bold"
-                                                           FontSize="15"
+                                                           FontWeight="SemiBold"
+                                                           FontSize="14"
                                                            Foreground="{DynamicResource Brush.HudTextPrimary}"/>
                                                 <TextBlock Text="{Binding Subtitle}"
                                                            Margin="0,2,0,0"
                                                            Foreground="{DynamicResource Brush.HudTextSecondary}"
-                                                           FontSize="12"
+                                                           FontSize="11.5"
                                                            TextTrimming="CharacterEllipsis">
                                                     <TextBlock.Style>
                                                         <Style TargetType="TextBlock">
@@ -208,9 +208,9 @@
                                                     </TextBlock.Style>
                                                 </TextBlock>
                                                 <TextBlock Text="{Binding StatusText}"
-                                                           Margin="0,10,0,0"
-                                                           FontSize="14"
-                                                           FontWeight="Bold"
+                                                           Margin="0,8,0,0"
+                                                           FontSize="13"
+                                                           FontWeight="SemiBold"
                                                            Foreground="{Binding StatusBrush}"/>
                                                 <ProgressBar Margin="0,12,0,0"
                                                              Height="4"
@@ -220,9 +220,9 @@
                                                              Foreground="{DynamicResource Brush.HudProgress}"
                                                              Background="{DynamicResource Brush.HudProgressBackground}"/>
                                             </StackPanel>
-                                            <Button Grid.Column="1"
-                                                    Width="30"
-                                                    Height="30"
+                                                <Button Grid.Column="1"
+                                                    Width="26"
+                                                    Height="26"
                                                     VerticalAlignment="Top"
                                                     Command="{Binding DismissCommand}"
                                                     Style="{StaticResource IconButtonStyle}">

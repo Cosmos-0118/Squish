@@ -80,6 +80,11 @@ public sealed class KeyboardShortcutService : IDisposable
         var handle = helper.Handle;
         if (handle == IntPtr.Zero)
         {
+            handle = helper.EnsureHandle();
+        }
+
+        if (handle == IntPtr.Zero)
+        {
             return;
         }
 
