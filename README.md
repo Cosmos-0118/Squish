@@ -73,3 +73,16 @@ dotnet test src/ClopWindows.sln
 | LibreOffice (`soffice`) | Document-to-PDF conversion prior to optimisation           | <https://www.libreoffice.org/about-us/licenses/> | MPL 2.0 / LGPL v3+           |
 
 If you spot mismatches with the macOS experience or want to help wire up parity items, open an issue or a draft PR. Thanks for following along while I build this hobby project!
+
+## Installer integrity & false positives
+
+- **SHA256 checksum (latest public build):**
+  - Installer: `Clop-Setup_1.1.0.exe`
+  - SHA256: `7a82332765fbbbc1e438e36f3cbc20f90b4995926c464f90bc0e1a89b39deb5f`
+- **Verify locally:**
+
+  ```powershell
+  CertUtil -hashfile Clop-Setup_1.1.0.exe SHA256
+  ```
+
+- **False positive notice:** This is a hobby, unsigned Windows port. Some antivirus engines may flag the installer heuristically because it bundles binaries and watches the clipboard. There is no malicious intent. Verify the checksum above and feel free to upload the installer to VirusTotal yourself.

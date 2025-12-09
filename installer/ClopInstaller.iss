@@ -24,6 +24,9 @@ AppId={{C6C6E8C1-6D1B-4A02-92F8-08E2E6D70B3D}}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
+AppPublisherURL="https://github.com/Cosmos-0118"
+AppSupportURL="https://github.com/Cosmos-0118/Clop-For-Windows/issues"
+AppUpdatesURL="https://github.com/Cosmos-0118/Clop-For-Windows/releases"
 DefaultDirName={autopf64}\\{#MyAppName}
 DefaultGroupName={#MyAppName}
 OutputDir=Output
@@ -38,6 +41,12 @@ PrivilegesRequired=admin
 ArchitecturesAllowed=x64
 ArchitecturesInstallIn64BitMode=x64
 LicenseFile=CLOP_LICENSE.txt
+UninstallDisplayName={#MyAppName}
+VersionInfoCompany={#MyAppPublisher}
+VersionInfoProductName={#MyAppName}
+VersionInfoProductVersion={#MyAppVersion}
+VersionInfoVersion={#MyAppVersion}
+VersionInfoDescription="Clop for Windows installer"
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
