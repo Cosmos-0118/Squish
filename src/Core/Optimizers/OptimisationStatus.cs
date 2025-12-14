@@ -7,5 +7,6 @@ public enum OptimisationStatus
     Succeeded,
     Failed,
     Cancelled,
-    Unsupported
+    Unsupported,
+    Unknown
 }

@@ -171,7 +171,7 @@ public sealed class VideoOptimiser : IOptimiser
         }
         catch (Exception ex)
         {
-            Log.Error($"Video optimisation failed: {ex.Message}");
+            Log.Error(OptimiserLog.BuildErrorMessage("Video optimisation", ex), OptimiserLog.BuildContext(request));
             return OptimisationResult.Failure(request.RequestId, ex.Message);
         }
         finally

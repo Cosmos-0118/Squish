@@ -86,7 +86,15 @@ public static class ShortcutCatalog
             SettingsRegistry.ShortcutToggleAggressiveOptimisation,
             ModifierKeys.Control | ModifierKeys.Shift,
             Key.A,
-            GlobalShortcutAction.ToggleAggressiveOptimisation)
+            GlobalShortcutAction.ToggleAggressiveOptimisation),
+        new ShortcutDefinition(
+            ShortcutId.ToggleMetadataPreservation,
+            ShortcutScope.Global,
+            "Toggle metadata preservation",
+            SettingsRegistry.ShortcutToggleMetadataPreservation,
+            ModifierKeys.Control | ModifierKeys.Shift,
+            Key.M,
+            GlobalShortcutAction.ToggleMetadataPreservation)
     };
 
     private static readonly ReadOnlyDictionary<ShortcutId, ShortcutDefinition> DefinitionMap =
@@ -388,7 +396,8 @@ public enum ShortcutId
     ToggleFloatingResults,
     ToggleClipboardOptimiser,
     ToggleAutomationPause,
-    ToggleAggressiveOptimisation
+    ToggleAggressiveOptimisation,
+    ToggleMetadataPreservation
 }
 
 public enum GlobalShortcutAction
@@ -397,7 +406,8 @@ public enum GlobalShortcutAction
     ToggleFloatingResults,
     ToggleClipboardWatcher,
     ToggleAutomationPause,
-    ToggleAggressiveOptimisation
+    ToggleAggressiveOptimisation,
+    ToggleMetadataPreservation
 }
 
 public sealed record GlobalShortcutBinding(ShortcutId Id, string Description, ModifierKeys Modifiers, Key Key, GlobalShortcutAction Action);

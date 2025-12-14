@@ -130,7 +130,8 @@ public partial class FloatingHudWindow : Window
             return null;
         }
 
-        if (ResultItemsControl.ItemContainerGenerator.ContainerFromItem(viewModel) is not FrameworkElement container)
+        var container = ResultItemsControl.ItemContainerGenerator.ContainerFromItem(viewModel) as FrameworkElement;
+        if (container is null)
         {
             ResultItemsControl.UpdateLayout();
             container = ResultItemsControl.ItemContainerGenerator.ContainerFromItem(viewModel) as FrameworkElement;

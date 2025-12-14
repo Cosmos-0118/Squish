@@ -4,6 +4,7 @@ using ClopWindows.BackgroundService;
 using ClopWindows.BackgroundService.Automation;
 using ClopWindows.BackgroundService.Clipboard;
 using ClopWindows.Core.Optimizers;
+using ClopWindows.Core.Settings;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -14,7 +15,7 @@ using var sharedLogging = SharedLogging.EnableSharedLogger("background-service")
 var builder = Host.CreateApplicationBuilder(args);
 builder.Logging.AddSharedFileLogger("background-service", LogLevel.Information);
 
-builder.Services.AddSingleton<IOptimiser, ImageOptimiser>();
+builder.Services.AddSingleton<IOptimiser>(_ => new SettingsBackedImageOptimiser(ImageOptimiserOptionsFactory.FromSettings));
 builder.Services.AddSingleton<IOptimiser>(_ => new VideoOptimiser(VideoOptimiserOptions.Default.WithHardwareOverride()));
 builder.Services.AddSingleton<IOptimiser, PdfOptimiser>();
 builder.Services.AddSingleton<IOptimiser, DocumentOptimiser>();

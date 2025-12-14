@@ -220,16 +220,26 @@
                                                              Foreground="{DynamicResource Brush.HudProgress}"
                                                              Background="{DynamicResource Brush.HudProgressBackground}"/>
                                             </StackPanel>
-                                                <Button Grid.Column="1"
-                                                    Width="26"
-                                                    Height="26"
-                                                    VerticalAlignment="Top"
-                                                    Command="{Binding DismissCommand}"
-                                                    Style="{StaticResource IconButtonStyle}">
-                                                <Button.Content>
-                                                    <TextBlock Text="" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                </Button.Content>
-                                            </Button>
+                                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
+                                                    <Button Width="26"
+                                                            Height="26"
+                                                            Margin="0,0,6,0"
+                                                            Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                                            Command="{Binding CancelCommand}"
+                                                            Style="{StaticResource IconButtonStyle}"
+                                                            AutomationProperties.Name="{loc:Loc hud.cancel.button}"
+                                                            ToolTip="{loc:Loc hud.cancel.tooltip}">
+                                                        <TextBlock Text="" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    </Button>
+                                                    <Button Width="26"
+                                                            Height="26"
+                                                            Command="{Binding DismissCommand}"
+                                                            Style="{StaticResource IconButtonStyle}">
+                                                        <Button.Content>
+                                                            <TextBlock Text="" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                        </Button.Content>
+                                                    </Button>
+                                                </StackPanel>
                                         </Grid>
                                     </Border>
                                 </DataTemplate>

@@ -132,7 +132,10 @@ internal sealed class ToolSandbox : IDisposable
         var path = Path.Combine(new[] { _toolsRoot }.Concat(segments).ToArray());
         var directory = Path.GetDirectoryName(path)!;
         Directory.CreateDirectory(directory);
-        File.WriteAllText(path, "stub");
+        if (!File.Exists(path))
+        {
+            File.WriteAllText(path, "stub");
+        }
         TrackRoot(segments);
         return path;
     }

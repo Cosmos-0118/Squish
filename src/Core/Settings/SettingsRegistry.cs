@@ -26,6 +26,7 @@ public static class SettingsRegistry
     public static readonly SettingKey<bool> StripMetadata = Bool("stripMetadata", true);
     public static readonly SettingKey<bool> PreserveDates = Bool("preserveDates", true);
     public static readonly SettingKey<bool> PreserveColorMetadata = Bool("preserveColorMetadata", true);
+    public static readonly SettingKey<string> ShortcutToggleMetadataPreservation = new("shortcutToggleMetadataPreservation", "Ctrl+Shift+M");
     public static readonly SettingKey<bool> ReplaceOptimisedFilesInPlace = Bool("replaceOptimisedFilesInPlace", false);
     public static readonly SettingKey<bool> DeleteOriginalAfterConversion = Bool("deleteOriginalAfterConversion", false);
 
@@ -231,7 +232,8 @@ public static class SettingsRegistry
         PauseAutomaticOptimisations,
         SyncSettingsCloud,
         AllowClopToAppearInScreenshots,
-        AppThemeMode
+        AppThemeMode,
+        ShortcutToggleMetadataPreservation
     );
 
     private static SettingKey<bool> Bool(string name, bool defaultValue) => new(name, defaultValue);

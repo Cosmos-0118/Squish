@@ -79,3 +79,5 @@ coverage*
 
 # Python virtual environment
 .venv/
+
+.fake

@@ -157,6 +157,9 @@ public sealed class KeyboardShortcutService : IDisposable
             case GlobalShortcutAction.ToggleAggressiveOptimisation:
                 System.Windows.Application.Current?.Dispatcher.BeginInvoke(new Action(ToggleAggressiveOptimisation));
                 break;
+            case GlobalShortcutAction.ToggleMetadataPreservation:
+                System.Windows.Application.Current?.Dispatcher.BeginInvoke(new Action(ToggleMetadataPreservation));
+                break;
         }
     }
 
@@ -264,6 +267,20 @@ public sealed class KeyboardShortcutService : IDisposable
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to toggle aggressive optimisation via hotkey.");
+        }
+    }
+
+    private void ToggleMetadataPreservation()
+    {
+        try
+        {
+            var strip = SettingsHost.Get(SettingsRegistry.StripMetadata);
+            var newStripValue = !strip;
+            SettingsHost.Set(SettingsRegistry.StripMetadata, newStripValue);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to toggle metadata preservation via hotkey.");
         }
     }
 

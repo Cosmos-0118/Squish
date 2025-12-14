@@ -25,6 +25,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     private bool _optimisePdfClipboard;
     private bool _preserveDates;
     private bool _stripMetadata;
+    private bool _preserveColorMetadata;
     private bool _enableAutomaticImageOptimisations;
     private bool _enableAutomaticVideoOptimisations;
     private bool _enableAutomaticPdfOptimisations;
@@ -286,6 +287,18 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         }
     }
 
+    public bool PreserveColorMetadata
+    {
+        get => _preserveColorMetadata;
+        set
+        {
+            if (SetProperty(ref _preserveColorMetadata, value) && !_suppressStoreUpdates)
+            {
+                SettingsHost.Set(SettingsRegistry.PreserveColorMetadata, value);
+            }
+        }
+    }
+
     public bool ReplaceOptimisedFilesInPlace
     {
         get => _replaceOptimisedFilesInPlace;
@@ -413,6 +426,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         OptimisePdfClipboard = SettingsHost.Get(SettingsRegistry.OptimisePdfClipboard);
         PreserveDates = SettingsHost.Get(SettingsRegistry.PreserveDates);
         StripMetadata = SettingsHost.Get(SettingsRegistry.StripMetadata);
+        PreserveColorMetadata = SettingsHost.Get(SettingsRegistry.PreserveColorMetadata);
         ReplaceOptimisedFilesInPlace = SettingsHost.Get(SettingsRegistry.ReplaceOptimisedFilesInPlace);
         DeleteOriginalAfterConversion = SettingsHost.Get(SettingsRegistry.DeleteOriginalAfterConversion);
         EnableAutomaticImageOptimisations = SettingsHost.Get(SettingsRegistry.EnableAutomaticImageOptimisations);
@@ -475,6 +489,9 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
                 break;
             case var name when name == SettingsRegistry.StripMetadata.Name:
                 StripMetadata = SettingsHost.Get(SettingsRegistry.StripMetadata);
+                break;
+            case var name when name == SettingsRegistry.PreserveColorMetadata.Name:
+                PreserveColorMetadata = SettingsHost.Get(SettingsRegistry.PreserveColorMetadata);
                 break;
             case var name when name == SettingsRegistry.ReplaceOptimisedFilesInPlace.Name:
                 ReplaceOptimisedFilesInPlace = SettingsHost.Get(SettingsRegistry.ReplaceOptimisedFilesInPlace);

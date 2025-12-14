@@ -13,6 +13,7 @@ namespace ClopWindows.App.ViewModels;
 public sealed class FloatingResultViewModel : ObservableObject
 {
     private readonly Action<FloatingResultViewModel> _dismiss;
+    private readonly Action<string>? _cancelRequest;
     private static readonly SolidColorBrush SuccessBrush = CreateBrush(122, 145, 255);
     private static readonly SolidColorBrush FailureBrush = CreateBrush(240, 120, 120);
     private static readonly SolidColorBrush RunningBrush = CreateBrush(120, 180, 255);
@@ -27,14 +28,18 @@ public sealed class FloatingResultViewModel : ObservableObject
     private TimeSpan? _duration;
     private System.Windows.Media.Brush _statusBrush;
 
+    private readonly RelayCommand _cancelCommand;
+
     private long? _originalBytes;
     private FilePath? _outputPath;
 
-    public FloatingResultViewModel(string requestId, Action<FloatingResultViewModel> dismiss)
+    public FloatingResultViewModel(string requestId, Action<FloatingResultViewModel> dismiss, Action<string>? cancelRequest = null)
     {
         RequestId = requestId;
         _dismiss = dismiss;
+        _cancelRequest = cancelRequest;
         _statusBrush = RunningBrush;
+        _cancelCommand = new RelayCommand(_ => _cancelRequest?.Invoke(RequestId), _ => _cancelRequest is not null && IsRunning);
         DismissCommand = new RelayCommand(_ => _dismiss(this));
     }
 
@@ -47,6 +52,8 @@ public sealed class FloatingResultViewModel : ObservableObject
     public DateTimeOffset StartedAt { get; private set; } = DateTimeOffset.UtcNow;
 
     public ICommand DismissCommand { get; }
+
+    public ICommand CancelCommand => _cancelCommand;
 
     public string DisplayName
     {
@@ -80,7 +87,13 @@ public sealed class FloatingResultViewModel : ObservableObject
     public bool IsRunning
     {
         get => _isRunning;
-        private set => SetProperty(ref _isRunning, value);
+        private set
+        {
+            if (SetProperty(ref _isRunning, value))
+            {
+                _cancelCommand.RaiseCanExecuteChanged();
+            }
+        }
     }
 
     public bool IsSuccess

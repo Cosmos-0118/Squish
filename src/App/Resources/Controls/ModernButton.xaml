@@ -5,29 +5,55 @@
     <Color x:Key="Color.Button.Primary.Hover">#FF62FFC4</Color>
     <Color x:Key="Color.Button.Primary.Pressed">#FF36E08E</Color>
     <Color x:Key="Color.Button.Primary.Disabled">#FFEAECF0</Color>
+    <Color x:Key="Color.Button.Primary.Border">#26050505</Color>
+    <Color x:Key="Color.Button.Primary.BorderHover">#33050505</Color>
 
     <SolidColorBrush x:Key="Brush.Button.Primary.Background" Color="{StaticResource Color.Button.Primary.Normal}" />
     <SolidColorBrush x:Key="Brush.Button.Primary.Hover" Color="{StaticResource Color.Button.Primary.Hover}" />
     <SolidColorBrush x:Key="Brush.Button.Primary.Pressed" Color="{StaticResource Color.Button.Primary.Pressed}" />
     <SolidColorBrush x:Key="Brush.Button.Primary.Disabled" Color="{StaticResource Color.Button.Primary.Disabled}" />
+    <SolidColorBrush x:Key="Brush.Button.Primary.Border" Color="{StaticResource Color.Button.Primary.Border}" />
+    <SolidColorBrush x:Key="Brush.Button.Primary.BorderHover" Color="{StaticResource Color.Button.Primary.BorderHover}" />
     <SolidColorBrush x:Key="Brush.Button.Primary.Foreground" Color="#FF050505" />
     <SolidColorBrush x:Key="Brush.Button.Primary.DisabledForeground" Color="#FF98A2B3" />
 
     <Style x:Key="ClopPrimaryButton" TargetType="Button">
         <Setter Property="Background" Value="{DynamicResource Brush.Button.Primary.Background}" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Button.Primary.Foreground}" />
-        <Setter Property="BorderThickness" Value="0" />
-        <Setter Property="Padding" Value="20,10" />
-        <Setter Property="MinHeight" Value="36" />
-        <Setter Property="MinWidth" Value="88" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Button.Primary.Border}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Padding" Value="18,12" />
+        <Setter Property="MinHeight" Value="42" />
+        <Setter Property="MinWidth" Value="96" />
         <Setter Property="FontFamily" Value="{DynamicResource Font.Body}" />
         <Setter Property="FontSize" Value="14" />
         <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="HorizontalContentAlignment" Value="Center" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="TextBlock.TextWrapping" Value="Wrap" />
+        <Setter Property="TextBlock.TextTrimming" Value="CharacterEllipsis" />
+        <Setter Property="TextBlock.TextAlignment" Value="Center" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
         <Setter Property="UseLayoutRounding" Value="True" />
         <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="FocusVisualStyle">
+            <Setter.Value>
+                <Style TargetType="Control">
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="Control">
+                                <Rectangle StrokeThickness="2"
+                                           RadiusX="12"
+                                           RadiusY="12"
+                                           Margin="3"
+                                           Stroke="{DynamicResource Brush.FocusRing}"
+                                           SnapsToDevicePixels="True" />
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </Setter.Value>
+        </Setter>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
@@ -40,7 +66,7 @@
                         <Border.RenderTransform>
                             <ScaleTransform x:Name="PressScale" ScaleX="1" ScaleY="1" />
                         </Border.RenderTransform>
-                        <ContentPresenter Margin="0"
+                        <ContentPresenter Margin="6,0"
                                           HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
                                           VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
                                           RecognizesAccessKey="True"
@@ -57,6 +83,10 @@
                                                         Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)"
                                                         To="{StaticResource Color.Button.Primary.Hover}"
                                                         Duration="0:0:0.15" />
+                                        <ColorAnimation Storyboard.TargetName="ButtonChrome"
+                                                        Storyboard.TargetProperty="(Border.BorderBrush).(SolidColorBrush.Color)"
+                                                        To="{StaticResource Color.Button.Primary.BorderHover}"
+                                                        Duration="0:0:0.15" />
                                     </Storyboard>
                                 </VisualState>
                                 <VisualState x:Name="Pressed">
@@ -67,11 +97,11 @@
                                                         Duration="0:0:0.05" />
                                         <DoubleAnimation Storyboard.TargetName="PressScale"
                                                          Storyboard.TargetProperty="ScaleX"
-                                                         To="0.98"
+                                                         To="0.975"
                                                          Duration="0:0:0.05" />
                                         <DoubleAnimation Storyboard.TargetName="PressScale"
                                                          Storyboard.TargetProperty="ScaleY"
-                                                         To="0.98"
+                                                         To="0.975"
                                                          Duration="0:0:0.05" />
                                     </Storyboard>
                                 </VisualState>
@@ -81,6 +111,7 @@
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter TargetName="ButtonChrome" Property="Background" Value="{DynamicResource Brush.Button.Primary.Disabled}" />
+                            <Setter TargetName="ButtonChrome" Property="BorderBrush" Value="{DynamicResource Brush.Button.Primary.Disabled}" />
                             <Setter Property="Foreground" Value="{DynamicResource Brush.Button.Primary.DisabledForeground}" />
                             <Setter Property="Cursor" Value="Arrow" />
                         </Trigger>

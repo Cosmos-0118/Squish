@@ -25,6 +25,12 @@
     <!-- Layout tokens -->
     <Thickness x:Key="Spacing.CardPadding">20</Thickness>
     <Thickness x:Key="Spacing.Panel">0,16,0,0</Thickness>
+    <Thickness x:Key="Spacing.WindowPadding">14</Thickness>
+    <Thickness x:Key="Spacing.SidebarMargin">14,14,10,14</Thickness>
+    <Thickness x:Key="Spacing.ContentPadding">24</Thickness>
+    <Thickness x:Key="Spacing.Section">0,12,0,12</Thickness>
     <CornerRadius x:Key="Radius.Card">12</CornerRadius>
     <CornerRadius x:Key="Radius.Hud">16</CornerRadius>
+    <CornerRadius x:Key="Radius.NavigationCard">22</CornerRadius>
+    <CornerRadius x:Key="Radius.ContentCard">18</CornerRadius>
 </ResourceDictionary>

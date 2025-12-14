@@ -47,6 +47,48 @@ public sealed class ImageOptimiserTests
     }
 
     [Fact]
+    public async Task RejectsImagesExceedingPixelLimit()
+    {
+        var source = CreateSampleImage("jpg", width: 200, height: 200, includeAlpha: false, includeMetadata: false);
+        var outputs = new List<FilePath>();
+        try
+        {
+            var options = new ImageOptimiserOptions { MaxInputPixels = 10_000, MaxDimension = null };
+            var optimiser = new ImageOptimiser(options);
+
+            var result = await RunOptimiserAsync(optimiser, source);
+
+            Assert.Equal(OptimisationStatus.Failed, result.Status);
+            Assert.Contains("pixel limit", result.Message, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            CleanupFiles(source, outputs);
+        }
+    }
+
+    [Fact]
+    public async Task RejectsImagesExceedingDimensionLimit()
+    {
+        var source = CreateSampleImage("jpg", width: 200, height: 80, includeAlpha: false, includeMetadata: false);
+        var outputs = new List<FilePath>();
+        try
+        {
+            var options = new ImageOptimiserOptions { MaxDimension = 100, MaxInputPixels = 1_000_000 };
+            var optimiser = new ImageOptimiser(options);
+
+            var result = await RunOptimiserAsync(optimiser, source);
+
+            Assert.Equal(OptimisationStatus.Failed, result.Status);
+            Assert.Contains("dimension limit", result.Message, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            CleanupFiles(source, outputs);
+        }
+    }
+
+    [Fact]
     public async Task DownscalesRetinaImages()
     {
         var source = CreateSampleImage("jpg", width: 5200, height: 3400, includeAlpha: false, includeMetadata: false);
@@ -124,7 +166,8 @@ public sealed class ImageOptimiserTests
                     MinimumSavingsPercent = 0,
                     SkipLosslessWhenBelowThreshold = false,
                     OverrideJpegQuality = 80
-                }
+                },
+                MetadataPolicy = MetadataPolicyOptions.Default with { PreserveMetadata = false, PreserveColorProfiles = false, StripGpsMetadata = false }
             };
 
             var optimiser = new ImageOptimiser(options);

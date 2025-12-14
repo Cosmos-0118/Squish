@@ -21,6 +21,7 @@ public sealed class ImageOptimiser : IOptimiser
 {
     private const int MinJpegFallbackQuality = 48;
     private const int AggressiveJpegQuality = 68;
+    private const int MaxJpegQualityTuningIterations = 8;
 
     private readonly ImageOptimiserOptions _options;
     private readonly AdvancedCodecRunner _advancedCodecRunner;
@@ -47,7 +48,7 @@ public sealed class ImageOptimiser : IOptimiser
         }
         catch (Exception ex)
         {
-            Log.Error($"Image optimisation failed: {ex.Message}");
+            Log.Error(OptimiserLog.BuildErrorMessage("Image optimisation", ex), OptimiserLog.BuildContext(request));
             return OptimisationResult.Failure(request.RequestId, ex.Message);
         }
     }
@@ -66,6 +67,12 @@ public sealed class ImageOptimiser : IOptimiser
         if (string.IsNullOrWhiteSpace(extension) || !_options.SupportedInputFormats.Contains(extension))
         {
             return OptimisationResult.Unsupported(request.RequestId);
+        }
+
+        var guard = ImageInputGuards.Validate(sourcePath, _options, cancellationToken);
+        if (!guard.IsValid)
+        {
+            return OptimisationResult.Failure(request.RequestId, guard.Error ?? "Input image exceeds configured limits");
         }
 
         var targetJpegQuality = ResolveTargetJpegQuality(request.Metadata);
@@ -193,7 +200,12 @@ public sealed class ImageOptimiser : IOptimiser
             return null;
         }
 
-        if (!_options.WicFastPath.Enabled || !WicImageTranscoder.IsSupported(extension))
+        if (!ImageFastPathPolicies.TryBuildEffectiveOptions(_options, out var fastPathOptions))
+        {
+            return null;
+        }
+
+        if (!WicImageTranscoder.IsSupported(extension))
         {
             return null;
         }
@@ -203,10 +215,22 @@ public sealed class ImageOptimiser : IOptimiser
             return null;
         }
 
-        var outcome = await WicImageTranscoder.TryTranscodeAsync(request.SourcePath, extension, _options.WicFastPath, targetJpegQuality, token).ConfigureAwait(false);
+        var outcome = await WicImageTranscoder.TryTranscodeAsync(request.SourcePath, extension, fastPathOptions, targetJpegQuality, token).ConfigureAwait(false);
         if (outcome is null)
         {
             return null;
+        }
+
+        if (outcome.Status == WicTranscodeStatus.Success
+            && outcome.OutputPath is { } fastPathOutput
+            && ImageFastPathPolicies.RequiresPerceptualValidation(_options))
+        {
+            var guardResult = await ImageFastPathPerceptualValidator.ValidateAsync(request, fastPathOutput, _options.PerceptualGuard, token).ConfigureAwait(false);
+            if (guardResult is not null)
+            {
+                TryDelete(fastPathOutput);
+                return guardResult;
+            }
         }
 
         return outcome.Status switch
@@ -510,61 +534,77 @@ public sealed class ImageOptimiser : IOptimiser
         return quality;
     }
 
-    private async Task<(FilePath Path, long Size)?> TryReduceJpegSizeAsync(Image<Rgba32> image, long maxBytes, int startingQuality, CancellationToken token)
+    private static ImageSaveProfile BuildQualityTuningProfile(int quality)
+    {
+        return ImageSaveProfile.ForJpeg("quality-tune", quality);
+    }
+
+    private static void ResetScratchStream(MemoryStream stream)
+    {
+        stream.Position = 0;
+        stream.SetLength(0);
+    }
+
+    private static async Task<long> MeasureJpegSizeAsync(Image<Rgba32> image, int quality, MemoryStream scratch, CancellationToken token)
+    {
+        ResetScratchStream(scratch);
+        await image.SaveAsync(scratch, BuildQualityTuningProfile(quality).CreateEncoder(), token).ConfigureAwait(false);
+        return scratch.Length;
+    }
+
+    private async Task<(int Quality, long Size)?> FindJpegQualityUnderAsync(Image<Rgba32> image, long maxBytes, int startingQuality, CancellationToken token)
     {
         var high = Math.Clamp(startingQuality, MinJpegFallbackQuality + 1, 100) - 1;
         var low = MinJpegFallbackQuality;
+        var iterationsRemaining = MaxJpegQualityTuningIterations;
 
-        FilePath? bestCandidate = null;
-        var bestSize = long.MaxValue;
-        var scratch = new List<FilePath>();
+        (int Quality, long Size)? best = null;
 
-        while (low <= high)
+        using var scratch = new MemoryStream(capacity: 256 * 1024);
+
+        while (low <= high && iterationsRemaining-- > 0)
         {
             token.ThrowIfCancellationRequested();
 
             var quality = (low + high) / 2;
-            var candidate = FilePath.TempFile("clop-image-quality", "jpg", addUniqueSuffix: true);
-            await SaveWithEncoderAsync(image, candidate, ImageSaveProfile.ForJpeg("quality-tune", quality), token).ConfigureAwait(false);
-            var size = SafeFileSize(candidate);
+            var size = await MeasureJpegSizeAsync(image, quality, scratch, token).ConfigureAwait(false);
 
             if (size > 0 && size < maxBytes)
             {
-                if (size < bestSize)
+                if (best is null || size < best.Value.Size)
                 {
-                    if (bestCandidate is { } prev)
-                    {
-                        scratch.Add(prev);
-                    }
-
-                    bestCandidate = candidate;
-                    bestSize = size;
+                    best = (quality, size);
                 }
-                else
-                {
-                    scratch.Add(candidate);
-                }
-
                 high = quality - 1;
             }
             else
             {
-                scratch.Add(candidate);
                 low = quality + 1;
             }
         }
 
-        foreach (var leftover in scratch)
-        {
-            TryDelete(leftover);
-        }
+        return best;
+    }
 
-        if (bestCandidate is null)
+    private async Task<(FilePath Path, long Size)?> TryReduceJpegSizeAsync(Image<Rgba32> image, long maxBytes, int startingQuality, CancellationToken token)
+    {
+        var result = await FindJpegQualityUnderAsync(image, maxBytes, startingQuality, token).ConfigureAwait(false);
+        if (result is null)
         {
             return null;
         }
 
-        return (bestCandidate.Value, bestSize);
+        var output = FilePath.TempFile("clop-image-quality", "jpg", addUniqueSuffix: true);
+        await SaveWithEncoderAsync(image, output, BuildQualityTuningProfile(result.Value.Quality), token).ConfigureAwait(false);
+
+        var finalSize = SafeFileSize(output);
+        if (finalSize <= 0)
+        {
+            TryDelete(output);
+            return null;
+        }
+
+        return (output, finalSize);
     }
 
     private static string DescribeImprovement(long originalSize, long optimisedSize, string profileMessage, double? ssim)

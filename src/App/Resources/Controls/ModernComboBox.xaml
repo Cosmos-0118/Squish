@@ -154,8 +154,26 @@
         <Setter Property="BorderBrush" Value="{DynamicResource Brush.Combo.Border}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="Padding" Value="0" />
+        <Setter Property="MinHeight" Value="38" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
-        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="FocusVisualStyle">
+            <Setter.Value>
+                <Style TargetType="Control">
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="Control">
+                                <Rectangle StrokeThickness="2"
+                                           RadiusX="10"
+                                           RadiusY="10"
+                                           Margin="3"
+                                           Stroke="{DynamicResource Brush.FocusRing}"
+                                           SnapsToDevicePixels="True" />
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </Setter.Value>
+        </Setter>
         <Setter Property="ItemContainerStyle" Value="{StaticResource ClopComboBoxItemStyle}" />
         <Setter Property="Template">
             <Setter.Value>

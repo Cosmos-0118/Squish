@@ -38,32 +38,27 @@
             <Setter Property="Foreground" Value="{DynamicResource Brush.PrimaryText}"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Padding" Value="16,12"/>
-            <Setter Property="Margin" Value="0,0,0,8"/>
+            <Setter Property="Margin" Value="4,4,4,12"/>
             <Setter Property="MinWidth" Value="0"/>
             <Setter Property="HorizontalAlignment" Value="Stretch"/>
             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="SnapsToDevicePixels" Value="True"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="TabItem">
                         <Border x:Name="TabChrome"
-                                Padding="0"
-                                CornerRadius="12"
-                                Background="{DynamicResource Brush.SurfaceBackground}"
-                                BorderThickness="1"
-                                BorderBrush="{DynamicResource Brush.SurfaceBorder}">
+                            Padding="0"
+                            CornerRadius="12"
+                            Background="{DynamicResource Brush.SurfaceBackground}"
+                            BorderThickness="0"
+                            BorderBrush="Transparent"
+                            Margin="4,0">
                             <Grid>
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" MinWidth="4"/>
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
-                                <Rectangle x:Name="SelectionIndicator"
-                                           Grid.Column="0"
-                                           RadiusX="2"
-                                           RadiusY="2"
-                                           Fill="{DynamicResource Brush.PrimaryButtonBackground}"
-                                           Visibility="Collapsed"/>
-                                <ContentPresenter Grid.Column="1"
+                                <ContentPresenter Grid.Column="0"
                                                   Margin="{TemplateBinding Padding}"
                                                   HorizontalAlignment="Left"
                                                   VerticalAlignment="Center"
@@ -72,14 +67,11 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="SelectionIndicator" Property="Visibility" Value="Visible"/>
                                 <Setter TargetName="TabChrome" Property="Background" Value="{DynamicResource Brush.PrimaryButtonBackground}"/>
-                                <Setter TargetName="TabChrome" Property="BorderBrush" Value="{DynamicResource Brush.PrimaryButtonBackground}"/>
+                                <Setter TargetName="TabChrome" Property="BorderBrush" Value="Transparent"/>
                                 <Setter Property="Foreground" Value="{DynamicResource Brush.PrimaryButtonForeground}"/>
                             </Trigger>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="TabChrome" Property="BorderBrush" Value="{DynamicResource Brush.PrimaryButtonBackground}"/>
-                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True"/>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter TargetName="TabChrome" Property="Opacity" Value="0.6"/>
                             </Trigger>
@@ -94,13 +86,14 @@
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Padding" Value="0"/>
             <Setter Property="TabStripPlacement" Value="Left"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="TabControl">
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="260"/>
-                                <ColumnDefinition Width="32"/>
+                                <ColumnDefinition Width="20"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
 
@@ -109,12 +102,14 @@
                                     BorderBrush="{DynamicResource Brush.SurfaceBorder}"
                                     BorderThickness="1"
                                     CornerRadius="24"
-                                    Padding="12">
+                                    Padding="12"
+                                    Margin="0,6,6,6"
+                                    SnapsToDevicePixels="True">
                                 <ScrollViewer VerticalScrollBarVisibility="Auto"
                                               HorizontalScrollBarVisibility="Disabled">
                                     <StackPanel Orientation="Vertical"
                                                 IsItemsHost="True"
-                                                Margin="0"
+                                                Margin="6,4,6,4"
                                                 Background="Transparent"/>
                                 </ScrollViewer>
                             </Border>
@@ -583,7 +578,8 @@
                             <StackPanel>
                                 <TextBlock Text="{loc:Loc settings.section.preservation}" Style="{StaticResource SectionTitleText}"/>
                                 <CheckBox Content="{loc:Loc settings.preservation.preserveDates}" Margin="0,0,0,8" IsChecked="{Binding PreserveDates}"/>
-                                <CheckBox Content="{loc:Loc settings.preservation.stripMetadata}" IsChecked="{Binding StripMetadata}"/>
+                                <CheckBox Content="{loc:Loc settings.preservation.stripMetadata}" Margin="0,0,0,8" IsChecked="{Binding StripMetadata}"/>
+                                <CheckBox Content="{loc:Loc settings.preservation.preserveColorProfiles}" IsChecked="{Binding PreserveColorMetadata}"/>
                             </StackPanel>
                         </Border>
                     </StackPanel>

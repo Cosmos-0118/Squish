@@ -26,6 +26,7 @@ public sealed class CompareViewModel : ObservableObject, IDisposable
     private readonly ConcurrentDictionary<string, OptimisationRequest> _trackedRequests = new(StringComparer.Ordinal);
     private readonly ObservableCollection<RecentOptimisationViewModel> _recentItems = new();
     private readonly ReadOnlyObservableCollection<RecentOptimisationViewModel> _readonlyRecentItems;
+    private readonly RelayCommand _cancelActiveRequestsCommand;
 
     public CompareViewModel(
         OptimisationCoordinator coordinator,
@@ -38,14 +39,21 @@ public sealed class CompareViewModel : ObservableObject, IDisposable
         _dispatcher = Dispatcher.CurrentDispatcher;
         _readonlyRecentItems = new ReadOnlyObservableCollection<RecentOptimisationViewModel>(_recentItems);
 
+        _cancelActiveRequestsCommand = new RelayCommand(_ => CancelActiveRequests(), _ => HasActiveRequests);
+
         BrowseForFilesCommand = new RelayCommand(_ => ShowBrowseDialog());
 
         _coordinator.RequestCompleted += OnRequestCompleted;
+        _coordinator.RequestFailed += OnRequestFailed;
     }
 
     public RelayCommand BrowseForFilesCommand { get; }
 
+    public RelayCommand CancelActiveRequestsCommand => _cancelActiveRequestsCommand;
+
     public ReadOnlyObservableCollection<RecentOptimisationViewModel> RecentItems => _readonlyRecentItems;
+
+    public bool HasActiveRequests => !_trackedRequests.IsEmpty;
 
     public void TriggerBrowseDialog()
     {
@@ -115,6 +123,7 @@ public sealed class CompareViewModel : ObservableObject, IDisposable
 
                 var request = new OptimisationRequest(itemType.Value, filePath, metadata: metadata);
                 _trackedRequests[request.RequestId] = request;
+                NotifyActiveRequestsChanged();
 
                 _hudController.TrackRequest(request);
                 _ = _coordinator.Enqueue(request);
@@ -158,11 +167,6 @@ public sealed class CompareViewModel : ObservableObject, IDisposable
             return;
         }
 
-        if (e.Result.Status != OptimisationStatus.Succeeded)
-        {
-            return;
-        }
-
         var outputPath = e.Result.OutputPath ?? request.SourcePath;
         var summary = BuildSummary(request, outputPath, e.Result);
 
@@ -173,6 +177,13 @@ public sealed class CompareViewModel : ObservableObject, IDisposable
 
         _dispatcher.Invoke(() =>
         {
+            NotifyActiveRequestsChanged();
+
+            if (e.Result.Status != OptimisationStatus.Succeeded)
+            {
+                return;
+            }
+
             _recentItems.Insert(0, summary);
             while (_recentItems.Count > MaxRecentItems)
             {
@@ -180,6 +191,16 @@ public sealed class CompareViewModel : ObservableObject, IDisposable
             }
             OnPropertyChanged(nameof(RecentItems));
         });
+    }
+
+    private void OnRequestFailed(object? sender, OptimisationCompletedEventArgs e)
+    {
+        if (!_trackedRequests.TryRemove(e.Result.RequestId, out _))
+        {
+            return;
+        }
+
+        _dispatcher.Invoke(NotifyActiveRequestsChanged);
     }
 
     private static bool ShouldConvertDocuments() => SettingsHost.Get(SettingsRegistry.AutoConvertDocumentsToPdf);
@@ -247,9 +268,26 @@ public sealed class CompareViewModel : ObservableObject, IDisposable
         }
     }
 
+    private void CancelActiveRequests()
+    {
+        foreach (var requestId in _trackedRequests.Keys.ToArray())
+        {
+            _coordinator.Cancel(requestId, "Cancelled by user");
+        }
+
+        NotifyActiveRequestsChanged();
+    }
+
+    private void NotifyActiveRequestsChanged()
+    {
+        OnPropertyChanged(nameof(HasActiveRequests));
+        _cancelActiveRequestsCommand.RaiseCanExecuteChanged();
+    }
+
     public void Dispose()
     {
         _coordinator.RequestCompleted -= OnRequestCompleted;
+        _coordinator.RequestFailed -= OnRequestFailed;
     }
 }
 

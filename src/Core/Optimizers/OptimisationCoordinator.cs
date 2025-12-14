@@ -16,24 +16,31 @@ public sealed class OptimisationCoordinator : IAsyncDisposable
     private readonly CancellationTokenSource _shutdownCts = new();
     private readonly ConcurrentDictionary<string, OptimisationStatus> _status = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, OptimisationRequest> _requests = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, OptimisationWorkItem> _workItems = new(StringComparer.Ordinal);
     private readonly int _degreeOfParallelism;
 
-    public OptimisationCoordinator(IEnumerable<IOptimiser> optimisers, int degreeOfParallelism = 2)
+    public OptimisationCoordinator(IEnumerable<IOptimiser> optimisers, int degreeOfParallelism = 2, int queueCapacity = 64)
     {
         if (degreeOfParallelism <= 0)
         {
             throw new ArgumentOutOfRangeException(nameof(degreeOfParallelism));
         }
 
+        if (queueCapacity <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(queueCapacity));
+        }
+
         ArgumentNullException.ThrowIfNull(optimisers);
         var optimiserList = optimisers.ToList();
         _degreeOfParallelism = degreeOfParallelism;
         _optimisers = new ConcurrentDictionary<ItemType, IOptimiser>(optimiserList.Select(o => new KeyValuePair<ItemType, IOptimiser>(o.ItemType, o)), EqualityComparer<ItemType>.Default);
-        _channel = Channel.CreateUnbounded<OptimisationWorkItem>(new UnboundedChannelOptions
+        _channel = Channel.CreateBounded<OptimisationWorkItem>(new BoundedChannelOptions(queueCapacity)
         {
             SingleWriter = false,
             SingleReader = false,
-            AllowSynchronousContinuations = false
+            AllowSynchronousContinuations = false,
+            FullMode = BoundedChannelFullMode.Wait
         });
 
         for (var i = 0; i < _degreeOfParallelism; i++)
@@ -58,24 +65,44 @@ public sealed class OptimisationCoordinator : IAsyncDisposable
             return new OptimisationTicket(request.RequestId, cancelled);
         }
 
-        var workItem = new OptimisationWorkItem(request, cancellationToken);
+        var workItem = new OptimisationWorkItem(request, cancellationToken, _shutdownCts.Token);
         _requests[request.RequestId] = request;
         _status[request.RequestId] = OptimisationStatus.Queued;
         ReportProgress(new OptimisationProgress(request.RequestId, 0d, "Queued"));
 
-        if (!_channel.Writer.TryWrite(workItem))
+        return EnqueueWorkItem(workItem);
+    }
+
+    private OptimisationTicket EnqueueWorkItem(OptimisationWorkItem workItem)
+    {
+        if (_channel.Writer.TryWrite(workItem))
         {
-            _status[request.RequestId] = OptimisationStatus.Failed;
-            var failed = Task.FromResult(OptimisationResult.Failure(request.RequestId, "Unable to queue work item."));
-            return new OptimisationTicket(request.RequestId, failed);
+            _workItems[workItem.Request.RequestId] = workItem;
+            return new OptimisationTicket(workItem.Request.RequestId, workItem.Completion.Task);
         }
 
-        return new OptimisationTicket(request.RequestId, workItem.Completion.Task);
+        _status[workItem.Request.RequestId] = OptimisationStatus.Failed;
+        var failed = Task.FromResult(OptimisationResult.Failure(workItem.Request.RequestId, "Unable to queue work item."));
+        ClearRequestState(workItem.Request.RequestId);
+        return new OptimisationTicket(workItem.Request.RequestId, failed);
     }
 
     public OptimisationStatus GetStatus(string requestId)
     {
-        return _status.TryGetValue(requestId, out var status) ? status : OptimisationStatus.Queued;
+        return _status.TryGetValue(requestId, out var status) ? status : OptimisationStatus.Unknown;
+    }
+
+    public bool Cancel(string requestId, string? reason = null)
+    {
+        if (_workItems.TryGetValue(requestId, out var workItem))
+        {
+            _status[requestId] = OptimisationStatus.Cancelled;
+            workItem.Cancel();
+            ReportProgress(new OptimisationProgress(requestId, 0d, string.IsNullOrWhiteSpace(reason) ? "Cancelling" : reason));
+            return true;
+        }
+
+        return false;
     }
 
     public IReadOnlyCollection<OptimisationRequest> PendingRequests => _requests.Values.ToList();
@@ -101,11 +128,12 @@ public sealed class OptimisationCoordinator : IAsyncDisposable
     private async Task ProcessWorkItemAsync(OptimisationWorkItem workItem)
     {
         var request = workItem.Request;
-        if (workItem.CancellationToken.IsCancellationRequested)
+        if (workItem.Token.IsCancellationRequested)
         {
             var cancelled = OptimisationResult.Cancelled(request.RequestId);
             _status[request.RequestId] = OptimisationStatus.Cancelled;
-            workItem.Completion.TrySetCanceled(workItem.CancellationToken);
+            ClearRequestState(request.RequestId);
+            workItem.Completion.TrySetCanceled(workItem.Token);
             RequestFailed?.Invoke(this, new OptimisationCompletedEventArgs(cancelled));
             return;
         }
@@ -114,6 +142,7 @@ public sealed class OptimisationCoordinator : IAsyncDisposable
         {
             var unsupported = OptimisationResult.Unsupported(request.RequestId);
             _status[request.RequestId] = OptimisationStatus.Unsupported;
+            ClearRequestState(request.RequestId);
             workItem.Completion.TrySetResult(unsupported);
             RequestFailed?.Invoke(this, new OptimisationCompletedEventArgs(unsupported));
             return;
@@ -125,12 +154,12 @@ public sealed class OptimisationCoordinator : IAsyncDisposable
 
         try
         {
-            using var linked = CancellationTokenSource.CreateLinkedTokenSource(workItem.CancellationToken, _shutdownCts.Token);
             var context = new OptimiserExecutionContext(request.RequestId, ReportProgress);
-            var result = await optimiser.OptimiseAsync(request, context, linked.Token).ConfigureAwait(false);
+            var result = await optimiser.OptimiseAsync(request, context, workItem.Token).ConfigureAwait(false);
             var duration = DateTimeOffset.UtcNow - started;
             result = result with { Duration = duration };
             _status[request.RequestId] = result.Status;
+            ClearRequestState(request.RequestId);
             workItem.Completion.TrySetResult(result);
 
             if (result.Status == OptimisationStatus.Succeeded)
@@ -152,19 +181,21 @@ public sealed class OptimisationCoordinator : IAsyncDisposable
         {
             var cancelled = OptimisationResult.Cancelled(request.RequestId);
             _status[request.RequestId] = OptimisationStatus.Cancelled;
-            workItem.Completion.TrySetCanceled();
+            ClearRequestState(request.RequestId);
+            workItem.Completion.TrySetCanceled(workItem.Token);
             RequestFailed?.Invoke(this, new OptimisationCompletedEventArgs(cancelled));
         }
         catch (Exception ex)
         {
             var failed = OptimisationResult.Failure(request.RequestId, ex.Message);
             _status[request.RequestId] = OptimisationStatus.Failed;
+            ClearRequestState(request.RequestId);
             workItem.Completion.TrySetResult(failed);
             RequestFailed?.Invoke(this, new OptimisationCompletedEventArgs(failed));
         }
         finally
         {
-            _requests.TryRemove(request.RequestId, out _);
+            ClearRequestState(request.RequestId);
         }
     }
 
@@ -175,8 +206,9 @@ public sealed class OptimisationCoordinator : IAsyncDisposable
 
     public async Task StopAsync()
     {
-        _shutdownCts.Cancel();
         _channel.Writer.TryComplete();
+        DrainPendingWorkItems("Shutdown requested");
+        _shutdownCts.Cancel();
         try
         {
             await Task.WhenAll(_workers).ConfigureAwait(false);
@@ -192,18 +224,48 @@ public sealed class OptimisationCoordinator : IAsyncDisposable
         _shutdownCts.Dispose();
     }
 
+    private void DrainPendingWorkItems(string reason)
+    {
+        while (_channel.Reader.TryRead(out var workItem))
+        {
+            CancelPendingWorkItem(workItem, reason);
+        }
+    }
+
+    private void CancelPendingWorkItem(OptimisationWorkItem workItem, string reason)
+    {
+        var requestId = workItem.Request.RequestId;
+        var cancelled = new OptimisationResult(requestId, OptimisationStatus.Cancelled, null, reason);
+        _status[requestId] = OptimisationStatus.Cancelled;
+        workItem.Cancel();
+        workItem.Completion.TrySetCanceled(workItem.Token);
+        RequestFailed?.Invoke(this, new OptimisationCompletedEventArgs(cancelled));
+        ClearRequestState(requestId);
+    }
+
+    private void ClearRequestState(string requestId)
+    {
+        _status.TryRemove(requestId, out _);
+        _requests.TryRemove(requestId, out _);
+        _workItems.TryRemove(requestId, out _);
+    }
+
     private sealed class OptimisationWorkItem
     {
-        public OptimisationWorkItem(OptimisationRequest request, CancellationToken cancellationToken)
+        public OptimisationWorkItem(OptimisationRequest request, CancellationToken cancellationToken, CancellationToken shutdownToken)
         {
             Request = request;
-            CancellationToken = cancellationToken;
+            _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, shutdownToken);
             Completion = new TaskCompletionSource<OptimisationResult>(TaskCreationOptions.RunContinuationsAsynchronously);
         }
 
         public OptimisationRequest Request { get; }
-        public CancellationToken CancellationToken { get; }
+        public CancellationToken Token => _cts.Token;
         public TaskCompletionSource<OptimisationResult> Completion { get; }
+
+        private readonly CancellationTokenSource _cts;
+
+        public void Cancel() => _cts.Cancel();
     }
 }
 

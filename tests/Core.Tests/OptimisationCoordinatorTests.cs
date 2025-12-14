@@ -50,7 +50,20 @@ public sealed class OptimisationCoordinatorTests
         cts.CancelAfter(50);
 
         await Assert.ThrowsAsync<TaskCanceledException>(() => ticket.Completion.WaitAsync(TimeSpan.FromSeconds(5)));
-        Assert.Equal(OptimisationStatus.Cancelled, coordinator.GetStatus(ticket.RequestId));
+        Assert.Equal(OptimisationStatus.Unknown, coordinator.GetStatus(ticket.RequestId));
+    }
+
+    [Fact]
+    public async Task ClearsStatusWhenWorkCompletes()
+    {
+        var optimiser = new FakeOptimiser(ItemType.Image);
+        await using var coordinator = new OptimisationCoordinator(new[] { optimiser });
+        var ticket = coordinator.Enqueue(new OptimisationRequest(ItemType.Image, CreateTempFile()));
+
+        var result = await ticket.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(OptimisationStatus.Succeeded, result.Status);
+        Assert.Equal(OptimisationStatus.Unknown, coordinator.GetStatus(ticket.RequestId));
     }
 
     [Fact]

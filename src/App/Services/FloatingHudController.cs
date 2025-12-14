@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Threading;
+using ClopWindows.App.Localization;
 using ClopWindows.App.ViewModels;
 using ClopWindows.App.Views.FloatingHud;
 using ClopWindows.Core.Optimizers;
@@ -116,7 +117,7 @@ public sealed class FloatingHudController : IDisposable
         Dispatch(() =>
         {
             var requestId = $"notification::{Guid.NewGuid():N}";
-            var viewModel = new FloatingResultViewModel(requestId, DismissResult);
+            var viewModel = new FloatingResultViewModel(requestId, DismissResult, CancelRequest);
             viewModel.ApplyNotification(title, subtitle, message, style);
 
             _results[requestId] = viewModel;
@@ -238,7 +239,7 @@ public sealed class FloatingHudController : IDisposable
             return;
         }
 
-        var viewModel = new FloatingResultViewModel(request.RequestId, DismissResult);
+        var viewModel = new FloatingResultViewModel(request.RequestId, DismissResult, CancelRequest);
         viewModel.ApplyRequest(request);
         _results[request.RequestId] = viewModel;
         _requests[request.RequestId] = request;
@@ -261,6 +262,15 @@ public sealed class FloatingHudController : IDisposable
         }
 
         return pending;
+    }
+
+    private void CancelRequest(string requestId)
+    {
+        var cancelled = _coordinator.Cancel(requestId, "Cancelled by user");
+        if (!cancelled)
+        {
+            _logger.LogDebug("Cancel requested for unknown request {RequestId}", requestId);
+        }
     }
 
     private void DismissResult(FloatingResultViewModel viewModel)
@@ -320,6 +330,19 @@ public sealed class FloatingHudController : IDisposable
 
     private void OnSettingChanged(object? sender, SettingChangedEventArgs e)
     {
+        if (string.Equals(e.Name, SettingsRegistry.StripMetadata.Name, StringComparison.Ordinal))
+        {
+            var stripMetadata = SettingsHost.Get(SettingsRegistry.StripMetadata);
+            var title = ClopStringCatalog.Get("hud.notification.metadata.title");
+            var messageKey = stripMetadata
+                ? "hud.notification.metadata.strip"
+                : "hud.notification.metadata.preserve";
+            var message = ClopStringCatalog.Get(messageKey);
+            var style = stripMetadata ? FloatingHudNotificationStyle.Warning : FloatingHudNotificationStyle.Info;
+            ShowNotification(title, message, style);
+            return;
+        }
+
         if (string.Equals(e.Name, SettingsRegistry.EnableFloatingResults.Name, StringComparison.Ordinal))
         {
             var enabled = e.Value is bool flag && flag;

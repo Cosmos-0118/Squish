@@ -110,7 +110,7 @@ public sealed class PdfOptimiser : IOptimiser
         }
         catch (Exception ex)
         {
-            Log.Error($"PDF optimisation failed: {ex.Message}");
+            Log.Error(OptimiserLog.BuildErrorMessage("PDF optimisation", ex), OptimiserLog.BuildContext(request));
             return OptimisationResult.Failure(request.RequestId, ex.Message);
         }
         finally

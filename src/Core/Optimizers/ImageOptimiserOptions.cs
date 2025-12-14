@@ -21,6 +21,10 @@ public sealed record ImageOptimiserOptions
 
     public int RetinaLongEdgePixels { get; init; } = 3840;
 
+    public long? MaxInputPixels { get; init; } = 80_000_000;
+
+    public int? MaxDimension { get; init; } = 12000;
+
     public bool RequireSizeImprovement { get; init; } = true;
 
     public AdvancedCodecPreferences AdvancedCodecs { get; init; } = AdvancedCodecPreferences.Disabled;
