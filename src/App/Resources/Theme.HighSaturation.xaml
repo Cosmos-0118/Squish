@@ -5,6 +5,8 @@
     <SolidColorBrush x:Key="Brush.NavigationBorder" Color="#FF1F1F1F" />
     <SolidColorBrush x:Key="Brush.NavigationTitle" Color="#FFFDFEFF" />
     <SolidColorBrush x:Key="Brush.NavigationSubtitle" Color="#FF63C3FF" />
+    <SolidColorBrush x:Key="Brush.NavigationItemBorder" Color="#FF1C2738" />
+    <SolidColorBrush x:Key="Brush.NavigationItemSelectedBorder" Color="#FF2C3A52" />
     <SolidColorBrush x:Key="Brush.NavigationItemSelectedBackground" Color="#CC4FFFB0" />
     <SolidColorBrush x:Key="Brush.NavigationItemHoverBackground" Color="#9938D7FF" />
     <SolidColorBrush x:Key="Brush.NavigationIndicator" Color="#FF4FFFB0" />

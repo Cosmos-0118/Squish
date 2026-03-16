@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using System.Windows.Threading;
@@ -42,12 +43,15 @@ public sealed class CompareViewModel : ObservableObject, IDisposable
         _cancelActiveRequestsCommand = new RelayCommand(_ => CancelActiveRequests(), _ => HasActiveRequests);
 
         BrowseForFilesCommand = new RelayCommand(_ => ShowBrowseDialog());
+        OpenRecentItemFolderCommand = new RelayCommand(parameter => OpenRecentItemFolder(parameter as string));
 
         _coordinator.RequestCompleted += OnRequestCompleted;
         _coordinator.RequestFailed += OnRequestFailed;
     }
 
     public RelayCommand BrowseForFilesCommand { get; }
+
+    public RelayCommand OpenRecentItemFolderCommand { get; }
 
     public RelayCommand CancelActiveRequestsCommand => _cancelActiveRequestsCommand;
 
@@ -58,6 +62,11 @@ public sealed class CompareViewModel : ObservableObject, IDisposable
     public void TriggerBrowseDialog()
     {
         ShowBrowseDialog();
+    }
+
+    public void EnqueueDroppedPaths(IEnumerable<string> paths)
+    {
+        EnqueuePaths(paths);
     }
 
     private void ShowBrowseDialog()
@@ -169,10 +178,12 @@ public sealed class CompareViewModel : ObservableObject, IDisposable
 
         var outputPath = e.Result.OutputPath ?? request.SourcePath;
         var summary = BuildSummary(request, outputPath, e.Result);
-
         if (string.IsNullOrWhiteSpace(summary.SizeSummary))
         {
-            return;
+            var fallback = e.Result.Status == OptimisationStatus.Succeeded
+                ? ClopStringCatalog.Get("compare.recent.noChange")
+                : ClopStringCatalog.Get("compare.recent.completed");
+            summary = summary with { SizeSummary = fallback };
         }
 
         _dispatcher.Invoke(() =>
@@ -276,6 +287,31 @@ public sealed class CompareViewModel : ObservableObject, IDisposable
         }
 
         NotifyActiveRequestsChanged();
+    }
+
+    private static void OpenRecentItemFolder(string? outputPath)
+    {
+        if (string.IsNullOrWhiteSpace(outputPath))
+        {
+            return;
+        }
+
+        try
+        {
+            var escaped = outputPath.Replace("\"", "\"\"");
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "explorer.exe",
+                Arguments = $"/select,\"{escaped}\"",
+                UseShellExecute = true
+            };
+
+            Process.Start(startInfo);
+        }
+        catch
+        {
+            // Ignore shell launch failures to keep the UX non-blocking.
+        }
     }
 
     private void NotifyActiveRequestsChanged()

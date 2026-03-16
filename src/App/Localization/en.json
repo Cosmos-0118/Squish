@@ -110,6 +110,8 @@
   "compare.browse": "Browse files",
   "compare.dropHint": "or drop files anywhere in this window",
   "compare.recent": "Recent results",
+  "compare.recent.noChange": "No size change",
+  "compare.recent.completed": "Completed",
   "compare.placeholder": "Optimise something to see results here.",
   "compare.dialog.title": "Select files to optimise",
   "compare.dialog.filterSupported": "Supported media",

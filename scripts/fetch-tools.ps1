@@ -31,6 +31,11 @@ function Resolve-RepoPath([string]$Path) {
     return Join-Path -Path $RepoRoot -ChildPath $Path
 }
 
+# Ensure defaults behave consistently no matter where the script is invoked from.
+# Relative paths are resolved from the repo root, not the caller's current directory.
+$ManifestPath = Resolve-RepoPath $ManifestPath
+$DestinationRoot = Resolve-RepoPath $DestinationRoot
+
 function Test-HasChildItems([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path)) {
         return $false
@@ -481,13 +486,43 @@ foreach ($tool in $tools) {
                 Remove-Item -Recurse -Force -LiteralPath $expandDir
             }
             'msi' {
-                $expandDir = New-TemporaryDirectory
-                $arguments = "/a `"$downloadPath`" /qn TARGETDIR=`"$expandDir`""
-                Write-Host "    Extracting MSI contents..."
-                $process = Start-Process -FilePath "msiexec.exe" -ArgumentList $arguments -Wait -PassThru
-                if ($process.ExitCode -ne 0) {
-                    throw "MSI extraction for $($tool.name) failed with code $($process.ExitCode)"
+                $maxAttempts = 5
+                $successfulExpandDir = $null
+                $lastExitCode = $null
+
+                for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+                    $attemptExpandDir = New-TemporaryDirectory
+                    try {
+                        $arguments = "/a `"$downloadPath`" /qn TARGETDIR=`"$attemptExpandDir`""
+                        Write-Host "    Extracting MSI contents..."
+                        $process = Start-Process -FilePath "msiexec.exe" -ArgumentList $arguments -Wait -PassThru
+                        $lastExitCode = $process.ExitCode
+                        if ($lastExitCode -eq 0) {
+                            $successfulExpandDir = $attemptExpandDir
+                            break
+                        }
+
+                        if ($lastExitCode -eq 1618 -and $attempt -lt $maxAttempts) {
+                            $waitSeconds = 15 * $attempt
+                            Write-Warning "    Windows Installer is busy (MSI exit code 1618). Retrying in $waitSeconds seconds... (attempt $attempt/$maxAttempts)"
+                            Start-Sleep -Seconds $waitSeconds
+                            continue
+                        }
+
+                        break
+                    }
+                    finally {
+                        if (-not $successfulExpandDir -and (Test-Path -LiteralPath $attemptExpandDir)) {
+                            Remove-Item -Recurse -Force -LiteralPath $attemptExpandDir -ErrorAction SilentlyContinue
+                        }
+                    }
                 }
+
+                if (-not $successfulExpandDir) {
+                    throw "MSI extraction for $($tool.name) failed with code $lastExitCode"
+                }
+
+                $expandDir = $successfulExpandDir
                 if ($effectiveContentRoot) {
                     $sourcePath = Join-Path -Path $expandDir -ChildPath $effectiveContentRoot
                 }

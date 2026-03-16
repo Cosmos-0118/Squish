@@ -5,6 +5,8 @@
     <SolidColorBrush x:Key="Brush.NavigationBorder" Color="{x:Static SystemColors.WindowFrameColor}" />
     <SolidColorBrush x:Key="Brush.NavigationTitle" Color="{x:Static SystemColors.WindowTextColor}" />
     <SolidColorBrush x:Key="Brush.NavigationSubtitle" Color="{x:Static SystemColors.GrayTextColor}" />
+    <SolidColorBrush x:Key="Brush.NavigationItemBorder" Color="{x:Static SystemColors.WindowTextColor}" />
+    <SolidColorBrush x:Key="Brush.NavigationItemSelectedBorder" Color="{x:Static SystemColors.HighlightColor}" />
     <SolidColorBrush x:Key="Brush.NavigationItemSelectedBackground" Color="{x:Static SystemColors.HighlightColor}" />
     <SolidColorBrush x:Key="Brush.NavigationItemHoverBackground" Color="{x:Static SystemColors.HotTrackColor}" />
     <SolidColorBrush x:Key="Brush.NavigationIndicator" Color="{x:Static SystemColors.HighlightColor}" />

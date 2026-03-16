@@ -9,8 +9,14 @@
              d:DesignHeight="600"
              d:DesignWidth="800">
     <ScrollViewer VerticalScrollBarVisibility="Auto">
-        <StackPanel Margin="32">
-            <Grid>
+        <Grid Margin="32" MinHeight="520">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <Grid Grid.Row="0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="16"/>
@@ -19,7 +25,7 @@
                 <Border Grid.Column="0"
                         Background="{DynamicResource Brush.SurfaceBackground}"
                         BorderBrush="{DynamicResource Brush.SurfaceBorder}"
-                        BorderThickness="1"
+                        BorderThickness="3"
                         CornerRadius="20"
                         Padding="12">
                     <Image Source="/Assets/Brand/Assets.xcassets/clop.imageset/clop_512.png"
@@ -33,78 +39,57 @@
                 </StackPanel>
             </Grid>
 
-            <StackPanel Margin="0,24,0,0">
-                <TextBlock Text="{loc:Loc onboarding.section.header}" FontSize="16" FontWeight="Semibold" Foreground="{DynamicResource Brush.PrimaryText}" TextWrapping="Wrap"/>
-                <ItemsControl ItemsSource="{Binding Steps}" Margin="0,12,0,0" AutomationProperties.HelpText="{loc:Loc onboarding.steps.list.help}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <Border Background="{DynamicResource Brush.SurfaceSecondaryBackground}" BorderBrush="{DynamicResource Brush.SurfaceBorder}" BorderThickness="1" CornerRadius="10" Padding="16" Margin="0,0,0,12">
-                                <StackPanel>
-                                    <TextBlock Text="{Binding Title}" FontSize="14" FontWeight="Semibold" Foreground="{DynamicResource Brush.PrimaryText}"/>
-                                    <TextBlock Text="{Binding Description}" Margin="0,4,0,0" FontSize="13" Foreground="{DynamicResource Brush.SecondaryText}" TextWrapping="Wrap"/>
-                                </StackPanel>
-                            </Border>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-            </StackPanel>
-
-            <Border Background="{DynamicResource Brush.SurfaceSecondaryBackground}" BorderBrush="{DynamicResource Brush.SurfaceBorder}" BorderThickness="1" CornerRadius="10" Padding="16" Margin="0,24,0,0">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-
-                    <StackPanel Grid.Column="0" Margin="0,0,16,0">
-                        <TextBlock Text="{loc:Loc onboarding.callout.title}" FontSize="15" FontWeight="Semibold" Foreground="{DynamicResource Brush.PrimaryText}" TextWrapping="Wrap"/>
-                        <TextBlock Text="{loc:Loc onboarding.callout.description}" FontSize="12" Foreground="{DynamicResource Brush.SecondaryText}" TextWrapping="Wrap" Margin="0,4,0,0"/>
-                    </StackPanel>
-
-                    <Image Grid.Column="1"
-                           Source="/Assets/Brand/Assets.xcassets/MenubarIcon.imageset/clop-menubar.png"
-                           Width="32"
-                           Height="32"
-                           Stretch="Uniform"
-                           Margin="0,0,16,0"
-                           AutomationProperties.Name="Menubar icon preview"/>
-
-                    <Button Grid.Column="2" Content="{loc:Loc onboarding.cta}" Padding="14,8" Margin="16,0,0,0"
-                            Background="{DynamicResource Brush.PrimaryButtonBackground}" Foreground="{DynamicResource Brush.PrimaryButtonForeground}" FontWeight="Semibold" BorderThickness="0"
-                            Cursor="Hand" Command="{Binding GetStartedCommand}"/>
-                </Grid>
-            </Border>
-
-            <Border Background="{DynamicResource Brush.SurfaceSecondaryBackground}"
+            <Border Grid.Row="1"
+                    Background="{DynamicResource Brush.SurfaceSecondaryBackground}"
                     BorderBrush="{DynamicResource Brush.SurfaceBorder}"
-                    BorderThickness="1"
-                    CornerRadius="12"
-                    Padding="16"
-                    Margin="0,16,0,0">
+                    BorderThickness="3"
+                    CornerRadius="20"
+                    Padding="24"
+                    Margin="0,24,0,0">
                 <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <StackPanel Grid.Column="0" Margin="0,0,16,0">
-                        <TextBlock Text="{loc:Loc onboarding.hero.title}" FontSize="15" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}" TextWrapping="Wrap"/>
-                        <TextBlock Text="{loc:Loc onboarding.hero.description}" FontSize="12" Foreground="{DynamicResource Brush.SecondaryText}" TextWrapping="Wrap" Margin="0,4,0,0"/>
-                    </StackPanel>
-                    <Border Grid.Column="1"
-                            Background="{DynamicResource Brush.ContentBackground}"
-                            BorderBrush="{DynamicResource Brush.SurfaceBorder}"
-                            BorderThickness="1"
-                            CornerRadius="8"
-                            Padding="6">
-                        <Image Source="/Assets/Brand/Assets.xcassets/app-ui-demo.imageset/app-ui-demo_2.png"
-                               Width="220"
-                               Height="140"
-                               Stretch="Uniform"
-                               AutomationProperties.Name="App interface preview"/>
-                    </Border>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Grid.Row="0"
+                               Text="{Binding SelectedStep.Title}"
+                               FontSize="22"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource Brush.PrimaryText}"
+                               TextWrapping="Wrap"/>
+                    <TextBlock Grid.Row="1"
+                               Text="{Binding SelectedStep.Description}"
+                               Margin="0,10,0,0"
+                               FontSize="14"
+                               Foreground="{DynamicResource Brush.SecondaryText}"
+                               TextWrapping="Wrap"/>
+
+                    <ItemsControl Grid.Row="2" Margin="0,18,0,0" ItemsSource="{Binding SelectedStep.Details}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <DockPanel Margin="0,0,0,10">
+                                    <Border Width="8" Height="8" CornerRadius="4" Background="{DynamicResource Brush.PrimaryButtonBackground}" Margin="0,6,10,0"/>
+                                    <TextBlock Text="{Binding}" Foreground="{DynamicResource Brush.SecondaryText}" FontSize="13" TextWrapping="Wrap"/>
+                                </DockPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
                 </Grid>
             </Border>
-        </StackPanel>
+
+            <Button Grid.Row="2"
+                    Content="{loc:Loc onboarding.cta}"
+                    Padding="28,12"
+                    Margin="0,20,0,0"
+                    HorizontalAlignment="Center"
+                    Background="{DynamicResource Brush.PrimaryButtonBackground}"
+                    Foreground="{DynamicResource Brush.PrimaryButtonForeground}"
+                    FontWeight="SemiBold"
+                    BorderThickness="0"
+                    Cursor="Hand"
+                    Command="{Binding GetStartedCommand}"/>
+        </Grid>
     </ScrollViewer>
 </UserControl>

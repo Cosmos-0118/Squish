@@ -2,90 +2,52 @@
 <UserControl x:Class="ClopWindows.App.Views.Compare.CompareView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:loc="clr-namespace:ClopWindows.App.Localization"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
              d:DesignHeight="600"
              d:DesignWidth="800">
-    <UserControl.Resources>
-        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
-    </UserControl.Resources>
-    <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-        </Grid.RowDefinitions>
+        <Grid AllowDrop="True"
+            DragOver="OnDragOver"
+            Drop="OnDropFiles">
+        <Canvas IsHitTestVisible="False" Opacity="0.08">
+            <Path Stroke="{DynamicResource Brush.SecondaryText}" StrokeThickness="2" Data="M 80 80 L 88 96 L 104 104 L 88 112 L 80 128 L 72 112 L 56 104 L 72 96 Z"/>
+            <Path Stroke="{DynamicResource Brush.SecondaryText}" StrokeThickness="2" Data="M 650 110 L 658 126 L 674 134 L 658 142 L 650 158 L 642 142 L 626 134 L 642 126 Z"/>
+            <Path Stroke="{DynamicResource Brush.SecondaryText}" StrokeThickness="2" Data="M 560 420 L 566 432 L 578 438 L 566 444 L 560 456 L 554 444 L 542 438 L 554 432 Z"/>
+            <Path Stroke="{DynamicResource Brush.SecondaryText}" StrokeThickness="2" Data="M 180 440 L 186 452 L 198 458 L 186 464 L 180 476 L 174 464 L 162 458 L 174 452 Z"/>
+            <Path Stroke="{DynamicResource Brush.SecondaryText}" StrokeThickness="2" Data="M 340 180 L 346 192 L 358 198 L 346 204 L 340 216 L 334 204 L 322 198 L 334 192 Z"/>
+            <Path Stroke="{DynamicResource Brush.SecondaryText}" StrokeThickness="2" Data="M 720 360 L 726 372 L 738 378 L 726 384 L 720 396 L 714 384 L 702 378 L 714 372 Z"/>
+        </Canvas>
 
-        <StackPanel Grid.Row="0" Margin="32,32,32,16">
-            <TextBlock Text="{loc:Loc compare.header}" FontSize="24" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}" TextWrapping="Wrap"/>
-            <TextBlock Text="{loc:Loc compare.subtitle}" FontSize="13" Foreground="{DynamicResource Brush.SecondaryText}" Margin="0,8,0,0" TextWrapping="Wrap"/>
+        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,20,0,20">
+            <Button Command="{Binding BrowseForFilesCommand}"
+                    Cursor="Hand"
+                    Background="{DynamicResource Brush.PrimaryButtonBackground}"
+                    Foreground="{DynamicResource Brush.PrimaryButtonForeground}"
+                    BorderThickness="3"
+                    BorderBrush="{DynamicResource Brush.NavigationBorder}"
+                    Padding="36,16"
+                    FontSize="22"
+                    FontWeight="SemiBold">
+                <Button.Template>
+                    <ControlTemplate TargetType="Button">
+                            <Border CornerRadius="20"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Button.Template>
+                Browse files
+            </Button>
+
+            <TextBlock Text="or drop files anywhere in this window"
+                       Margin="0,18,0,0"
+                       FontSize="14"
+                       Foreground="{DynamicResource Brush.SecondaryText}"
+                       HorizontalAlignment="Center"
+                       TextAlignment="Center"/>
         </StackPanel>
-
-        <Border Grid.Row="1" Margin="32,0,32,16" Background="{DynamicResource Brush.SurfaceSecondaryBackground}" BorderBrush="{DynamicResource Brush.SurfaceBorder}" BorderThickness="1" CornerRadius="12" Padding="20">
-            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Center">
-                <Button Content="{loc:Loc compare.browse}" Padding="16,10" Background="{DynamicResource Brush.PrimaryButtonBackground}" Foreground="{DynamicResource Brush.PrimaryButtonForeground}" FontWeight="SemiBold" BorderThickness="0" Cursor="Hand" Command="{Binding BrowseForFilesCommand}" AutomationProperties.Name="{loc:Loc compare.browse.automation}"/>
-                <Button Content="{loc:Loc compare.cancelActive}" Padding="12,10" Margin="8,0,0,0" Background="{DynamicResource Brush.SurfaceBackground}" Foreground="{DynamicResource Brush.PrimaryText}" BorderBrush="{DynamicResource Brush.SurfaceBorder}" BorderThickness="1" Cursor="Hand" Command="{Binding CancelActiveRequestsCommand}" Visibility="{Binding HasActiveRequests, Converter={StaticResource BooleanToVisibilityConverter}}" AutomationProperties.Name="{loc:Loc compare.cancelActive.automation}"/>
-                <TextBlock Text="{loc:Loc compare.dropHint}" FontSize="12" Foreground="{DynamicResource Brush.SecondaryText}" VerticalAlignment="Center" Margin="12,0,0,0" TextWrapping="Wrap" AutomationProperties.HelpText="{loc:Loc compare.dropHint.accessible}"/>
-            </StackPanel>
-        </Border>
-
-        <Border Grid.Row="2" Margin="32,0,32,32" BorderBrush="{DynamicResource Brush.SurfaceBorder}" BorderThickness="1" CornerRadius="12" Padding="20">
-            <DockPanel LastChildFill="True">
-                <TextBlock DockPanel.Dock="Top" Text="{loc:Loc compare.recent}" FontSize="14" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}" Margin="0,0,0,12"/>
-                <Grid>
-                    <ScrollViewer VerticalScrollBarVisibility="Auto"
-                                  HorizontalScrollBarVisibility="Disabled">
-                        <ItemsControl ItemsSource="{Binding RecentItems}" AutomationProperties.HelpText="{loc:Loc compare.recent.list.help}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Background="{DynamicResource Brush.SurfaceBackground}" BorderBrush="{DynamicResource Brush.SurfaceBorder}" BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,0,0,12">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                            </Grid.ColumnDefinitions>
-                                            <StackPanel Grid.Column="0">
-                                                <TextBlock Text="{Binding FileName}" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}" TextWrapping="Wrap"/>
-                                                <TextBlock Text="{Binding SizeSummary}" FontSize="12" Foreground="{DynamicResource Brush.SecondaryText}" Margin="0,4,0,0" TextWrapping="Wrap" />
-                                            </StackPanel>
-                                            <TextBlock Grid.Column="1" Text="{Binding DurationText}" FontSize="12" Foreground="{DynamicResource Brush.SecondaryText}" VerticalAlignment="Center" Margin="12,0,0,0">
-                                                <TextBlock.Style>
-                                                    <Style TargetType="TextBlock">
-                                                        <Setter Property="Visibility" Value="Visible"/>
-                                                        <Style.Triggers>
-                                                            <Trigger Property="Text" Value="">
-                                                                <Setter Property="Visibility" Value="Collapsed"/>
-                                                            </Trigger>
-                                                            <Trigger Property="Text" Value="{x:Null}">
-                                                                <Setter Property="Visibility" Value="Collapsed"/>
-                                                            </Trigger>
-                                                        </Style.Triggers>
-                                                    </Style>
-                                                </TextBlock.Style>
-                                            </TextBlock>
-                                        </Grid>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </ScrollViewer>
-
-                    <TextBlock Text="{loc:Loc compare.placeholder}" Foreground="{DynamicResource Brush.PlaceholderText}" HorizontalAlignment="Center" VerticalAlignment="Center" FontStyle="Italic" TextWrapping="Wrap">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                                <Setter Property="Visibility" Value="Collapsed"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding RecentItems.Count}" Value="0">
-                                        <Setter Property="Visibility" Value="Visible"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
-                </Grid>
-            </DockPanel>
-        </Border>
     </Grid>
 </UserControl>

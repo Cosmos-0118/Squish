@@ -18,6 +18,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
     private readonly NavigationItemViewModel _settingsItem;
     private NavigationItemViewModel? _selectedItem;
     private ObservableObject? _currentView;
+    private bool _isSidebarCollapsed;
 
     public MainWindowViewModel(
         OnboardingViewModel onboardingViewModel,
@@ -57,6 +58,8 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
             _compareViewModel.TriggerBrowseDialog();
         });
 
+        ToggleSidebarCommand = new RelayCommand(_ => IsSidebarCollapsed = !IsSidebarCollapsed);
+
         _onboardingViewModel.OnboardingCompleted += HandleOnboardingCompleted;
 
         var defaultSection = SettingsHost.Get(SettingsRegistry.FinishedOnboarding)
@@ -68,6 +71,8 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
 
     public ObservableCollection<NavigationItemViewModel> NavigationItems { get; }
 
+    public CompareViewModel Compare => _compareViewModel;
+
     public ICommand ShowOnboardingCommand { get; }
 
     public ICommand ShowCompareCommand { get; }
@@ -75,6 +80,14 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
     public ICommand ShowSettingsCommand { get; }
 
     public ICommand BrowseFilesCommand { get; }
+
+    public ICommand ToggleSidebarCommand { get; }
+
+    public bool IsSidebarCollapsed
+    {
+        get => _isSidebarCollapsed;
+        set => SetProperty(ref _isSidebarCollapsed, value);
+    }
 
     public NavigationItemViewModel? SelectedItem
     {

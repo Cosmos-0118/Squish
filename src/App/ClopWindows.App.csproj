@@ -26,6 +26,9 @@
     <Resource Include="..\..\installer\assets\Clop.ico">
       <Link>Assets\Brand\Clop.ico</Link>
     </Resource>
+    <Resource Include="..\..\installer\assets\logo.ico">
+      <Link>Assets\Brand\logo.ico</Link>
+    </Resource>
   </ItemGroup>
 
   <ItemGroup>

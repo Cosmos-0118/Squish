@@ -41,6 +41,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     private VideoEncoderPresetOptionViewModel? _selectedVideoEncoderPreset;
     private FloatingHudPlacement _floatingHudPlacement;
     private readonly string _gpuLabel;
+    private SettingsSectionItem? _selectedSettingsSectionItem;
 
     public IReadOnlyList<ShortcutPreferenceViewModel> AppShortcutPreferences { get; }
     public IReadOnlyList<ShortcutPreferenceViewModel> GlobalShortcutPreferences { get; }
@@ -58,6 +59,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     public RelayCommand RemoveImageDirectoryCommand { get; }
     public RelayCommand RemoveVideoDirectoryCommand { get; }
     public RelayCommand RemovePdfDirectoryCommand { get; }
+    public IReadOnlyList<SettingsSectionItem> SettingsSections { get; }
 
     public SettingsViewModel(FloatingHudController hudController, IFolderPicker folderPicker)
     {
@@ -71,6 +73,19 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         _gpuLabel = DetermineGpuLabel();
         VideoEncoderPresetOptions = new ReadOnlyCollection<VideoEncoderPresetOptionViewModel>(CreateVideoEncoderPresetOptions(_gpuLabel));
         VideoPresetSubtitle = BuildVideoPresetSubtitle(_gpuLabel);
+        SettingsSections = new ReadOnlyCollection<SettingsSectionItem>(new List<SettingsSectionItem>
+        {
+            new(SettingsSection.Appearance, ClopStringCatalog.Get("settings.section.appearance")),
+            new(SettingsSection.System, ClopStringCatalog.Get("settings.section.system")),
+            new(SettingsSection.FloatingHud, ClopStringCatalog.Get("settings.section.floatingHud")),
+            new(SettingsSection.Clipboard, ClopStringCatalog.Get("settings.section.clipboard")),
+            new(SettingsSection.Automation, ClopStringCatalog.Get("settings.section.automation")),
+            new(SettingsSection.Optimisation, ClopStringCatalog.Get("settings.section.optimisation")),
+            new(SettingsSection.Output, ClopStringCatalog.Get("settings.section.output")),
+            new(SettingsSection.Preservation, ClopStringCatalog.Get("settings.section.preservation")),
+            new(SettingsSection.Shortcuts, ClopStringCatalog.Get("settings.section.shortcuts"))
+        });
+        _selectedSettingsSectionItem = SettingsSections.FirstOrDefault();
         ImageDirectories = new ObservableCollection<string>();
         VideoDirectories = new ObservableCollection<string>();
         PdfDirectories = new ObservableCollection<string>();
@@ -129,6 +144,23 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
             }
         }
     }
+
+    public SettingsSectionItem? SelectedSettingsSectionItem
+    {
+        get => _selectedSettingsSectionItem;
+        set
+        {
+            if (SetProperty(ref _selectedSettingsSectionItem, value))
+            {
+                OnPropertyChanged(nameof(SelectedSettingsSection));
+                OnPropertyChanged(nameof(SelectedSettingsSectionTitle));
+            }
+        }
+    }
+
+    public SettingsSection SelectedSettingsSection => SelectedSettingsSectionItem?.Section ?? SettingsSection.Appearance;
+
+    public string SelectedSettingsSectionTitle => SelectedSettingsSectionItem?.Title ?? ClopStringCatalog.Get("settings.section.appearance");
 
     public bool EnableFloatingResults
     {
@@ -725,4 +757,30 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
 
         return source.Replace("AMD", gpuLabel, StringComparison.OrdinalIgnoreCase);
     }
+}
+
+public enum SettingsSection
+{
+    Appearance,
+    System,
+    FloatingHud,
+    Clipboard,
+    Automation,
+    Optimisation,
+    Output,
+    Preservation,
+    Shortcuts
+}
+
+public sealed class SettingsSectionItem
+{
+    public SettingsSectionItem(SettingsSection section, string title)
+    {
+        Section = section;
+        Title = title;
+    }
+
+    public SettingsSection Section { get; }
+
+    public string Title { get; }
 }
