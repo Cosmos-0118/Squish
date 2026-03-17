@@ -7,7 +7,7 @@
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         Title="Clop Floating HUD"
         AllowsTransparency="False"
-        Background="Transparent"
+        Background="{DynamicResource Brush.HudBackground}"
         WindowStyle="None"
         ResizeMode="CanResizeWithGrip"
         ShowInTaskbar="False"
@@ -18,11 +18,11 @@
         Width="{Binding WindowWidth, Mode=TwoWay}"
         Height="{Binding WindowHeight, Mode=TwoWay}"
         AutomationProperties.Name="{loc:Loc hud.title}"
-        Opacity="0.7">
+        Opacity="1">
     <shell:WindowChrome.WindowChrome>
         <shell:WindowChrome CaptionHeight="0"
                              GlassFrameThickness="0"
-                             CornerRadius="12"
+                             CornerRadius="18"
                              ResizeBorderThickness="6"
                              UseAeroCaptionButtons="False"/>
     </shell:WindowChrome.WindowChrome>
@@ -59,6 +59,73 @@
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
                                 <Setter TargetName="Chrome" Property="Background" Value="#1FFFFFFF"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="HudCloseButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#FFF14141"/>
+            <Setter Property="BorderBrush" Value="#A8FFB3B3"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Foreground" Value="#FFFFFFFF"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Width" Value="30"/>
+            <Setter Property="Height" Value="30"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="15">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="#FFFF2F2F"/>
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="#FFFFD0D0"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="#FFD62828"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="HudResizeGripStyle" TargetType="ResizeGrip">
+            <Setter Property="Width" Value="18"/>
+            <Setter Property="Height" Value="18"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ResizeGrip">
+                        <Grid Width="18" Height="18" Background="Transparent">
+                            <Canvas Width="18" Height="18" HorizontalAlignment="Right" VerticalAlignment="Bottom">
+                                <Ellipse x:Name="Dot1" Width="2.2" Height="2.2" Fill="#66E2E8FF" Canvas.Left="14" Canvas.Top="4"/>
+                                <Ellipse x:Name="Dot2" Width="2.2" Height="2.2" Fill="#66E2E8FF" Canvas.Left="11" Canvas.Top="7"/>
+                                <Ellipse x:Name="Dot3" Width="2.2" Height="2.2" Fill="#66E2E8FF" Canvas.Left="14" Canvas.Top="7"/>
+                                <Ellipse x:Name="Dot4" Width="2.2" Height="2.2" Fill="#66E2E8FF" Canvas.Left="8" Canvas.Top="10"/>
+                                <Ellipse x:Name="Dot5" Width="2.2" Height="2.2" Fill="#66E2E8FF" Canvas.Left="11" Canvas.Top="10"/>
+                                <Ellipse x:Name="Dot6" Width="2.2" Height="2.2" Fill="#66E2E8FF" Canvas.Left="14" Canvas.Top="10"/>
+                            </Canvas>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Dot1" Property="Fill" Value="#99F4F7FF"/>
+                                <Setter TargetName="Dot2" Property="Fill" Value="#99F4F7FF"/>
+                                <Setter TargetName="Dot3" Property="Fill" Value="#99F4F7FF"/>
+                                <Setter TargetName="Dot4" Property="Fill" Value="#99F4F7FF"/>
+                                <Setter TargetName="Dot5" Property="Fill" Value="#99F4F7FF"/>
+                                <Setter TargetName="Dot6" Property="Fill" Value="#99F4F7FF"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -113,6 +180,12 @@
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
+            <Canvas IsHitTestVisible="False" Opacity="0.35">
+                <Path Fill="#22D8DEFF" Data="M 94 88 L 100 100 L 112 106 L 100 112 L 94 124 L 88 112 L 76 106 L 88 100 Z"/>
+                <Path Fill="#1AD8DEFF" Data="M 276 248 L 282 260 L 294 266 L 282 272 L 276 284 L 270 272 L 258 266 L 270 260 Z"/>
+                <Path Fill="#18D8DEFF" Data="M 34 286 L 39 296 L 49 301 L 39 306 L 34 316 L 29 306 L 19 301 L 29 296 Z"/>
+            </Canvas>
+
             <Grid x:Name="TitleBar"
                 Grid.Row="0"
                 Margin="14,12,14,6"
@@ -132,8 +205,8 @@
                                FontSize="10.5"/>
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal">
-                    <Button Style="{StaticResource IconButtonStyle}"
-                            Content=""
+                    <Button Style="{StaticResource HudCloseButtonStyle}"
+                            Content="X"
                             Click="OnHideClicked"
                             AutomationProperties.Name="{loc:Loc hud.hide.toggle}"
                             ToolTip="{loc:Loc hud.hide.tooltip}"/>
@@ -142,8 +215,10 @@
 
                 <Border Grid.Row="1"
                     Margin="14,0,14,10"
-                    Padding="4"
-                    Background="{DynamicResource Brush.HudCardBorder}"
+                    Padding="5"
+                    Background="{DynamicResource Brush.HudCardBackground}"
+                    BorderBrush="{DynamicResource Brush.HudCardBorder}"
+                    BorderThickness="3"
                     CornerRadius="14">
                 <Grid>
                     <ScrollViewer Margin="4"
@@ -167,59 +242,65 @@
                             </ItemsControl.ItemContainerStyle>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate DataType="{x:Type viewModels:FloatingResultViewModel}">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
                                         <Border x:Name="ResultCard"
-                                            Background="{DynamicResource Brush.HudCardBackground}"
-                                            BorderBrush="#2EFFFFFF"
-                                            BorderThickness="1"
-                                            CornerRadius="14"
-                                            Padding="12"
-                                            Cursor="Hand"
-                                            MouseLeftButtonDown="OnResultCardMouseLeftButtonDown"
-                                            MouseLeftButtonUp="OnResultCardMouseLeftButtonUp"
-                                            MouseMove="OnResultCardMouseMove"
-                                            MouseLeave="OnResultCardMouseLeave">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition/>
-                                                <ColumnDefinition Width="Auto"/>
-                                            </Grid.ColumnDefinitions>
-                                            <StackPanel Orientation="Vertical" Margin="0,0,10,0">
-                                                <TextBlock Text="{Binding DisplayName}"
-                                                           FontWeight="SemiBold"
-                                                           FontSize="14"
-                                                           Foreground="{DynamicResource Brush.HudTextPrimary}"/>
-                                                <TextBlock Text="{Binding Subtitle}"
-                                                           Margin="0,2,0,0"
-                                                           Foreground="{DynamicResource Brush.HudTextSecondary}"
-                                                           FontSize="11.5"
-                                                           TextTrimming="CharacterEllipsis">
-                                                    <TextBlock.Style>
-                                                        <Style TargetType="TextBlock">
-                                                            <Setter Property="Visibility" Value="Visible"/>
-                                                            <Style.Triggers>
-                                                                <Trigger Property="Text" Value="">
-                                                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                                                </Trigger>
-                                                                <Trigger Property="Text" Value="{x:Null}">
-                                                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                                                </Trigger>
-                                                            </Style.Triggers>
-                                                        </Style>
-                                                    </TextBlock.Style>
-                                                </TextBlock>
-                                                <TextBlock Text="{Binding StatusText}"
-                                                           Margin="0,8,0,0"
-                                                           FontSize="13"
-                                                           FontWeight="SemiBold"
-                                                           Foreground="{Binding StatusBrush}"/>
-                                                <ProgressBar Margin="0,12,0,0"
-                                                             Height="4"
-                                                             Value="{Binding Progress, Mode=OneWay}"
-                                                             Maximum="100"
-                                                             Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}"
-                                                             Foreground="{DynamicResource Brush.HudProgress}"
-                                                             Background="{DynamicResource Brush.HudProgressBackground}"/>
-                                            </StackPanel>
+                                                Grid.Row="0"
+                                                Background="{DynamicResource Brush.HudCardBackground}"
+                                                BorderBrush="#2EFFFFFF"
+                                                BorderThickness="1"
+                                                CornerRadius="14"
+                                                Padding="12"
+                                                Cursor="Hand"
+                                                MouseLeftButtonDown="OnResultCardMouseLeftButtonDown"
+                                                MouseLeftButtonUp="OnResultCardMouseLeftButtonUp"
+                                                MouseMove="OnResultCardMouseMove"
+                                                MouseLeave="OnResultCardMouseLeave">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel Orientation="Vertical" Margin="0,0,10,0">
+                                                    <TextBlock Text="{Binding DisplayName}"
+                                                               FontWeight="SemiBold"
+                                                               FontSize="14"
+                                                               Foreground="{DynamicResource Brush.HudTextPrimary}"/>
+                                                    <TextBlock Text="{Binding Subtitle}"
+                                                               Margin="0,2,0,0"
+                                                               Foreground="{DynamicResource Brush.HudTextSecondary}"
+                                                               FontSize="11.5"
+                                                               TextTrimming="CharacterEllipsis">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                                <Style.Triggers>
+                                                                    <Trigger Property="Text" Value="">
+                                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                                    </Trigger>
+                                                                    <Trigger Property="Text" Value="{x:Null}">
+                                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                                    </Trigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+                                                    <TextBlock Text="{Binding StatusText}"
+                                                               Margin="0,8,0,0"
+                                                               FontSize="13"
+                                                               FontWeight="SemiBold"
+                                                               Foreground="{Binding StatusBrush}"/>
+                                                    <ProgressBar Margin="0,12,0,0"
+                                                                 Height="4"
+                                                                 Value="{Binding Progress, Mode=OneWay}"
+                                                                 Maximum="100"
+                                                                 Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                                                 Foreground="{DynamicResource Brush.HudProgress}"
+                                                                 Background="{DynamicResource Brush.HudProgressBackground}"/>
+                                                </StackPanel>
                                                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
                                                     <Button Width="26"
                                                             Height="26"
@@ -240,8 +321,14 @@
                                                         </Button.Content>
                                                     </Button>
                                                 </StackPanel>
-                                        </Grid>
-                                    </Border>
+                                            </Grid>
+                                        </Border>
+                                        <Border Grid.Row="1"
+                                                Margin="14,10,14,0"
+                                                Height="1"
+                                                CornerRadius="1"
+                                                Background="#26AAB3C2"/>
+                                    </Grid>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
@@ -275,7 +362,8 @@
             <ResizeGrip Grid.Row="2"
                         HorizontalAlignment="Right"
                         VerticalAlignment="Bottom"
-                        Margin="0,0,14,14"/>
+                        Margin="0,0,14,14"
+                        Style="{StaticResource HudResizeGripStyle}"/>
         </Grid>
     </Border>
 </Window>

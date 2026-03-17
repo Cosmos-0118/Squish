@@ -12,6 +12,15 @@ public sealed class LibreOfficeDocumentConverter : IDocumentConverter
 {
     public bool Supports(FilePath path, DocumentConversionOptions options)
     {
+            // Verify LibreOffice executable is available before accepting document format
+            if (string.IsNullOrWhiteSpace(options.ConverterExecutablePath) || 
+                (!Path.IsPathRooted(options.ConverterExecutablePath) && 
+                 !File.Exists(options.ConverterExecutablePath) &&
+                 ToolLocator.ResolveOnPath(options.ConverterExecutablePath) is null))
+            {
+                return false;
+            }
+
         if (options.ConvertibleExtensions.Count == 0)
         {
             return MediaFormats.IsDocument(path);

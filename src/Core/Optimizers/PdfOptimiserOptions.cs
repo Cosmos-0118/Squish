@@ -523,7 +523,7 @@ internal static class PdfPresetArguments
         "-dColorImageResolution=225",
         "-dGrayImageResolution=225",
         "-dMonoImageResolution=300",
-        "-dFastWebView=true",
+        "-dFastWebView=false",
         "-dDetectDuplicateImages=true",
         "-dColorConversionStrategy=/LeaveColorUnchanged"
     };
@@ -539,7 +539,7 @@ internal static class PdfPresetArguments
         "-dColorImageDownsampleThreshold=1.1",
         "-dGrayImageDownsampleThreshold=1.1",
         "-dMonoImageDownsampleThreshold=1.1",
-        "-dFastWebView=true",
+        "-dFastWebView=false",
         "-dDetectDuplicateImages=true",
         "-dColorConversionStrategy=/sRGB"
     };

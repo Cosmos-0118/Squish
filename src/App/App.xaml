@@ -14,6 +14,7 @@
                 <ResourceDictionary Source="Resources/Controls/ModernButton.xaml" />
                 <ResourceDictionary Source="Resources/Controls/ModernComboBox.xaml" />
                 <ResourceDictionary Source="Resources/Controls/ModernCheckBox.xaml" />
+                <ResourceDictionary Source="Resources/Controls/ModernScrollBar.xaml" />
             </ResourceDictionary.MergedDictionaries>
 
             <DataTemplate DataType="{x:Type vm:OnboardingViewModel}">
