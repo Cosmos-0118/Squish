@@ -78,6 +78,7 @@ public partial class App : System.Windows.Application
                 services.AddSingleton<ClipboardMonitor>();
                 services.AddSingleton<ClipboardOptimisationService>();
                 services.AddSingleton<DirectoryOptimisationService>();
+                services.AddSingleton<WorkdirCleanupService>();
                 services.AddSingleton<ShortcutsBridge>();
                 services.AddSingleton<CrossAppAutomationHost>();
                 services.AddSingleton<IFolderPicker, FolderPicker>();

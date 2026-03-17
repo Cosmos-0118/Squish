@@ -30,6 +30,7 @@ builder.Services.AddSingleton<OptimisedFileRegistry>();
 builder.Services.AddSingleton<ClipboardMonitor>();
 builder.Services.AddSingleton<ClipboardOptimisationService>();
 builder.Services.AddSingleton<DirectoryOptimisationService>();
+builder.Services.AddSingleton<WorkdirCleanupService>();
 builder.Services.AddSingleton<ShortcutsBridge>();
 builder.Services.AddSingleton<CrossAppAutomationHost>();
 builder.Services.AddHostedService<Worker>();
