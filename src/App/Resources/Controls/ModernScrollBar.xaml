@@ -1,9 +1,9 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <SolidColorBrush x:Key="Brush.ScrollBar.Track" Color="#14000000" />
-    <SolidColorBrush x:Key="Brush.ScrollBar.Thumb" Color="#6A8B97AA" />
-    <SolidColorBrush x:Key="Brush.ScrollBar.ThumbHover" Color="#8A8B97AA" />
-    <SolidColorBrush x:Key="Brush.ScrollBar.ThumbDrag" Color="#AF8B97AA" />
+    <SolidColorBrush x:Key="Brush.ScrollBar.Track" Color="#14566880" />
+    <SolidColorBrush x:Key="Brush.ScrollBar.Thumb" Color="#65566880" />
+    <SolidColorBrush x:Key="Brush.ScrollBar.ThumbHover" Color="#95566880" />
+    <SolidColorBrush x:Key="Brush.ScrollBar.ThumbDrag" Color="#C0566880" />
 
     <Style x:Key="MinimalScrollBarButton" TargetType="RepeatButton">
         <Setter Property="Focusable" Value="False" />

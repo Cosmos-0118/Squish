@@ -9,6 +9,7 @@
              xmlns:controls="clr-namespace:ClopWindows.App.Controls"
              xmlns:core="clr-namespace:ClopWindows.Core.Settings;assembly=ClopWindows.Core"
              mc:Ignorable="d"
+             PreviewMouseWheel="OnPreviewMouseWheel"
              d:DesignHeight="600"
              d:DesignWidth="1000">
     <UserControl.Resources>
@@ -43,7 +44,9 @@
         <DropShadowEffect x:Key="Effect.MediumElevation" Color="#33000000" BlurRadius="20" ShadowDepth="0" RenderingBias="Quality"/>
     </UserControl.Resources>
 
-    <ScrollViewer VerticalScrollBarVisibility="Auto">
+    <ScrollViewer x:Name="RootScrollViewer"
+                  VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Disabled">
         <StackPanel Margin="32,32,32,48">
             <StackPanel>
                 <TextBlock Text="{Binding SelectedSettingsSectionTitle}"
@@ -154,6 +157,8 @@
                                      BorderThickness="0"
                                      Background="Transparent"
                                      HorizontalContentAlignment="Stretch"
+                                     ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                      AutomationProperties.LabeledBy="{Binding ElementName=FloatingHudPlacementLabel}">
                                 <ListBox.ItemsPanel>
                                     <ItemsPanelTemplate>
@@ -388,6 +393,7 @@
                                  BorderThickness="0"
                                  Background="Transparent"
                                  HorizontalContentAlignment="Stretch"
+                                 ScrollViewer.VerticalScrollBarVisibility="Disabled"
                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                  Margin="0,4,0,0">
                             <ListBox.ItemsPanel>

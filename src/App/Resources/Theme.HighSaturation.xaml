@@ -39,4 +39,8 @@
     <SolidColorBrush x:Key="Brush.StatusSuccess" Color="#FF4FFFB0" />
     <SolidColorBrush x:Key="Brush.StatusWarning" Color="#FFFF8A3D" />
     <SolidColorBrush x:Key="Brush.StatusDanger" Color="#FFF45D5D" />
+    <SolidColorBrush x:Key="Brush.ScrollBar.Track" Color="#1E63C3FF" />
+    <SolidColorBrush x:Key="Brush.ScrollBar.Thumb" Color="#5863C3FF" />
+    <SolidColorBrush x:Key="Brush.ScrollBar.ThumbHover" Color="#8A63C3FF" />
+    <SolidColorBrush x:Key="Brush.ScrollBar.ThumbDrag" Color="#BB63C3FF" />
 </ResourceDictionary>

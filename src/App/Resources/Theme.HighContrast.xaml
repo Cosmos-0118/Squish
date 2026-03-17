@@ -35,4 +35,8 @@
     <SolidColorBrush x:Key="Brush.HudTextSecondary" Color="{x:Static SystemColors.GrayTextColor}" />
     <SolidColorBrush x:Key="Brush.HudProgress" Color="{x:Static SystemColors.HighlightColor}" />
     <SolidColorBrush x:Key="Brush.HudProgressBackground" Color="{x:Static SystemColors.WindowTextColor}" />
+    <SolidColorBrush x:Key="Brush.ScrollBar.Track" Color="{x:Static SystemColors.ControlDarkColor}" />
+    <SolidColorBrush x:Key="Brush.ScrollBar.Thumb" Color="{x:Static SystemColors.WindowTextColor}" />
+    <SolidColorBrush x:Key="Brush.ScrollBar.ThumbHover" Color="{x:Static SystemColors.HotTrackColor}" />
+    <SolidColorBrush x:Key="Brush.ScrollBar.ThumbDrag" Color="{x:Static SystemColors.HighlightColor}" />
 </ResourceDictionary>
