@@ -31,6 +31,61 @@ function Resolve-RepoPath([string]$Path) {
     return Join-Path -Path $RepoRoot -ChildPath $Path
 }
 
+function Invoke-FileDownload {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$Urls,
+        [Parameter(Mandatory = $true)]
+        [string]$OutFile,
+        [int]$MaxAttemptsPerUrl = 4,
+        [int]$BaseDelaySeconds = 3
+    )
+
+    $candidateUrls = @($Urls | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)
+    if ($candidateUrls.Count -eq 0) {
+        throw "No download URLs were provided."
+    }
+
+    $errors = [System.Collections.Generic.List[string]]::new()
+
+    foreach ($url in $candidateUrls) {
+        for ($attempt = 1; $attempt -le $MaxAttemptsPerUrl; $attempt++) {
+            try {
+                Write-Host "    Downloading (attempt $attempt/$MaxAttemptsPerUrl): $url"
+                Invoke-WebRequest -Uri $url -OutFile $OutFile -UseBasicParsing
+                return $url
+            }
+            catch {
+                if (Test-Path -LiteralPath $OutFile) {
+                    Remove-Item -LiteralPath $OutFile -Force -ErrorAction SilentlyContinue
+                }
+
+                $statusCode = $null
+                if ($_.Exception.Response -and $_.Exception.Response.StatusCode) {
+                    $statusCode = [int]$_.Exception.Response.StatusCode
+                }
+
+                $errorText = "[$url attempt $attempt] $($_.Exception.Message)"
+                $errors.Add($errorText) | Out-Null
+
+                if ($statusCode -eq 404) {
+                    Write-Warning "    URL not found (404). Trying next candidate URL if available."
+                    break
+                }
+
+                if ($attempt -lt $MaxAttemptsPerUrl) {
+                    $delaySeconds = [Math]::Min(60, [int]([Math]::Pow(2, ($attempt - 1)) * $BaseDelaySeconds))
+                    Write-Warning "    Download failed. Retrying in $delaySeconds seconds..."
+                    Start-Sleep -Seconds $delaySeconds
+                    continue
+                }
+            }
+        }
+    }
+
+    throw "Failed to download from all candidate URLs.`n$($errors -join "`n")"
+}
+
 # Ensure defaults behave consistently no matter where the script is invoked from.
 # Relative paths are resolved from the repo root, not the caller's current directory.
 $ManifestPath = Resolve-RepoPath $ManifestPath
@@ -240,9 +295,21 @@ foreach ($tool in $tools) {
     if ($tool.PSObject.Properties['contentRoot']) {
         $contentRoot = $tool.contentRoot
     }
+    $downloadUrls = @()
+    if ($tool.PSObject.Properties['urls'] -and $tool.urls) {
+        $downloadUrls += @($tool.urls)
+    }
+    if ($tool.PSObject.Properties['url'] -and $tool.url) {
+        $downloadUrls += $tool.url
+    }
+    $downloadUrls = @($downloadUrls | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)
+    if ($downloadUrls.Count -eq 0) {
+        throw "Tool '$($tool.name)' is missing a download URL."
+    }
     $effectiveContentRoot = $contentRoot
+    $selectedSourceUrl = $downloadUrls[0]
     Write-Host "==> $($tool.name) v$($tool.version)" -ForegroundColor Cyan
-    Write-Host "    Source: $($tool.url)"
+    Write-Host "    Source: $selectedSourceUrl"
     Write-Host "    Destination: $dest"
 
     if ($ListOnly) {
@@ -300,9 +367,8 @@ foreach ($tool in $tools) {
             }
         }
         else {
-            $downloadPath = Join-Path -Path $tempDir -ChildPath (Split-Path -Path $tool.url -Leaf)
-            Write-Host "    Downloading..."
-            Invoke-WebRequest -Uri $tool.url -OutFile $downloadPath -UseBasicParsing
+            $downloadPath = Join-Path -Path $tempDir -ChildPath (Split-Path -Path $downloadUrls[0] -Leaf)
+            $selectedSourceUrl = Invoke-FileDownload -Urls $downloadUrls -OutFile $downloadPath
 
             $computedSha = Get-Checksum -Path $downloadPath
             Write-Host "    SHA256: $computedSha"
@@ -543,7 +609,7 @@ foreach ($tool in $tools) {
             }
         }
 
-        $source = if ($usingLocalArchive) { $tool.localArchive } else { $tool.url }
+        $source = if ($usingLocalArchive) { $tool.localArchive } else { $selectedSourceUrl }
         $metadata = [ordered]@{
             name      = $tool.name
             version   = $tool.version

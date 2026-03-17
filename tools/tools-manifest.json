@@ -64,9 +64,12 @@
     },
     {
       "name": "libreoffice",
-      "version": "25.2.7",
-      "url": "https://download.documentfoundation.org/libreoffice/stable/25.2.7/win/x86_64/LibreOffice_25.2.7_Win_x86-64.msi",
-      "sha256": "9fdd22f8ea7a92a67de5beaa08588ef6da58c1930ac86fd57c46b0c6d7ca9d34",
+      "version": "25.2.7.2",
+      "url": "https://downloadarchive.documentfoundation.org/libreoffice/old/25.2.7.2/win/x86_64/LibreOffice_25.2.7.2_Win_x86-64.msi",
+      "checksumSource": {
+        "url": "https://downloadarchive.documentfoundation.org/libreoffice/old/25.2.7.2/win/x86_64/LibreOffice_25.2.7.2_Win_x86-64.msi.sha256",
+        "pattern": "^(?<sha256>[0-9a-f]{64})"
+      },
       "archiveType": "msi",
       "destination": "libreoffice"
     }
