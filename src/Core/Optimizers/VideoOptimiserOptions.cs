@@ -146,6 +146,12 @@ public sealed record VideoOptimiserOptions
 
     public double QualitySearchMaxBitrateRatioAggressive { get; init; } = 0.4;
 
+    /// <summary>
+    /// The bitrate cap may push the sampled score at most this far below the target. Beyond that the source is
+    /// already efficient and keeping it beats crushing it.
+    /// </summary>
+    public double QualitySearchCapAllowance { get; init; } = 10;
+
     public VideoEncoderPreset EncoderPreset { get; init; } = VideoEncoderPreset.Auto;
 
     /// <summary>

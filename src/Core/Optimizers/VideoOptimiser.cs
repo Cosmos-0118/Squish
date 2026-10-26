@@ -129,7 +129,11 @@ public sealed class VideoOptimiser : IOptimiser
             }
 
             var savingsPercent = CalculateSavingsPercent(originalSize, optimisedSize);
+
+            // A quality-searched GPU encode already holds the perceptual target; re-encoding it with the software
+            // encoder's fixed CRF because it saved "too little" would trade that guarantee for a blind setting.
             var requiresFallback = plan.UseHardwareAcceleration
+                && !plan.Encoder.ConstantQuality
                 && plan.SoftwareFallback is not null
                 && plan.RequireSizeReduction
                 && (optimisedSize >= originalSize
@@ -165,11 +169,13 @@ public sealed class VideoOptimiser : IOptimiser
             var finalOutput = outputPlan.Destination;
             finalOutput.EnsureParentDirectoryExists();
 
-            // A container change (e.g. MKV -> MP4) is a legitimate reason to ship a file that is not smaller; a re-encode
-            // inside the same container must beat the original or the original stays.
+            // A container change (e.g. MKV -> MP4) is a legitimate reason to ship a file that is not smaller, unless the
+            // codec stays the same (nothing was gained by re-encoding); a re-encode inside the same container must beat
+            // the original or the original stays.
             var sourceExtension = plan.SourcePath.Extension?.TrimStart('.');
             var containerChanged = !string.Equals(sourceExtension, plan.OutputExtension, StringComparison.OrdinalIgnoreCase);
-            var requireSizeCheck = plan.RequireSizeReduction && !containerChanged;
+            var codecChanged = plan.SourceProbe?.NormalizedVideoCodec != CodecVocabulary.NormalizeVideo(plan.Encoder.Codec);
+            var requireSizeCheck = plan.RequireSizeReduction && !(containerChanged && codecChanged);
             if (requireSizeCheck && optimisedSize >= originalSize)
             {
                 context.ReportProgress(100, "Original already optimal");
@@ -205,10 +211,19 @@ public sealed class VideoOptimiser : IOptimiser
 
     private VideoOptimiserPlan ApplyQualitySearch(VideoOptimiserPlan plan, VideoQualitySearchResult search)
     {
-        var encoder = plan.Encoder with { Quality = search.Crf };
+        var encoder = WithSearchedQuality(plan.Encoder, search.Crf);
         var arguments = BuildVideoCodecArguments(_options, encoder, plan.AggressiveQuality, plan.LookaheadFrames, plan.SourceProbe);
         return plan with { Encoder = encoder, VideoCodecArguments = arguments };
     }
+
+    /// <summary>
+    /// The encoder at a quantiser picked by the perceptual search. GPU encoders switch from their bitrate target to
+    /// constant quality, otherwise the searched value would be ignored.
+    /// </summary>
+    internal static VideoEncoderSelection WithSearchedQuality(VideoEncoderSelection encoder, int quality)
+        => encoder.UseHardwareEncoder
+            ? encoder with { Quality = quality, TargetBitrateKbps = null, ConstantQuality = true }
+            : encoder with { Quality = quality };
 
     /// <summary>True when the sampled encode would not be meaningfully smaller than the source's own video stream.</summary>
     private bool ShouldSkipEfficientSource(VideoOptimiserPlan plan, VideoQualitySearchResult search)
@@ -218,8 +233,12 @@ public sealed class VideoOptimiser : IOptimiser
             return false;
         }
 
+        // Same container, or at least the same codec (re-wrapping a stream that is already efficient must not
+        // re-encode it into something bigger).
         var sourceExtension = plan.SourcePath.Extension?.TrimStart('.');
-        if (!string.Equals(sourceExtension, plan.OutputExtension, StringComparison.OrdinalIgnoreCase))
+        var sameContainer = string.Equals(sourceExtension, plan.OutputExtension, StringComparison.OrdinalIgnoreCase);
+        var sameCodec = plan.SourceProbe?.NormalizedVideoCodec == CodecVocabulary.NormalizeVideo(plan.Encoder.Codec);
+        if (!sameContainer && !sameCodec)
         {
             return false;
         }
@@ -922,7 +941,11 @@ public sealed class VideoOptimiser : IOptimiser
             args.Add("-c:v");
             args.Add(selection.VideoEncoder);
 
-            if (usingBitrateTarget)
+            if (selection.ConstantQuality)
+            {
+                args.AddRange(HardwareConstantQuality.Arguments(selection, selection.Quality));
+            }
+            else if (usingBitrateTarget)
             {
                 AppendBitrateArguments(args, selection.TargetBitrateKbps!.Value, options);
             }
@@ -1007,7 +1030,9 @@ public sealed class VideoOptimiser : IOptimiser
 
         if (selection.AdditionalArguments.Count > 0)
         {
-            args.AddRange(selection.AdditionalArguments);
+            // Profile arguments come last, so in constant-quality mode their own rate control (e.g. GpuCqp's fixed
+            // QPs) must not override the searched quantiser.
+            args.AddRange(selection.ConstantQuality ? HardwareConstantQuality.WithoutRateControl(selection.AdditionalArguments) : selection.AdditionalArguments);
         }
 
         AppendColorMetadata(options, sourceProbe, args);
@@ -1884,7 +1909,7 @@ internal sealed class ExternalVideoToolchain : IVideoToolchain
             || extension.Equals("m4v", StringComparison.OrdinalIgnoreCase)
             || extension.Equals("mov", StringComparison.OrdinalIgnoreCase);
 
-    private static (List<string> InputScoped, List<string> EncoderScoped) PartitionCodecArguments(IReadOnlyList<string> arguments)
+    internal static (List<string> InputScoped, List<string> EncoderScoped) PartitionCodecArguments(IReadOnlyList<string> arguments)
     {
         var inputScoped = new List<string>();
         var encoderScoped = new List<string>();

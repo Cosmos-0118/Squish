@@ -330,6 +330,81 @@ public sealed class CrfSearchTests
         Assert.Equal(first.Chosen, capped.Chosen);
         Assert.Equal(before, calls[0]);
     }
+
+    [Fact]
+    public async Task BitrateCapStopsAtTheScoreFloor()
+    {
+        var calls = new int[1];
+        var model = Model(90, 2.6, calls);
+        var first = await CrfSearch.FindAsync(26, 18, 36, 74, -2.6, model, 6, CancellationToken.None);
+
+        // A cap this tight needs a score far below the floor: the search must keep the quality-first choice.
+        var capped = await CrfSearch.EnforceBitrateCapAsync(first!, first!.Chosen.BitrateKbps * 0.1, 36, model, CancellationToken.None, minScore: 64);
+
+        Assert.True(capped.Chosen.Score >= 64);
+        Assert.True(capped.Chosen.Crf >= first.Chosen.Crf);
+        Assert.All(new[] { capped.Chosen }, c => Assert.True(c.Score >= 64));
+    }
+}
+
+public sealed class HardwareConstantQualityTests
+{
+    private static VideoEncoderSelection Gpu(string encoder, VideoCodec codec, params string[] extra)
+        => VideoEncoderSelection.Hardware(codec, encoder, "mp4", "yuv420p", "d3d11va", null, 24, extra, supportsTwoPass: false, suggestedLookahead: 0, sceneCutAware: false)
+            with { TargetBitrateKbps = 5000 };
+
+    [Fact]
+    public void AmfUsesConstantQuantisersAndNoBitrateTarget()
+    {
+        var args = HardwareConstantQuality.Arguments(Gpu("hevc_amf", VideoCodec.Hevc), 28);
+
+        Assert.Equal(new[] { "-rc", "cqp", "-qp_i", "28", "-qp_p", "28", "-qp_b", "30" }, args);
+    }
+
+    [Fact]
+    public void Av1AmfHasNoBFrameQuantiser()
+    {
+        var args = HardwareConstantQuality.Arguments(Gpu("av1_amf", VideoCodec.Av1), 110);
+
+        Assert.DoesNotContain("-qp_b", args);
+    }
+
+    [Fact]
+    public void SearchedQualityReplacesTheBitrateTargetOfGpuEncoders()
+    {
+        var searched = VideoOptimiser.WithSearchedQuality(Gpu("hevc_amf", VideoCodec.Hevc), 30);
+
+        Assert.True(searched.ConstantQuality);
+        Assert.Null(searched.TargetBitrateKbps);
+        Assert.Equal(30, searched.Quality);
+    }
+
+    [Fact]
+    public void SearchedQualityOnlyMovesTheCrfOfSoftwareEncoders()
+    {
+        var software = VideoEncoderSelection.Software(VideoCodec.Hevc, "libx265", "mp4", "yuv420p", 26);
+
+        var searched = VideoOptimiser.WithSearchedQuality(software, 30);
+
+        Assert.False(searched.ConstantQuality);
+        Assert.Equal(30, searched.Quality);
+    }
+
+    [Fact]
+    public void RateControlFlagsAreStrippedFromEncoderProfiles()
+    {
+        var stripped = HardwareConstantQuality.WithoutRateControl(new[] { "-usage", "transcoding", "-rc", "vbr_peak", "-b:v", "6M", "-maxrate", "9M", "-quality", "quality" });
+
+        Assert.Equal(new[] { "-usage", "transcoding", "-quality", "quality" }, stripped);
+    }
+
+    [Fact]
+    public void UnknownEncodersAreNotSearched()
+    {
+        Assert.False(HardwareConstantQuality.TryGetSearchRange(Gpu("mystery_enc", VideoCodec.H264), out _));
+        Assert.True(HardwareConstantQuality.TryGetSearchRange(Gpu("hevc_amf", VideoCodec.Hevc), out var range));
+        Assert.InRange(range.Start, range.Min, range.Max);
+    }
 }
 
 /// <summary>End-to-end runs against a real ffmpeg (skipped when none is installed).</summary>

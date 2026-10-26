@@ -14,7 +14,9 @@
 ## Video
 
 - ffmpeg software encoders (x264, x265 tagged `hvc1`, SVT-AV1, VP9).
-- CRF is found by a secant search on sampled footage scored with SSIMULACRA2 (normal 74, aggressive 64), with a bitrate cap for grainy sources.
+- CRF is found by a secant search on sampled footage scored with SSIMULACRA2 (normal 74, aggressive 64), with a bitrate cap for grainy sources. The cap may lower the sampled score by at most 10 points below the target (`QualitySearchCapAllowance`); past that the source counts as already efficient and is kept.
+- GPU encoders (AMF, NVENC, QSV) go through the same search over their constant-quality quantiser (`-rc cqp` on AMF, `-rc vbr -cq` on NVENC) instead of a fixed fraction of the source bitrate, which cannot tell grainy footage from clean footage. Samples are decoded in software and encoded with the same arguments as the final run.
+- A re-encode that keeps the codec never replaces the original with a larger file, even when the container changes.
 - Frame rate is preserved unless a cap is configured, audio is copied when possible, `+faststart` is applied to MP4/MOV, and 10-bit sources keep 10-bit.
 
 ## Tools
