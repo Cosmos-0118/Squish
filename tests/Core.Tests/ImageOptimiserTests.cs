@@ -613,6 +613,96 @@ public sealed class ImageOptimiserTests
         }
     }
 
+    private static readonly IReadOnlyDictionary<string, object?> Aggressive = new Dictionary<string, object?> { [OptimisationMetadata.ImageAggressive] = true };
+
+    /// <summary>A dithered photographic animation (the kind of GIF people actually make from video clips).</summary>
+    private static FilePath SaveDitheredGif(int frameCount, int width = 160, int height = 120)
+    {
+        var source = FilePath.TempFile("dithered", "gif", addUniqueSuffix: true);
+        var pixels = TestImages.PhotoLikeRgba(width + frameCount * 2, height, seed: 41);
+        using var frames = new MagickImageCollection();
+        for (var i = 0; i < frameCount; i++)
+        {
+            // Pan across a wider photo so consecutive frames differ but stay related.
+            var crop = new byte[width * height * 4];
+            for (var y = 0; y < height; y++)
+            {
+                Buffer.BlockCopy(pixels, (y * (width + frameCount * 2) + i * 2) * 4, crop, y * width * 4, width * 4);
+            }
+
+            var frame = new MagickImage(crop, new PixelReadSettings((uint)width, (uint)height, StorageType.Char, PixelMapping.RGBA));
+            frame.Alpha(AlphaAction.Off);
+            frame.AnimationDelay = 8;
+            frames.Add(frame);
+        }
+
+        frames.Quantize(new QuantizeSettings { Colors = 256, DitherMethod = DitherMethod.FloydSteinberg });
+        frames.Write(source.Value, MagickFormat.Gif);
+        return source;
+    }
+
+    [Fact]
+    public void GifInfoCountsFramesWithoutDecoding()
+    {
+        var source = SaveDitheredGif(frameCount: 90, width: 48, height: 32);
+        try
+        {
+            var info = GifInfo.TryRead(source.Value);
+
+            Assert.NotNull(info);
+            Assert.Equal((48, 32, 90), (info!.Width, info.Height, info.FrameCount));
+            // More frames than ImageMagick is allowed to hold in one list must still be probed and recognised.
+            var probe = ImageIO.Probe(source.Value);
+            Assert.Equal(90, probe!.FrameCount);
+        }
+        finally
+        {
+            TestImages.TryDelete(source, null);
+        }
+    }
+
+    [ToolFact("gifsicle")]
+    public async Task LossyGifShrinksNoisyAnimationsWithinThePerceptualTarget()
+    {
+        var source = SaveDitheredGif(frameCount: 12);
+        var output = default(FilePath?);
+        try
+        {
+            var result = await RunAsync(new ImageOptimiser(new ImageOptimiserOptions { CropSuggestions = CropSuggestionOptions.Disabled }), source, Aggressive);
+
+            Assert.Equal(OptimisationStatus.Succeeded, result.Status);
+            output = result.OutputPath;
+            Assert.Contains("Lossy GIF", result.Message);
+            Assert.True(new FileInfo(output!.Value.Value).Length < new FileInfo(source.Value).Length * 0.9);
+            Assert.Equal(12, new MagickImageCollection(output.Value.Value).Count);
+        }
+        finally
+        {
+            TestImages.TryDelete(source, output);
+        }
+    }
+
+    [ToolFact("gifsicle")]
+    public async Task LongGifsAreOptimisedInsteadOfRejected()
+    {
+        var source = SaveDitheredGif(frameCount: 100, width: 64, height: 48);
+        var output = default(FilePath?);
+        try
+        {
+            var result = await RunAsync(new ImageOptimiser(new ImageOptimiserOptions { CropSuggestions = CropSuggestionOptions.Disabled }), source, Aggressive);
+
+            Assert.Equal(OptimisationStatus.Succeeded, result.Status);
+            output = result.OutputPath;
+            Assert.NotNull(output);
+            Assert.Equal(100, new MagickImageCollection(output!.Value.Value).Count);
+            Assert.True(new FileInfo(output.Value.Value).Length <= new FileInfo(source.Value).Length);
+        }
+        finally
+        {
+            TestImages.TryDelete(source, output);
+        }
+    }
+
     // ---- Conversions & output planning -------------------------------------------------------------------
 
     [Fact]
@@ -678,7 +768,30 @@ public sealed class ImageOptimiserTests
     }
 
     [Fact]
-    public async Task ConvertsWebpPhotoToJpegAndKeepsAlphaWebpAsPng()
+    public async Task ConversionThatWouldGrowTheFileKeepsTheOriginal()
+    {
+        var photo = TestImages.PhotoLikeRgba(Width, Height, seed: 31);
+        var webp = TestImages.Save(photo, Width, Height, "webp", image =>
+        {
+            image.Alpha(AlphaAction.Off);
+            image.Quality = 35;
+        });
+        try
+        {
+            var result = await RunAsync(new ImageOptimiser(BuiltIn), webp);
+
+            Assert.Equal(OptimisationStatus.Succeeded, result.Status);
+            Assert.Equal(webp.Value, result.OutputPath!.Value.Value);
+            Assert.Contains("Already compact", result.Message);
+        }
+        finally
+        {
+            TestImages.TryDelete(webp, null);
+        }
+    }
+
+    [Fact]
+    public async Task ConvertsWebpPhotoToJpegAndKeepsLosslessAlphaWebp()
     {
         var photo = TestImages.PhotoLikeRgba(Width, Height, seed: 27);
         var webpPhoto = TestImages.Save(photo, Width, Height, "webp", image =>
@@ -697,7 +810,8 @@ public sealed class ImageOptimiserTests
             first = a.OutputPath;
             second = b.OutputPath;
             Assert.EndsWith(".jpg", first!.Value.Value, StringComparison.OrdinalIgnoreCase);
-            Assert.EndsWith(".png", second!.Value.Value, StringComparison.OrdinalIgnoreCase);
+            // A lossless WebP is already tighter than the PNG it would become, so it stays as it is.
+            Assert.EndsWith(".webp", second!.Value.Value, StringComparison.OrdinalIgnoreCase);
             Assert.True(ImageIO.DecodeToRaster(second.Value.Value).HasVisibleAlpha());
         }
         finally

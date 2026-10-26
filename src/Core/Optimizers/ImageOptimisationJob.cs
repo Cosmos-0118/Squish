@@ -102,13 +102,16 @@ internal sealed class ImageOptimisationJob : IDisposable
         var convertedFormat = !string.Equals(best.Extension, _source.Extension, StringComparison.OrdinalIgnoreCase)
             && !(IsJpegExtension(best.Extension) && IsJpegExtension(_source.Extension));
 
-        if (_options.RequireSizeImprovement && !convertedFormat)
+        if (_options.RequireSizeImprovement)
         {
-            var minimumSaving = _originalSize * (_options.MinimumSavingsPercent / 100.0);
+            // A format conversion has to actually shrink the file: WebP and AVIF are usually already tighter than the
+            // JPEG or PNG they would become.
+            var minimumSaving = convertedFormat ? 0 : _originalSize * (_options.MinimumSavingsPercent / 100.0);
             if (best.Size >= _originalSize - minimumSaving)
             {
+                var kept = convertedFormat ? "Already compact; converting would not save space" : "Original already optimal";
                 _context.ReportProgress(95, "No size improvement; keeping original");
-                return new OptimisationResult(_request.RequestId, OptimisationStatus.Succeeded, _source, "Original already optimal", elapsed);
+                return new OptimisationResult(_request.RequestId, OptimisationStatus.Succeeded, _source, kept, elapsed);
             }
         }
 
@@ -633,7 +636,18 @@ internal sealed class ImageOptimisationJob : IDisposable
             }
         }
 
-        // Converted files change format, so any valid result counts even if it is bigger than the source.
+        // WebP and AVIF already beat JPEG and PNG at the same quality, so a conversion rarely shrinks them. When none
+        // does, re-encode in the original format instead (Finish keeps the original if that is not smaller either).
+        if (probe.Format is SourceFormat.WebP or SourceFormat.Avif && !keepModernFormat && !candidates.Any(c => c.Size < _originalSize))
+        {
+            var inFormat = await ModernFormatAsync(reference, content, hasAlpha, probe.Format).ConfigureAwait(false);
+            if (inFormat is not null)
+            {
+                candidates.Add(inFormat);
+            }
+        }
+
+        // Converted files change format; Finish decides whether the result is small enough to ship.
         return PickBest(candidates);
     }
 
@@ -711,6 +725,13 @@ internal sealed class ImageOptimisationJob : IDisposable
     // GIF
     // ------------------------------------------------------------------------------------------------------
 
+    // gifsicle --lossy levels, mildest first. Each step trades LZW-friendly colour noise for size; the search keeps the
+    // strongest one whose sampled frames still score above the perceptual target.
+    private static readonly int[] GifLossyLevels = { 8, 14, 20, 28, 40, 60, 90, 140, 200 };
+
+    private const int GifGuardWindow = 72;
+    private const int GifGuardSamples = 8;
+
     private async Task<ImageCandidate?> OptimiseGifAsync(ImageProbe probe)
     {
         _context.ReportProgress(20, "Optimising GIF frames");
@@ -719,47 +740,123 @@ internal sealed class ImageOptimisationJob : IDisposable
             ? null
             : new ImageCandidate(lossless.Value, "gif", $"Optimised GIF ({(_encoders.HasGifsicle ? "gifsicle" : "built-in")})", SafeSize(lossless.Value), false, null);
 
-        if (_aggressive && _encoders.HasGifsicle)
+        if (_encoders.HasGifsicle)
         {
-            var lossy = await _encoders.OptimiseGifAsync(_source, lossy: 80, _token).ConfigureAwait(false);
-            if (lossy is not null && SafeSize(lossy.Value) < (best?.Size ?? _originalSize))
+            ImageCandidate? lossy = null;
+            if (GuardEnabled)
             {
-                var acceptable = true;
-                if (GuardEnabled)
+                lossy = await SearchGifLossyAsync(probe).ConfigureAwait(false);
+            }
+            else if (_aggressive)
+            {
+                var file = await _encoders.OptimiseGifAsync(_source, lossy: 80, _token).ConfigureAwait(false);
+                if (file is not null)
                 {
-                    acceptable = GifLossyIsAcceptable(lossy.Value);
+                    lossy = new ImageCandidate(file.Value, "gif", "Lossy GIF (gifsicle)", SafeSize(file.Value), true, null);
                 }
+            }
 
-                if (acceptable)
-                {
-                    best = new ImageCandidate(lossy.Value, "gif", "Lossy GIF (gifsicle)", SafeSize(lossy.Value), true, null);
-                }
+            if (lossy is not null && lossy.Size < (best?.Size ?? _originalSize))
+            {
+                best = lossy;
             }
         }
 
         return PickBest(best);
     }
 
-    private bool GifLossyIsAcceptable(FilePath candidate)
+    /// <summary>
+    /// Finds the strongest gifsicle lossy level that keeps evenly spaced composited frames above the perceptual
+    /// target. Quality loss from the lossy LZW pass is uniform across an animation, so the leading frames are
+    /// representative and long GIFs stay cheap to judge.
+    /// </summary>
+    private async Task<ImageCandidate?> SearchGifLossyAsync(ImageProbe probe)
+    {
+        var references = await Task.Run(() =>
+        {
+            var frames = ImageIO.DecodeGifSamples(_source.Value, GifGuardWindow, GifGuardSamples);
+            return frames.Count > 0 && frames.All(f => PerceptualReference.IsSupported(f.Frame))
+                ? frames.Select(f => (f.StartTicks, Reference: PerceptualReference.Create(f.Frame))).ToList()
+                : null;
+        }, _token).ConfigureAwait(false);
+
+        if (references is null)
+        {
+            return null;
+        }
+
+        ImageCandidate? best = null;
+        var low = 0;
+        var high = GifLossyLevels.Length - 1;
+        while (low <= high)
+        {
+            _token.ThrowIfCancellationRequested();
+            var mid = (low + high) / 2;
+            var level = GifLossyLevels[mid];
+            var file = await _encoders.OptimiseGifAsync(_source, level, _token).ConfigureAwait(false);
+            var score = file is null ? double.NegativeInfinity : await Task.Run(() => ScoreGifSamples(references, file.Value), _token).ConfigureAwait(false);
+            if (file is not null && score >= _targetScore)
+            {
+                if (best is not null)
+                {
+                    _temp.Release(best.File);
+                }
+
+                best = new ImageCandidate(file.Value, "gif", $"Lossy GIF (gifsicle --lossy={level})", SafeSize(file.Value), true, score);
+                low = mid + 1;
+            }
+            else
+            {
+                if (file is not null)
+                {
+                    _temp.Release(file.Value);
+                }
+
+                high = mid - 1;
+            }
+        }
+
+        return best;
+    }
+
+    /// <summary>Mean SSIMULACRA2 over the sampled frames, or -inf when any single frame falls well short of the target.</summary>
+    private double ScoreGifSamples(IReadOnlyList<(long StartTicks, PerceptualReference Reference)> references, FilePath candidate)
     {
         try
         {
-            using var original = ImageIO.Decode(_source.Value, SourceFormat.Gif, autoOrient: false);
-            using var optimised = ImageIO.Decode(candidate.Value, SourceFormat.Gif, autoOrient: false);
-            var a = ImageIO.ToRaster(original.Image);
-            var b = ImageIO.ToRaster(optimised.Image);
-            if (a.Width != b.Width || a.Height != b.Height || !PerceptualReference.IsSupported(a))
+            var frames = ImageIO.DecodeGifSamples(candidate.Value, GifGuardWindow, GifGuardSamples, references.Select(r => r.StartTicks).ToList());
+            if (frames.Count != references.Count)
             {
-                return false;
+                return double.NegativeInfinity;
             }
 
-            return PerceptualReference.Create(a).Score(b, _token) >= _targetScore;
+            var total = 0d;
+            for (var i = 0; i < frames.Count; i++)
+            {
+                var reference = references[i].Reference.Reference;
+                if (frames[i].Frame.Width != reference.Width || frames[i].Frame.Height != reference.Height)
+                {
+                    return double.NegativeInfinity;
+                }
+
+                var score = references[i].Reference.Score(frames[i].Frame, _token);
+                if (score < _targetScore - GifWorstFrameSlack)
+                {
+                    return double.NegativeInfinity;
+                }
+
+                total += score;
+            }
+
+            return total / frames.Count;
         }
         catch (Exception ex) when (ex is MagickException or InvalidDataException)
         {
-            return false;
+            return double.NegativeInfinity;
         }
     }
+
+    private const double GifWorstFrameSlack = 10;
 
     // ------------------------------------------------------------------------------------------------------
     // Shared search machinery

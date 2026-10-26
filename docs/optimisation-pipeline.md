@@ -9,6 +9,8 @@
    - PNG palettes are searched and judged on every pixel for the same reason; probes run concurrently.
    - JPEG encoders: every chroma layout is searched with both mozjpeg and jpegli (`cjpegli`, adaptive quantisation off) and the smallest passing file wins. jpegli is 5-15% smaller on most photographs and faster; mozjpeg still wins on some.
    - JPEG chroma: photos whose source is already 4:2:0 are re-encoded 4:2:0. Sources that kept more chroma (4:4:4, 4:2:2, PNG/HEIC conversions) are searched at both 4:2:0 and 4:4:4, and the smaller passing result wins. Re-subsampling those often cannot reach the target at any quality.
+   - GIF: `gifsicle -O3` first, then a lossy search over `--lossy` levels (8-200). Eight evenly spaced frames from the first 72 are composited and scored with SSIMULACRA2 against the original, matched by animation time because gifsicle merges identical neighbouring frames; the strongest level whose mean stays above the target ships. The header is walked by hand, so GIFs with more frames than ImageMagick will hold in a list are still handled.
+   - Conversions (WebP/AVIF/HEIC/BMP to JPEG, TIFF to PNG) only ship when the result is smaller than the source. WebP and AVIF that would grow as JPEG are re-encoded in their own format, and kept as they are when that is not smaller either.
 4. Metadata: EXIF/GPS/XMP/IPTC stripped by default; non-sRGB ICC profiles and orientation are kept. A Squish marker prevents repeated re-compression.
 5. When a tool is missing, built-in Magick.NET encoders are used as a fallback.
 

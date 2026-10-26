@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Squish.Core.Shared;
@@ -13,6 +14,9 @@ internal enum ImageColorKind
     Cmyk,
     Other
 }
+
+/// <summary>One composited GIF frame and when (in 1/100 s of animation time) it starts.</summary>
+internal sealed record GifSample(int Index, long StartTicks, RasterImage Frame);
 
 /// <summary>Everything the optimiser wants to know about a source before (and while) decoding it.</summary>
 internal sealed class ImageProbe
@@ -106,7 +110,7 @@ internal static class ImageIO
                 ResourceLimits.Width = 65_536;
                 ResourceLimits.Height = 65_536;
                 ResourceLimits.Area = 1_000_000_000;
-                ResourceLimits.ListLength = 64;
+                ResourceLimits.ListLength = 1024;
                 ResourceLimits.MaxMemoryRequest = 2UL * 1024 * 1024 * 1024;
             }
             catch (Exception ex)
@@ -135,6 +139,11 @@ internal static class ImageIO
                 return new ImageProbe { Format = format, Width = png.Width, Height = png.Height };
             }
 
+            if (format == SourceFormat.Gif && GifInfo.TryRead(path) is { } gif)
+            {
+                return new ImageProbe { Format = format, Width = gif.Width, Height = gif.Height, FrameCount = gif.FrameCount };
+            }
+
             using var stream = OpenRead(path);
             var settings = new MagickReadSettings { Format = ToMagickFormat(format) };
 
@@ -157,6 +166,57 @@ internal static class ImageIO
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// Composites the leading <paramref name="window"/> frames of a GIF (disposal and transparency applied, as a viewer
+    /// would show them) and returns <paramref name="samples"/> of them as flat rasters. With no <paramref name="atTimes"/>
+    /// the samples are evenly spaced by frame; with them, each sample is the frame on screen at that animation time, which
+    /// lets a re-encoded GIF whose identical neighbouring frames were merged be compared like for like.
+    /// </summary>
+    public static IReadOnlyList<GifSample> DecodeGifSamples(string path, int window, int samples, IReadOnlyList<long>? atTimes = null)
+    {
+        EnsureConfigured();
+        using var stream = OpenRead(path);
+        using var frames = new MagickImageCollection();
+        frames.Read(stream, new MagickReadSettings { Format = MagickFormat.Gif, FrameCount = (uint)Math.Max(1, window) });
+        if (frames.Count == 0)
+        {
+            return Array.Empty<GifSample>();
+        }
+
+        if (frames.Count > 1)
+        {
+            frames.Coalesce();
+        }
+
+        var starts = new long[frames.Count];
+        long clock = 0;
+        for (var i = 0; i < frames.Count; i++)
+        {
+            starts[i] = clock;
+            clock += (long)frames[i].AnimationDelay;
+        }
+
+        var indices = new List<int>();
+        if (atTimes is null)
+        {
+            var picks = Math.Min(Math.Max(1, samples), frames.Count);
+            for (var i = 0; i < picks; i++)
+            {
+                indices.Add(picks == 1 ? 0 : (int)Math.Round(i * (frames.Count - 1) / (double)(picks - 1)));
+            }
+        }
+        else
+        {
+            foreach (var time in atTimes)
+            {
+                var index = Array.FindLastIndex(starts, start => start <= time);
+                indices.Add(Math.Max(index, 0));
+            }
+        }
+
+        return indices.Select(index => new GifSample(index, starts[index], ToRaster((MagickImage)frames[index]))).ToList();
     }
 
     /// <summary>Decodes the first frame (animated formats are handled by dedicated code paths).</summary>
