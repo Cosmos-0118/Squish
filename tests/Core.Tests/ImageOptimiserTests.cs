@@ -432,17 +432,13 @@ public sealed class ImageOptimiserTests
     public async Task AnimatedPngIsLeftUntouched()
     {
         var source = FilePath.TempFile("apng", "png", addUniqueSuffix: true);
-        using (var frames = new MagickImageCollection())
+        using (var image = new MagickImage(MagickColors.Red, 64, 64))
         {
-            for (var i = 0; i < 3; i++)
-            {
-                var frame = new MagickImage(i % 2 == 0 ? MagickColors.Red : MagickColors.Blue, 64, 64);
-                frame.AnimationDelay = 10;
-                frames.Add(frame);
-            }
-
-            frames.Write(source.Value, MagickFormat.APng);
+            // Magick's APNG writer shells out to ffmpeg on Windows, so mark a plain PNG as animated by hand.
+            image.Write(source.Value, MagickFormat.Png);
         }
+
+        File.WriteAllBytes(source.Value, WithAnimationControlChunk(File.ReadAllBytes(source.Value)));
 
         var before = File.ReadAllBytes(source.Value);
         try
@@ -457,6 +453,32 @@ public sealed class ImageOptimiserTests
         {
             TestImages.TryDelete(source);
         }
+    }
+
+    private static byte[] WithAnimationControlChunk(byte[] png)
+    {
+        const int afterIhdr = 8 + 4 + 4 + 13 + 4;
+        var chunk = new byte[4 + 4 + 8 + 4];
+        chunk[3] = 8;
+        "acTL"u8.CopyTo(chunk.AsSpan(4));
+        chunk[11] = 3; // frame count
+        var crc = 0xFFFFFFFFu;
+        foreach (var b in chunk.AsSpan(4, 12))
+        {
+            crc ^= b;
+            for (var k = 0; k < 8; k++)
+            {
+                crc = (crc & 1) != 0 ? (crc >> 1) ^ 0xEDB88320u : crc >> 1;
+            }
+        }
+
+        crc = ~crc;
+        chunk[16] = (byte)(crc >> 24);
+        chunk[17] = (byte)(crc >> 16);
+        chunk[18] = (byte)(crc >> 8);
+        chunk[19] = (byte)crc;
+
+        return [.. png.AsSpan(0, afterIhdr), .. chunk, .. png.AsSpan(afterIhdr)];
     }
 
     // ---- GIF -------------------------------------------------------------------------------------------
