@@ -19,28 +19,24 @@ public sealed class OptimisationCoordinator : IAsyncDisposable
     private readonly ConcurrentDictionary<string, OptimisationWorkItem> _workItems = new(StringComparer.Ordinal);
     private readonly int _degreeOfParallelism;
 
-    public OptimisationCoordinator(IEnumerable<IOptimiser> optimisers, int degreeOfParallelism = 2, int queueCapacity = 64)
+    public OptimisationCoordinator(IEnumerable<IOptimiser> optimisers, int degreeOfParallelism = 2)
     {
         if (degreeOfParallelism <= 0)
         {
             throw new ArgumentOutOfRangeException(nameof(degreeOfParallelism));
         }
 
-        if (queueCapacity <= 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(queueCapacity));
-        }
-
         ArgumentNullException.ThrowIfNull(optimisers);
         var optimiserList = optimisers.ToList();
         _degreeOfParallelism = degreeOfParallelism;
         _optimisers = new ConcurrentDictionary<ItemType, IOptimiser>(optimiserList.Select(o => new KeyValuePair<ItemType, IOptimiser>(o.ItemType, o)), EqualityComparer<ItemType>.Default);
-        _channel = Channel.CreateBounded<OptimisationWorkItem>(new BoundedChannelOptions(queueCapacity)
+        // Unbounded: Enqueue is synchronous, so a bounded queue could only reject work once full. Folder drops,
+        // watch folders and CLI batches routinely queue hundreds of files; each queued item is just a request record.
+        _channel = Channel.CreateUnbounded<OptimisationWorkItem>(new UnboundedChannelOptions
         {
             SingleWriter = false,
             SingleReader = false,
-            AllowSynchronousContinuations = false,
-            FullMode = BoundedChannelFullMode.Wait
+            AllowSynchronousContinuations = false
         });
 
         for (var i = 0; i < _degreeOfParallelism; i++)
@@ -75,9 +71,10 @@ public sealed class OptimisationCoordinator : IAsyncDisposable
 
     private OptimisationTicket EnqueueWorkItem(OptimisationWorkItem workItem)
     {
+        // Track before publishing: a worker may finish (and clear the state) before TryWrite returns.
+        _workItems[workItem.Request.RequestId] = workItem;
         if (_channel.Writer.TryWrite(workItem))
         {
-            _workItems[workItem.Request.RequestId] = workItem;
             return new OptimisationTicket(workItem.Request.RequestId, workItem.Completion.Task);
         }
 
