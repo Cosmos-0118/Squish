@@ -199,6 +199,43 @@ public sealed class ImagingTests
     }
 
     [Fact]
+    public void FullCoverageReferenceJudgesEveryPixelExactlyOnce()
+    {
+        var large = new RasterImage(2000, 1500, TestImages.PhotoLikeRgba(2000, 1500));
+        var full = PerceptualReference.CreateFullCoverage(large);
+
+        var covered = new int[large.Width * large.Height];
+        foreach (var tile in full.Tiles)
+        {
+            for (var y = tile.Y; y < tile.Y + tile.Height; y++)
+            {
+                for (var x = tile.X; x < tile.X + tile.Width; x++)
+                {
+                    covered[y * large.Width + x]++;
+                }
+            }
+        }
+
+        Assert.All(covered, count => Assert.Equal(1, count));
+        Assert.Equal(100.0, full.Score(large), 3);
+
+        // A distortion confined to one corner still drags the full-coverage score down.
+        var damaged = (byte[])large.Pixels.Clone();
+        for (var y = 1100; y < 1500; y++)
+        {
+            for (var x = 1500; x < 2000; x++)
+            {
+                var i = (y * 2000 + x) * 4;
+                damaged[i] = (byte)(damaged[i] / 16 * 16);
+                damaged[i + 1] = (byte)(damaged[i + 1] / 16 * 16);
+                damaged[i + 2] = (byte)(damaged[i + 2] / 16 * 16);
+            }
+        }
+
+        Assert.True(full.Score(new RasterImage(2000, 1500, damaged)) < 90);
+    }
+
+    [Fact]
     public void MosaicScoreMatchesTileScoreForIdenticalContent()
     {
         var large = new RasterImage(2000, 1500, TestImages.PhotoLikeRgba(2000, 1500));

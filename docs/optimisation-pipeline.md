@@ -4,7 +4,10 @@
 
 1. Decode safely with Magick.NET (magic-byte sniffing, explicit format, resource limits).
 2. Lossless pass first: `jpegtran -optimize -progressive` for JPEG, `oxipng` for PNG.
-3. Lossy pass guarded by a perceptual score (SSIMULACRA2, built in). The quality is bisected on sampled tiles until the score is at the threshold (normal 80, aggressive 68). Encoders: mozjpeg `cjpeg`, `pngquant` (aggressive), optional WebP/AVIF conversion (`cwebp`, `avifenc`).
+3. Lossy pass guarded by a perceptual score (SSIMULACRA2, built in). The quality is bisected on sampled tiles until the score is at the threshold (normal 80, aggressive 68). Encoders: mozjpeg `cjpeg`, `pngquant` (256-colour palette; PNGs that are already indexed are only re-quantised in aggressive mode), optional WebP/AVIF conversion (`cwebp`, `avifenc`).
+   - The search runs on a mosaic of sampled tiles, but the shipped file is verified on every pixel (1024 px tiles covering the frame). Small sampled tiles miss low-frequency error (chroma re-subsampling, palette banding), which SSIMULACRA2 only sees at its coarse scales. When verification fails, the tile search is re-run against a target raised by the measured bias.
+   - PNG palettes are searched and judged on every pixel for the same reason; probes run concurrently.
+   - JPEG chroma: photos whose source is already 4:2:0 are re-encoded 4:2:0. Sources that kept more chroma (4:4:4, 4:2:2, PNG/HEIC conversions) are searched at both 4:2:0 and 4:4:4, and the smaller passing result wins. Re-subsampling those often cannot reach the target at any quality.
 4. Metadata: EXIF/GPS/XMP/IPTC stripped by default; non-sRGB ICC profiles and orientation are kept. A Squish marker prevents repeated re-compression.
 5. When a tool is missing, built-in Magick.NET encoders are used as a fallback.
 

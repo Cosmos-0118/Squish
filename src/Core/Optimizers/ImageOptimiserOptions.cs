@@ -100,7 +100,10 @@ public sealed record AdvancedCodecPreferences
 
     public string? OxipngPath { get; init; }
 
-    /// <summary>pngquant: lossy 256-colour palette conversion for graphics (only used in aggressive mode).</summary>
+    /// <summary>
+    /// pngquant: lossy 256-colour palette conversion, shipped only when it meets the perceptual target and beats the
+    /// lossless result. Already-indexed PNGs are re-quantised in aggressive mode only. Turn off to keep PNGs lossless.
+    /// </summary>
     public bool EnablePngquant { get; init; } = true;
 
     public string? PngquantPath { get; init; }

@@ -86,11 +86,19 @@ public sealed class ImageOptimiserTests
             noise[i] = 255;
         }
 
-        var source = TestImages.SaveJpeg(noise, Width, Height, quality: 92);
+        // Entropy-optimised progressive source: re-encoding at the same quality cannot save bytes on its own.
+        var source = TestImages.SaveJpeg(noise, Width, Height, quality: 92, image =>
+        {
+            image.Settings.SetDefine(MagickFormat.Jpeg, "optimize-coding", "true");
+            image.Settings.Interlace = Interlace.Plane;
+        });
         var before = File.ReadAllBytes(source.Value);
         try
         {
-            var result = await RunAsync(new ImageOptimiser(BuiltIn), source);
+            // At the default target a full-chroma re-encode of noise can legitimately pass (~81), so ask for a score that
+            // no re-encode below the source quality can reach.
+            var strict = BuiltIn with { PerceptualGuard = PerceptualGuardOptions.Default with { MinimumScore = 90 } };
+            var result = await RunAsync(new ImageOptimiser(strict), source);
 
             Assert.Equal(OptimisationStatus.Succeeded, result.Status);
             Assert.Equal(source.Value, result.OutputPath!.Value.Value);
@@ -426,6 +434,73 @@ public sealed class ImageOptimiserTests
         {
             TestImages.TryDelete(source, output);
         }
+    }
+
+    [ToolFact("pngquant")]
+    public async Task NormalModeQuantisesGraphicPngsWithinTheTarget()
+    {
+        // Anti-aliased edges give a screenshot-like picture with thousands of colours that still fits a palette.
+        var source = TestImages.SavePng(TestImages.GraphicRgba(Width, Height), Width, Height, image => image.GaussianBlur(0, 1.2));
+        var reference = ImageIO.DecodeToRaster(source.Value);
+        var output = default(FilePath?);
+        try
+        {
+            var options = new ImageOptimiserOptions { AdvancedCodecs = AdvancedCodecPreferences.Disabled with { EnablePngquant = true } };
+            var lossless = await RunAsync(new ImageOptimiser(BuiltIn), CopyOf(source));
+            var result = await RunAsync(new ImageOptimiser(options), source);
+
+            Assert.Equal(OptimisationStatus.Succeeded, result.Status);
+            output = result.OutputPath;
+            Assert.Contains("palette", result.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.True(new FileInfo(output!.Value.Value).Length < new FileInfo(lossless.OutputPath!.Value.Value).Length);
+            Assert.True(PngInfo.TryRead(output.Value.Value)!.IsIndexed);
+
+            var score = PerceptualReference.Create(reference).Score(ImageIO.DecodeToRaster(output.Value.Value));
+            Assert.True(score >= options.PerceptualGuard.MinimumScore, $"score {score} below target");
+        }
+        finally
+        {
+            TestImages.TryDelete(source, output);
+        }
+    }
+
+    [ToolFact("pngquant")]
+    public async Task NormalModeDoesNotRequantiseAnIndexedPng()
+    {
+        var pixels = TestImages.GraphicRgba(Width, Height);
+        var source = TestImages.SavePng(pixels, Width, Height, image =>
+        {
+            image.Quantize(new QuantizeSettings { Colors = 64, DitherMethod = DitherMethod.No });
+            image.Settings.SetDefine(MagickFormat.Png, "format", "png8");
+        });
+        var output = default(FilePath?);
+        try
+        {
+            Assert.True(PngInfo.TryRead(source.Value)!.IsIndexed);
+            var options = new ImageOptimiserOptions { AdvancedCodecs = AdvancedCodecPreferences.Disabled with { EnablePngquant = true } };
+            var result = await RunAsync(new ImageOptimiser(options), source);
+
+            Assert.Equal(OptimisationStatus.Succeeded, result.Status);
+            output = result.OutputPath;
+            Assert.DoesNotContain("palette", result.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal(TestImages.ReadRgba(source.Value), TestImages.ReadRgba(output!.Value.Value));
+        }
+        finally
+        {
+            TestImages.TryDelete(source, output);
+        }
+    }
+
+    [Theory]
+    [InlineData("2x2,1x1,1x1", true)]
+    [InlineData("1x1,1x1,1x1", false)]
+    [InlineData("2x1,1x1,1x1", false)]
+    [InlineData("1x2,1x2,1x2", false)]
+    [InlineData("1x1", false)]
+    [InlineData(null, null)]
+    public void ParsesJpegChromaSubsampling(string? samplingFactor, bool? expected)
+    {
+        Assert.Equal(expected, ImageIO.IsChroma420(samplingFactor));
     }
 
     [Fact]

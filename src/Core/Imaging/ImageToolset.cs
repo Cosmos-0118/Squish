@@ -54,38 +54,58 @@ internal sealed class ImageToolset
     }
 }
 
-/// <summary>Tracks temp files created during one optimisation so every exit path cleans up after itself.</summary>
+/// <summary>
+/// Tracks temp files created during one optimisation so every exit path cleans up after itself. Thread-safe: a job
+/// runs independent encoder searches concurrently.
+/// </summary>
 internal sealed class TempFileScope : IDisposable
 {
     private readonly List<string> _files = new();
+    private readonly object _gate = new();
 
     public FilePath New(string prefix, string extension)
     {
         var path = FilePath.TempFile(prefix, extension, addUniqueSuffix: true);
-        _files.Add(path.Value);
+        lock (_gate)
+        {
+            _files.Add(path.Value);
+        }
+
         return path;
     }
 
     public FilePath Track(FilePath path)
     {
-        _files.Add(path.Value);
+        lock (_gate)
+        {
+            _files.Add(path.Value);
+        }
+
         return path;
     }
 
     public void Release(FilePath path)
     {
         Delete(path.Value);
-        _files.Remove(path.Value);
+        lock (_gate)
+        {
+            _files.Remove(path.Value);
+        }
     }
 
     public void Dispose()
     {
-        foreach (var file in _files)
+        string[] files;
+        lock (_gate)
+        {
+            files = _files.ToArray();
+            _files.Clear();
+        }
+
+        foreach (var file in files)
         {
             Delete(file);
         }
-
-        _files.Clear();
     }
 
     private static void Delete(string path)

@@ -52,6 +52,9 @@ internal sealed class DecodedImage : IDisposable
     /// <summary>Estimated JPEG quality (1-100) of the source, or 0 when unknown.</summary>
     public int EstimatedJpegQuality { get; init; }
 
+    /// <summary>True when the source JPEG stores chroma at 4:2:0, false for 4:4:4 / 4:2:2 / other, null when unknown or not a JPEG.</summary>
+    public bool? JpegChroma420 { get; init; }
+
     public int FrameCount { get; init; } = 1;
 
     public ImageColorKind ColorKind { get; init; } = ImageColorKind.Rgb;
@@ -232,6 +235,7 @@ internal static class ImageIO
         {
             SourceOrientation = orientation,
             EstimatedJpegQuality = estimatedQuality,
+            JpegChroma420 = format == SourceFormat.Jpeg ? IsChroma420(image.GetAttribute("jpeg:sampling-factor")) : null,
             FrameCount = frameCount,
             ColorKind = colorKind,
             IccProfile = icc?.ToByteArray(),
@@ -251,6 +255,24 @@ internal static class ImageIO
     }
 
     /// <summary>Flattens the decoded image to 8-bit sRGB RGBA for analysis and metrics.</summary>
+    /// <summary>Parses libjpeg's "jpeg:sampling-factor" attribute, e.g. "2x2,1x1,1x1" (4:2:0) or "1x1,1x1,1x1" (4:4:4).</summary>
+    internal static bool? IsChroma420(string? samplingFactor)
+    {
+        if (string.IsNullOrWhiteSpace(samplingFactor))
+        {
+            return null;
+        }
+
+        var components = samplingFactor.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (components.Length < 3)
+        {
+            // Greyscale or unusual layouts: nothing to subsample.
+            return false;
+        }
+
+        return components[0] == "2x2" && components[1] == "1x1" && components[2] == "1x1";
+    }
+
     public static RasterImage ToRaster(MagickImage image)
     {
         using var clone = (MagickImage)image.Clone();
