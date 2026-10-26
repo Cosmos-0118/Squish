@@ -4,7 +4,7 @@ The `clop` executable mirrors the macOS CLI while tapping into the Windows optim
 
 ## Global Notes
 
-- Requires Windows 7 or later with .NET 8 runtime installed.
+- Requires Windows 7 or later with .NET 10 runtime installed.
 - All commands emit non-zero exit codes when failures occur.
 - JSON output uses camelCase to match macOS responses.
 

@@ -11,6 +11,13 @@ on:
         description: Optional note for manual runs
         required: false
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-test:
     runs-on: windows-latest
@@ -18,10 +25,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up .NET 8 SDK
+      - name: Set up .NET SDK (global.json)
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 8.0.x
+          global-json-file: global.json
 
       - name: Cache NuGet packages
         uses: actions/cache@v4

@@ -7,13 +7,13 @@
 #define MyAppExeName "ClopWindows.exe"
 #define MyAppAumid "Cosmos0118.Clop"
 #ifndef AppBuildOutput
-  #define AppBuildOutput "..\\src\\App\\bin\\Release\\net8.0-windows10.0.19041.0\\win-x64\\publish"
+  #define AppBuildOutput "..\\src\\App\\bin\\Release\\net10.0-windows10.0.19041.0\\win-x64\\publish"
 #endif
 #ifndef CliBuildOutput
-  #define CliBuildOutput "..\\src\\CliBridge\\bin\\Release\\net8.0\\win-x64\\publish"
+  #define CliBuildOutput "..\\src\\CliBridge\\bin\\Release\\net10.0\\win-x64\\publish"
 #endif
 #ifndef ExplorerBuildOutput
-  #define ExplorerBuildOutput "..\\src\\Integrations\\Explorer\\bin\\Release\\net8.0-windows10.0.19041.0\\win-x64\\publish"
+  #define ExplorerBuildOutput "..\\src\\Integrations\\Explorer\\bin\\Release\\net10.0-windows10.0.19041.0\\win-x64\\publish"
 #endif
 #ifndef ToolsRoot
   #define ToolsRoot "..\\tools"
