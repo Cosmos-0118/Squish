@@ -11,10 +11,13 @@
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="Resources/Theme.Tokens.xaml" />
                 <ResourceDictionary Source="Resources/Theme.Default.xaml" />
+                <ResourceDictionary Source="Resources/Brand.xaml" />
                 <ResourceDictionary Source="Resources/Controls/ModernButton.xaml" />
                 <ResourceDictionary Source="Resources/Controls/ModernComboBox.xaml" />
                 <ResourceDictionary Source="Resources/Controls/ModernCheckBox.xaml" />
+                <ResourceDictionary Source="Resources/Controls/ModernInputs.xaml" />
                 <ResourceDictionary Source="Resources/Controls/ModernScrollBar.xaml" />
+                <ResourceDictionary Source="Resources/Styles.xaml" />
             </ResourceDictionary.MergedDictionaries>
 
             <DataTemplate DataType="{x:Type vm:OnboardingViewModel}">

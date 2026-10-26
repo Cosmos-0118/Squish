@@ -8,89 +8,108 @@
              mc:Ignorable="d"
              d:DesignHeight="600"
              d:DesignWidth="800">
-    <ScrollViewer VerticalScrollBarVisibility="Auto">
-        <Grid Margin="32" MinHeight="520">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="*"/>
-                <RowDefinition Height="Auto"/>
-            </Grid.RowDefinitions>
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <Border Style="{StaticResource PageColumn}">
+            <StackPanel>
+                <!-- Step switcher shown in place of the sidebar list when the sidebar is a rail. -->
+                <ListBox ItemsSource="{Binding Steps}"
+                         SelectedItem="{Binding SelectedStep}"
+                         DisplayMemberPath="Title"
+                         Margin="0,0,0,18"
+                         AutomationProperties.HelpText="{loc:Loc onboarding.steps.list.help}">
+                    <ListBox.Style>
+                        <Style TargetType="ListBox" BasedOn="{StaticResource ChipList}">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding DataContext.IsSidebarRail, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ListBox.Style>
+                </ListBox>
 
-            <Grid Grid.Row="0">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="16"/>
-                    <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
-                <Border Grid.Column="0"
-                        Background="{DynamicResource Brush.SurfaceBackground}"
-                        BorderBrush="{DynamicResource Brush.SurfaceBorder}"
-                        BorderThickness="3"
-                        CornerRadius="20"
-                        Padding="12">
-                    <Image Source="/Assets/Brand/squish-icon.png"
-                           Width="96"
-                           Height="96"
-                           Stretch="Uniform"
-                           RenderOptions.BitmapScalingMode="HighQuality"/>
-                </Border>
-                <StackPanel Grid.Column="2">
-                    <TextBlock Text="{Binding Title}" FontSize="28" FontWeight="Semibold" Foreground="{DynamicResource Brush.PrimaryText}" TextWrapping="Wrap"/>
-                    <TextBlock Text="{Binding Subtitle}" Margin="0,6,0,0" FontSize="14" Foreground="{DynamicResource Brush.SecondaryText}" TextWrapping="Wrap"/>
-                </StackPanel>
-            </Grid>
-
-            <Border Grid.Row="1"
-                    Background="{DynamicResource Brush.SurfaceSecondaryBackground}"
-                    BorderBrush="{DynamicResource Brush.SurfaceBorder}"
-                    BorderThickness="3"
-                    CornerRadius="20"
-                    Padding="24"
-                    Margin="0,24,0,0">
                 <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
-
-                    <TextBlock Grid.Row="0"
-                               Text="{Binding SelectedStep.Title}"
-                               FontSize="22"
-                               FontWeight="SemiBold"
-                               Foreground="{DynamicResource Brush.PrimaryText}"
-                               TextWrapping="Wrap"/>
-                    <TextBlock Grid.Row="1"
-                               Text="{Binding SelectedStep.Description}"
-                               Margin="0,10,0,0"
-                               FontSize="14"
-                               Foreground="{DynamicResource Brush.SecondaryText}"
-                               TextWrapping="Wrap"/>
-
-                    <ItemsControl Grid.Row="2" Margin="0,18,0,0" ItemsSource="{Binding SelectedStep.Details}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <DockPanel Margin="0,0,0,10">
-                                    <Border Width="8" Height="8" CornerRadius="4" Background="{DynamicResource Brush.PrimaryButtonBackground}" Margin="0,6,10,0"/>
-                                    <TextBlock Text="{Binding}" Foreground="{DynamicResource Brush.SecondaryText}" FontSize="13" TextWrapping="Wrap"/>
-                                </DockPanel>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Image Source="{StaticResource Image.SquishLogo}" Width="48" Height="48" VerticalAlignment="Top" />
+                    <StackPanel Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Title}" Style="{StaticResource Text.PageTitle}" />
+                        <TextBlock Text="{Binding Subtitle}" Style="{StaticResource Text.PageSubtitle}" Margin="0,4,0,0" />
+                    </StackPanel>
                 </Grid>
-            </Border>
 
-            <Button Grid.Row="2"
-                    Content="{loc:Loc onboarding.cta}"
-                    Padding="28,12"
-                    Margin="0,20,0,0"
-                    HorizontalAlignment="Center"
-                    Background="{DynamicResource Brush.PrimaryButtonBackground}"
-                    Foreground="{DynamicResource Brush.PrimaryButtonForeground}"
-                    FontWeight="SemiBold"
-                    BorderThickness="0"
-                    Cursor="Hand"
-                    Command="{Binding GetStartedCommand}"/>
-        </Grid>
+                <Border Style="{StaticResource Card}" Margin="0,28,0,0">
+                    <StackPanel>
+                        <StackPanel Margin="24,22,24,20">
+                            <Border Style="{StaticResource Badge}">
+                                <TextBlock Text="{Binding StepPosition}" />
+                            </Border>
+                            <TextBlock Text="{Binding SelectedStep.Title}"
+                                       Margin="0,12,0,0"
+                                       FontSize="18"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource Brush.PrimaryText}"
+                                       TextWrapping="Wrap" />
+                            <TextBlock Text="{Binding SelectedStep.Description}"
+                                       Style="{StaticResource Text.Body}"
+                                       FontSize="13.5"
+                                       Margin="0,6,0,0" />
+
+                            <ItemsControl Margin="0,18,0,0" ItemsSource="{Binding SelectedStep.Details}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="0,0,0,10">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Style="{StaticResource Text.Icon}"
+                                                       FontSize="12"
+                                                       VerticalAlignment="Top"
+                                                       Margin="0,3,10,0"
+                                                       Text="&#xE73E;"
+                                                       Foreground="{DynamicResource Brush.StatusSuccess}" />
+                                            <TextBlock Grid.Column="1"
+                                                       Text="{Binding}"
+                                                       FontSize="13"
+                                                       Foreground="{DynamicResource Brush.PrimaryText}"
+                                                       TextWrapping="Wrap" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+
+                        <Border Style="{StaticResource Divider}" />
+                        <Grid Margin="24,14">
+                            <Button Style="{StaticResource GhostButton}"
+                                    HorizontalAlignment="Left"
+                                    Content="{loc:Loc onboarding.back}"
+                                    Command="{Binding PreviousStepCommand}" />
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                <Button Content="{loc:Loc onboarding.next}" Command="{Binding NextStepCommand}">
+                                    <Button.Style>
+                                        <Style TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsLastStep}" Value="True">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
+                                <Button Style="{StaticResource PrimaryButton}"
+                                        Margin="8,0,0,0"
+                                        Content="{loc:Loc onboarding.cta}"
+                                        Command="{Binding GetStartedCommand}" />
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </Border>
     </ScrollViewer>
 </UserControl>

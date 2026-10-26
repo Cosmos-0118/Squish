@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Squish mark. Keep in sync with src/App/Resources/Brand.xaml. -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6BFFC2"/>
+      <stop offset="1" stop-color="#19C383"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="232" fill="url(#tile)"/>
+  <path d="M316 236 L512 352 L708 236 M316 788 L512 672 L708 788" fill="none" stroke="#07140E" stroke-width="80" stroke-linecap="round" stroke-linejoin="round"/>
+  <ellipse cx="512" cy="512" rx="236" ry="80" fill="#07140E"/>
+</svg>

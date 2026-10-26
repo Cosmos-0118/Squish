@@ -1,0 +1,46 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!--
+        Squish mark, drawn on a 1024 x 1024 canvas: a pill squeezed between two inward chevrons.
+        Keep in sync with Assets/Brand/squish-icon.svg (the source for the PNG master and Squish.ico).
+    -->
+    <Color x:Key="Color.Brand.TileTop">#FF6BFFC2</Color>
+    <Color x:Key="Color.Brand.TileBottom">#FF19C383</Color>
+    <Color x:Key="Color.Brand.Glyph">#FF07140E</Color>
+
+    <PathGeometry x:Key="Geometry.Brand.Chevrons"
+                  Figures="M 316,236 L 512,352 L 708,236 M 316,788 L 512,672 L 708,788" />
+    <EllipseGeometry x:Key="Geometry.Brand.Pill" Center="512,512" RadiusX="236" RadiusY="80" />
+
+    <DrawingImage x:Key="Image.SquishLogo">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing>
+                    <GeometryDrawing.Brush>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                            <GradientStop Offset="0" Color="{StaticResource Color.Brand.TileTop}" />
+                            <GradientStop Offset="1" Color="{StaticResource Color.Brand.TileBottom}" />
+                        </LinearGradientBrush>
+                    </GeometryDrawing.Brush>
+                    <GeometryDrawing.Geometry>
+                        <RectangleGeometry Rect="0,0,1024,1024" RadiusX="232" RadiusY="232" />
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Geometry="{StaticResource Geometry.Brand.Chevrons}">
+                    <GeometryDrawing.Pen>
+                        <Pen Thickness="80" StartLineCap="Round" EndLineCap="Round" LineJoin="Round">
+                            <Pen.Brush>
+                                <SolidColorBrush Color="{StaticResource Color.Brand.Glyph}" />
+                            </Pen.Brush>
+                        </Pen>
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <GeometryDrawing Geometry="{StaticResource Geometry.Brand.Pill}">
+                    <GeometryDrawing.Brush>
+                        <SolidColorBrush Color="{StaticResource Color.Brand.Glyph}" />
+                    </GeometryDrawing.Brush>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+</ResourceDictionary>

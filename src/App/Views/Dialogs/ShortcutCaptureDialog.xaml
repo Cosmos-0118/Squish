@@ -8,24 +8,26 @@
         ResizeMode="NoResize"
         WindowStyle="ToolWindow"
         ShowInTaskbar="False"
+        UseLayoutRounding="True"
+        Background="{DynamicResource Brush.SurfaceBackground}"
+        FontFamily="{DynamicResource Font.Body}"
+        FontSize="13"
         PreviewKeyDown="OnPreviewKeyDown">
-    <Border Background="{DynamicResource Brush.SurfaceBackground}" Padding="24">
-        <StackPanel>
-            <TextBlock Text="{loc:Loc shortcuts.capture.title}" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}"/>
-            <TextBlock x:Name="ScopeText" Margin="0,8,0,0" Foreground="{DynamicResource Brush.SecondaryText}"/>
+    <StackPanel Margin="24,22,24,20" MinWidth="320">
+        <TextBlock Text="{loc:Loc shortcuts.capture.title}" FontSize="15" FontWeight="SemiBold" Foreground="{DynamicResource Brush.PrimaryText}" />
+        <TextBlock x:Name="ScopeText" Margin="0,4,0,0" Style="{StaticResource Text.Body}" />
 
-            <Border Margin="0,16,0,0" Background="{DynamicResource Brush.CardBackground}" BorderBrush="{DynamicResource Brush.SurfaceAltBorder}" BorderThickness="1" CornerRadius="8" Padding="12">
-                <StackPanel>
-                    <TextBlock x:Name="CurrentText" Foreground="{DynamicResource Brush.PrimaryText}"/>
-                    <TextBlock x:Name="DefaultText" Margin="0,4,0,0" Foreground="{DynamicResource Brush.MutedText}"/>
-                    <TextBlock Text="{loc:Loc shortcuts.capture.instructions}" Margin="0,8,0,0" Foreground="{DynamicResource Brush.PlaceholderText}" FontSize="12"/>
-                </StackPanel>
-            </Border>
-
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,24,0,0">
-                <Button Content="{loc:Loc shortcuts.capture.disable}" Padding="16,6" Click="OnDisableClick"/>
-                <Button Content="{loc:Loc shortcuts.capture.cancel}" Padding="16,6" Click="OnCancelClick" Margin="8,0,0,0"/>
+        <Border Margin="0,16,0,0" Style="{StaticResource Card}" Background="{DynamicResource Brush.SurfaceSecondaryBackground}" Padding="14,12">
+            <StackPanel>
+                <TextBlock x:Name="CurrentText" Style="{StaticResource Text.Title}" />
+                <TextBlock x:Name="DefaultText" Margin="0,2,0,0" Style="{StaticResource Text.Caption}" />
             </StackPanel>
+        </Border>
+        <TextBlock Text="{loc:Loc shortcuts.capture.instructions}" Margin="0,10,0,0" Style="{StaticResource Text.Caption}" />
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
+            <Button Content="{loc:Loc shortcuts.capture.disable}" Style="{StaticResource GhostButton}" Click="OnDisableClick" />
+            <Button Content="{loc:Loc shortcuts.capture.cancel}" Click="OnCancelClick" Margin="8,0,0,0" />
         </StackPanel>
-    </Border>
+    </StackPanel>
 </Window>

@@ -25,7 +25,7 @@ public sealed class OnboardingViewModel : ObservableObject
                 new[]
                 {
                     "Use Browse files or drag and drop files directly into the window.",
-                    "You can queue multiple images, videos, and PDFs in one action.",
+                    "You can queue multiple images and videos in one action.",
                     "Squish starts processing immediately and tracks each item live."
                 }),
             new(
@@ -52,7 +52,7 @@ public sealed class OnboardingViewModel : ObservableObject
                 new[]
                 {
                     "Enable Clipboard and watched folders in Settings.",
-                    "Pick image, video, and PDF folders for automatic optimization.",
+                    "Pick image and video folders for automatic optimization.",
                     "Tune output and preservation options for your workflow."
                 })
         };
@@ -61,6 +61,8 @@ public sealed class OnboardingViewModel : ObservableObject
         _selectedStep = _steps.FirstOrDefault();
 
         GetStartedCommand = new RelayCommand(_ => CompleteOnboarding());
+        NextStepCommand = new RelayCommand(_ => MoveStep(1), _ => !IsLastStep);
+        PreviousStepCommand = new RelayCommand(_ => MoveStep(-1), _ => SelectedStepIndex > 0);
         _hasCompleted = SettingsHost.Get(SettingsRegistry.FinishedOnboarding);
     }
 
@@ -75,8 +77,29 @@ public sealed class OnboardingViewModel : ObservableObject
     public OnboardingStepViewModel? SelectedStep
     {
         get => _selectedStep;
-        set => SetProperty(ref _selectedStep, value);
+        set
+        {
+            if (!SetProperty(ref _selectedStep, value))
+            {
+                return;
+            }
+
+            OnPropertyChanged(nameof(StepPosition));
+            OnPropertyChanged(nameof(IsLastStep));
+            NextStepCommand.RaiseCanExecuteChanged();
+            PreviousStepCommand.RaiseCanExecuteChanged();
+        }
     }
+
+    public string StepPosition => string.Format(
+        System.Globalization.CultureInfo.CurrentCulture,
+        SquishStringCatalog.Get("onboarding.stepPosition"),
+        SelectedStepIndex + 1,
+        _steps.Count);
+
+    public bool IsLastStep => SelectedStepIndex >= _steps.Count - 1;
+
+    private int SelectedStepIndex => _selectedStep is null ? 0 : _steps.IndexOf(_selectedStep);
 
     public bool HasCompleted
     {
@@ -85,6 +108,16 @@ public sealed class OnboardingViewModel : ObservableObject
     }
 
     public RelayCommand GetStartedCommand { get; }
+
+    public RelayCommand NextStepCommand { get; }
+
+    public RelayCommand PreviousStepCommand { get; }
+
+    private void MoveStep(int delta)
+    {
+        var index = Math.Clamp(SelectedStepIndex + delta, 0, _steps.Count - 1);
+        SelectedStep = _steps[index];
+    }
 
     private void CompleteOnboarding()
     {

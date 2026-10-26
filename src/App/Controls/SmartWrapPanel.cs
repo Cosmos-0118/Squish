@@ -72,7 +72,7 @@ public class SmartWrapPanel : System.Windows.Controls.Panel
         double width = double.IsInfinity(availableSize.Width) || double.IsNaN(availableSize.Width)
             ? (MinColumnWidth * InternalChildren.Count) + (HorizontalSpacing * Math.Max(0, InternalChildren.Count - 1))
             : availableSize.Width;
-        width = Math.Max(MinColumnWidth, Math.Max(0, width - horizontalPadding));
+        width = Math.Max(0, width - horizontalPadding);
 
         int columns = CalculateColumnCount(width);
         double childWidth = CalculateChildWidth(width, columns);
@@ -121,15 +121,35 @@ public class SmartWrapPanel : System.Windows.Controls.Panel
         double horizontalPadding = padding.Left + padding.Right;
         double verticalPadding = padding.Top + padding.Bottom;
 
-        double width = Math.Max(MinColumnWidth, Math.Max(0, finalSize.Width - horizontalPadding));
+        double width = Math.Max(0, finalSize.Width - horizontalPadding);
         int columns = CalculateColumnCount(width);
         double childWidth = CalculateChildWidth(width, columns);
+
+        // Every child in a row is stretched to the tallest one so cards line up.
+        var rowHeights = new System.Collections.Generic.List<double>();
+        int index = 0;
+        foreach (UIElement child in InternalChildren)
+        {
+            if (child == null)
+            {
+                continue;
+            }
+
+            if (index % columns == 0)
+            {
+                rowHeights.Add(0);
+            }
+
+            rowHeights[^1] = Math.Max(rowHeights[^1], child.DesiredSize.Height);
+            index++;
+        }
 
         double x = padding.Left;
         double y = padding.Top;
         double totalHeight = padding.Top;
         double lineHeight = 0;
         int colIndex = 0;
+        int rowIndex = 0;
 
         foreach (UIElement child in InternalChildren)
         {
@@ -138,7 +158,7 @@ public class SmartWrapPanel : System.Windows.Controls.Panel
                 continue;
             }
 
-            double childHeight = child.DesiredSize.Height;
+            double childHeight = rowHeights[rowIndex];
             Rect rect = new(x, y, childWidth, childHeight);
             child.Arrange(rect);
 
@@ -152,6 +172,7 @@ public class SmartWrapPanel : System.Windows.Controls.Panel
                 totalHeight = y;
                 lineHeight = 0;
                 colIndex = 0;
+                rowIndex++;
             }
             else
             {
@@ -177,7 +198,7 @@ public class SmartWrapPanel : System.Windows.Controls.Panel
 
     private int CalculateColumnCount(double availableWidth)
     {
-        var totalWidth = Math.Max(MinColumnWidth, availableWidth);
+        var totalWidth = availableWidth;
         double requiredWidth = MinColumnWidth + HorizontalSpacing;
         int columns = (int)Math.Floor((totalWidth + HorizontalSpacing) / requiredWidth);
         return Math.Max(1, columns);
@@ -192,6 +213,6 @@ public class SmartWrapPanel : System.Windows.Controls.Panel
 
         double totalSpacing = HorizontalSpacing * (columns - 1);
         double width = (availableWidth - totalSpacing) / columns;
-        return Math.Max(MinColumnWidth, width);
+        return Math.Max(0, width);
     }
 }

@@ -4,7 +4,7 @@
 
 1. Decode safely with Magick.NET (magic-byte sniffing, explicit format, resource limits).
 2. Lossless pass first: `jpegtran -optimize -progressive` for JPEG, `oxipng` for PNG.
-3. Lossy pass guarded by a perceptual score (SSIMULACRA2, built in). The quality is bisected on sampled tiles until the score is at the threshold (normal 80, aggressive 68). Encoders: mozjpeg `cjpeg`, `pngquant` (256-colour palette; PNGs that are already indexed are only re-quantised in aggressive mode), optional WebP/AVIF conversion (`cwebp`, `avifenc`).
+3. Lossy pass guarded by a perceptual score (SSIMULACRA2, built in). The quality is bisected on sampled tiles until the score is at the threshold (normal 74, aggressive 68; the score is relative to the decoded source, so already-compressed downloads need the lower normal target to shrink meaningfully). Encoders: mozjpeg `cjpeg`, `pngquant` (256-colour palette; PNGs that are already indexed are only re-quantised in aggressive mode), optional WebP/AVIF conversion (`cwebp`, `avifenc`).
    - The search runs on a mosaic of sampled tiles, but the shipped file is verified on every pixel (1024 px tiles covering the frame). Small sampled tiles miss low-frequency error (chroma re-subsampling, palette banding), which SSIMULACRA2 only sees at its coarse scales. When verification fails, the tile search is re-run against a target raised by the measured bias.
    - PNG palettes are searched and judged on every pixel for the same reason; probes run concurrently.
    - JPEG encoders: every chroma layout is searched with both mozjpeg and jpegli (`cjpegli`, adaptive quantisation off) and the smallest passing file wins. jpegli is 5-15% smaller on most photographs and faster; mozjpeg still wins on some.

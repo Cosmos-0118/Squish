@@ -2,6 +2,7 @@ using System;
 using System.Drawing;
 using System.Windows;
 using System.Windows.Interop;
+using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Resources;
 using Squish.App.Infrastructure;
@@ -13,6 +14,7 @@ namespace Squish.App;
 public partial class MainWindow : Window
 {
     private readonly KeyboardShortcutService _shortcutService;
+    private readonly MainWindowViewModel _viewModel;
     private static readonly Uri WindowIconUri = new("pack://application:,,,/Squish;component/Assets/Brand/Squish.ico", UriKind.RelativeOrAbsolute);
 
     public MainWindow(MainWindowViewModel viewModel, KeyboardShortcutService shortcutService)
@@ -20,15 +22,37 @@ public partial class MainWindow : Window
         InitializeComponent();
         ApplyWindowIcon();
         DataContext = viewModel;
+        _viewModel = viewModel;
         ShortcutCatalog.ApplyMainWindowBindings(InputBindings, viewModel);
         _shortcutService = shortcutService;
         Loaded += OnLoaded;
+        SizeChanged += (_, e) => _viewModel.UpdateLayoutWidth(e.NewSize.Width);
+        SourceInitialized += (_, _) => ApplyTitleBarTheme();
+        ThemeManager.ThemeApplied += OnThemeApplied;
+        Closed += (_, _) => ThemeManager.ThemeApplied -= OnThemeApplied;
     }
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
         Loaded -= OnLoaded;
         _shortcutService.Attach(this);
+    }
+
+    private void OnThemeApplied(object? sender, EventArgs e) => ApplyTitleBarTheme();
+
+    /// <summary>Uses the dark Windows title bar whenever the active theme has a dark window background.</summary>
+    private void ApplyTitleBarTheme()
+    {
+        var handle = new WindowInteropHelper(this).Handle;
+        if (handle == IntPtr.Zero)
+        {
+            return;
+        }
+
+        var isDark = TryFindResource("Brush.WindowBackground") is SolidColorBrush brush
+            && (0.2126 * brush.Color.R + 0.7152 * brush.Color.G + 0.0722 * brush.Color.B) < 128;
+        var value = new[] { isDark ? 1 : 0 };
+        _ = NativeMethods.DwmSetWindowAttribute(handle, NativeMethods.DWMWA_USE_IMMERSIVE_DARK_MODE, value, sizeof(int));
     }
 
     private void ApplyWindowIcon()
@@ -51,5 +75,14 @@ public partial class MainWindow : Window
         {
             // Ignore failures and fall back to default window icon.
         }
+    }
+
+    private static class NativeMethods
+    {
+        public const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
+
+        [System.Runtime.InteropServices.DefaultDllImportSearchPaths(System.Runtime.InteropServices.DllImportSearchPath.System32)]
+        [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
+        public static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, int[] attrValue, int attrSize);
     }
 }

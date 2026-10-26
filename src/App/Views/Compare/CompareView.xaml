@@ -4,50 +4,177 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:loc="clr-namespace:Squish.App.Localization"
              mc:Ignorable="d"
              d:DesignHeight="600"
              d:DesignWidth="800">
-        <Grid AllowDrop="True"
-            DragOver="OnDragOver"
-            Drop="OnDropFiles">
-        <Canvas IsHitTestVisible="False" Opacity="0.08">
-            <Path Stroke="{DynamicResource Brush.SecondaryText}" StrokeThickness="2" Data="M 80 80 L 88 96 L 104 104 L 88 112 L 80 128 L 72 112 L 56 104 L 72 96 Z"/>
-            <Path Stroke="{DynamicResource Brush.SecondaryText}" StrokeThickness="2" Data="M 650 110 L 658 126 L 674 134 L 658 142 L 650 158 L 642 142 L 626 134 L 642 126 Z"/>
-            <Path Stroke="{DynamicResource Brush.SecondaryText}" StrokeThickness="2" Data="M 560 420 L 566 432 L 578 438 L 566 444 L 560 456 L 554 444 L 542 438 L 554 432 Z"/>
-            <Path Stroke="{DynamicResource Brush.SecondaryText}" StrokeThickness="2" Data="M 180 440 L 186 452 L 198 458 L 186 464 L 180 476 L 174 464 L 162 458 L 174 452 Z"/>
-            <Path Stroke="{DynamicResource Brush.SecondaryText}" StrokeThickness="2" Data="M 340 180 L 346 192 L 358 198 L 346 204 L 340 216 L 334 204 L 322 198 L 334 192 Z"/>
-            <Path Stroke="{DynamicResource Brush.SecondaryText}" StrokeThickness="2" Data="M 720 360 L 726 372 L 738 378 L 726 384 L 720 396 L 714 384 L 702 378 L 714 372 Z"/>
-        </Canvas>
+    <!-- The whole page accepts drops, not just the drop zone. -->
+    <Grid AllowDrop="True"
+          Background="Transparent"
+          DragOver="OnDragOver"
+          DragEnter="OnDragEnter"
+          DragLeave="OnDragLeave"
+          Drop="OnDropFiles">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <Border Style="{StaticResource PageColumn}" MaxWidth="880">
+                <StackPanel>
+                    <StackPanel Margin="0,0,0,20">
+                        <TextBlock Text="{loc:Loc navigation.compare.title}" Style="{StaticResource Text.PageTitle}" />
+                        <TextBlock Text="{loc:Loc compare.subtitle}" Style="{StaticResource Text.PageSubtitle}" />
+                    </StackPanel>
 
-        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,20,0,20">
-            <Button Command="{Binding BrowseForFilesCommand}"
-                    Cursor="Hand"
-                    Background="{DynamicResource Brush.PrimaryButtonBackground}"
-                    Foreground="{DynamicResource Brush.PrimaryButtonForeground}"
-                    BorderThickness="3"
-                    BorderBrush="{DynamicResource Brush.NavigationBorder}"
-                    Padding="36,16"
-                    FontSize="22"
-                    FontWeight="SemiBold">
-                <Button.Template>
-                    <ControlTemplate TargetType="Button">
-                            <Border CornerRadius="20"
-                                Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    <!-- Drop zone -->
+                    <Grid AutomationProperties.HelpText="{loc:Loc compare.dropHint.accessible}">
+                        <Grid.Style>
+                            <Style TargetType="Grid">
+                                <Setter Property="Height" Value="300" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding DataContext.IsCompactLayout, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                                        <Setter Property="Height" Value="220" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Grid.Style>
+                        <Rectangle x:Name="DropZone"
+                                   RadiusX="12"
+                                   RadiusY="12"
+                                   StrokeThickness="1.5"
+                                   StrokeDashArray="5 4"
+                                   SnapsToDevicePixels="True"
+                                   Fill="{DynamicResource Brush.DropZoneBackground}"
+                                   Stroke="{DynamicResource Brush.DropZoneBorder}" />
+                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Margin="24">
+                            <Border Width="48"
+                                    Height="48"
+                                    CornerRadius="12"
+                                    HorizontalAlignment="Center"
+                                    Background="{DynamicResource Brush.CardBackground}"
+                                    BorderBrush="{DynamicResource Brush.CardBorder}"
+                                    BorderThickness="1">
+                                <TextBlock Style="{StaticResource Text.Icon}"
+                                           FontSize="20"
+                                           Text="&#xE898;"
+                                           Foreground="{DynamicResource Brush.PrimaryText}" />
+                            </Border>
+                            <TextBlock Text="{loc:Loc compare.dropTitle}"
+                                       Margin="0,16,0,0"
+                                       HorizontalAlignment="Center"
+                                       TextAlignment="Center"
+                                       FontSize="15"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource Brush.PrimaryText}" />
+                            <TextBlock Text="{loc:Loc compare.dropSubtitle}"
+                                       Style="{StaticResource Text.Body}"
+                                       Margin="0,4,0,0"
+                                       HorizontalAlignment="Center"
+                                       TextAlignment="Center" />
+                            <Button Style="{StaticResource PrimaryButton}"
+                                    Margin="0,18,0,0"
+                                    HorizontalAlignment="Center"
+                                    Padding="16,0"
+                                    Content="{loc:Loc compare.browse}"
+                                    Command="{Binding BrowseForFilesCommand}"
+                                    AutomationProperties.Name="{loc:Loc compare.browse.automation}" />
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- Recent results -->
+                    <DockPanel Margin="0,28,0,0">
+                        <Grid DockPanel.Dock="Top" Margin="0,0,0,10">
+                            <TextBlock Text="{loc:Loc compare.recent}" Style="{StaticResource Text.SectionLabel}" Margin="0" VerticalAlignment="Center" />
+                            <Button HorizontalAlignment="Right"
+                                    Style="{StaticResource GhostButton}"
+                                    MinHeight="28"
+                                    Content="{loc:Loc compare.cancelActive}"
+                                    Command="{Binding CancelActiveRequestsCommand}"
+                                    AutomationProperties.Name="{loc:Loc compare.cancelActive.automation}"
+                                    Visibility="{Binding HasActiveRequests, Converter={StaticResource BoolToVisibility}}" />
+                        </Grid>
+
+                        <Border Style="{StaticResource Card}">
+                            <Grid>
+                                    <ItemsControl ItemsSource="{Binding RecentItems}"
+                                                  AutomationProperties.HelpText="{loc:Loc compare.recent.list.help}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border x:Name="Row"
+                                                        Background="Transparent"
+                                                        BorderBrush="{DynamicResource Brush.Divider}"
+                                                        BorderThickness="0,1,0,0"
+                                                        Padding="14,10">
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="Auto" />
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <Border Width="32"
+                                                                Height="32"
+                                                                CornerRadius="6"
+                                                                Background="{DynamicResource Brush.BadgeBackground}">
+                                                            <TextBlock Style="{StaticResource Text.Icon}"
+                                                                       FontSize="14"
+                                                                       Text="&#xE8A5;"
+                                                                       Foreground="{DynamicResource Brush.SecondaryText}" />
+                                                        </Border>
+                                                        <StackPanel Grid.Column="1" Margin="12,0,12,0" VerticalAlignment="Center">
+                                                            <TextBlock Text="{Binding FileName}"
+                                                                       FontWeight="Medium"
+                                                                       Foreground="{DynamicResource Brush.PrimaryText}"
+                                                                       TextTrimming="CharacterEllipsis"
+                                                                       ToolTip="{Binding OutputPath}" />
+                                                            <TextBlock Text="{Binding SizeSummary}"
+                                                                       Style="{StaticResource Text.Caption}"
+                                                                       Margin="0,2,0,0"
+                                                                       TextWrapping="NoWrap"
+                                                                       TextTrimming="CharacterEllipsis" />
+                                                        </StackPanel>
+                                                        <Button x:Name="ShowInFolder"
+                                                                Grid.Column="2"
+                                                                Style="{StaticResource GhostButton}"
+                                                                MinHeight="28"
+                                                                Content="{loc:Loc compare.showInFolder}"
+                                                                Opacity="0"
+                                                                Command="{Binding DataContext.OpenRecentItemFolderCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                                CommandParameter="{Binding OutputPath}" />
+                                                    </Grid>
+                                                </Border>
+                                                <DataTemplate.Triggers>
+                                                    <DataTrigger Binding="{Binding RelativeSource={RelativeSource PreviousData}}" Value="{x:Null}">
+                                                        <Setter TargetName="Row" Property="BorderThickness" Value="0" />
+                                                    </DataTrigger>
+                                                    <Trigger SourceName="Row" Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="Row" Property="Background" Value="{DynamicResource Brush.CardHoverBackground}" />
+                                                        <Setter TargetName="ShowInFolder" Property="Opacity" Value="1" />
+                                                    </Trigger>
+                                                    <Trigger SourceName="ShowInFolder" Property="IsKeyboardFocused" Value="True">
+                                                        <Setter TargetName="ShowInFolder" Property="Opacity" Value="1" />
+                                                    </Trigger>
+                                                </DataTemplate.Triggers>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+
+                                <TextBlock Text="{loc:Loc compare.recent.empty}"
+                                           Margin="16,18"
+                                           HorizontalAlignment="Center"
+                                           TextAlignment="Center">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock" BasedOn="{StaticResource Text.Body}">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding RecentItems.Count}" Value="0">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </Grid>
                         </Border>
-                    </ControlTemplate>
-                </Button.Template>
-                Browse files
-            </Button>
-
-            <TextBlock Text="or drop files anywhere in this window"
-                       Margin="0,18,0,0"
-                       FontSize="14"
-                       Foreground="{DynamicResource Brush.SecondaryText}"
-                       HorizontalAlignment="Center"
-                       TextAlignment="Center"/>
-        </StackPanel>
+                    </DockPanel>
+                </StackPanel>
+            </Border>
+        </ScrollViewer>
     </Grid>
 </UserControl>

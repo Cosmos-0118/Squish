@@ -30,6 +30,10 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     private bool _replaceOptimisedFilesInPlace;
     private bool _deleteOriginalAfterConversion;
     private bool _forceFullImageOptimisations;
+    private bool _aggressiveImageCompression;
+    private bool _downscaleLargeImages;
+    private bool _allowWebpOutput;
+    private bool _allowAvifOutput;
     private bool _suppressStoreUpdates;
     private readonly Dictionary<ShortcutId, ShortcutPreferenceViewModel> _shortcutLookup;
     private readonly FloatingHudController _hudController;
@@ -376,6 +380,67 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>Lower perceptual target for JPEG, PNG and GIF (the same flags the global hotkey toggles).</summary>
+    public bool AggressiveImageCompression
+    {
+        get => _aggressiveImageCompression;
+        set
+        {
+            if (SetProperty(ref _aggressiveImageCompression, value) && !_suppressStoreUpdates)
+            {
+                foreach (var key in AggressiveImageSettings)
+                {
+                    SettingsHost.Set(key, value);
+                }
+            }
+        }
+    }
+
+    public bool DownscaleLargeImages
+    {
+        get => _downscaleLargeImages;
+        set
+        {
+            if (SetProperty(ref _downscaleLargeImages, value) && !_suppressStoreUpdates)
+            {
+                SettingsHost.Set(SettingsRegistry.DownscaleRetinaImages, value);
+            }
+        }
+    }
+
+    public bool AllowWebpOutput
+    {
+        get => _allowWebpOutput;
+        set
+        {
+            if (SetProperty(ref _allowWebpOutput, value) && !_suppressStoreUpdates)
+            {
+                SettingsHost.Set(SettingsRegistry.AllowWebpImageOutput, value);
+            }
+        }
+    }
+
+    public bool AllowAvifOutput
+    {
+        get => _allowAvifOutput;
+        set
+        {
+            if (SetProperty(ref _allowAvifOutput, value) && !_suppressStoreUpdates)
+            {
+                SettingsHost.Set(SettingsRegistry.AllowAvifImageOutput, value);
+            }
+        }
+    }
+
+    private static readonly SettingKey<bool>[] AggressiveImageSettings =
+    {
+        SettingsRegistry.UseAggressiveOptimisationJpeg,
+        SettingsRegistry.UseAggressiveOptimisationPng,
+        SettingsRegistry.UseAggressiveOptimisationGif
+    };
+
+    private static bool ReadAggressiveImageCompression() => AggressiveImageSettings.All(SettingsHost.Get);
+
     public FloatingHudPlacement FloatingHudPlacement
     {
         get => _floatingHudPlacement;
@@ -418,6 +483,10 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         EnableAutomaticImageOptimisations = SettingsHost.Get(SettingsRegistry.EnableAutomaticImageOptimisations);
         EnableAutomaticVideoOptimisations = SettingsHost.Get(SettingsRegistry.EnableAutomaticVideoOptimisations);
         ForceFullImageOptimisations = SettingsHost.Get(SettingsRegistry.ForceFullImageOptimisations);
+        AggressiveImageCompression = ReadAggressiveImageCompression();
+        DownscaleLargeImages = SettingsHost.Get(SettingsRegistry.DownscaleRetinaImages);
+        AllowWebpOutput = SettingsHost.Get(SettingsRegistry.AllowWebpImageOutput);
+        AllowAvifOutput = SettingsHost.Get(SettingsRegistry.AllowAvifImageOutput);
         RefreshDirectoryCollections();
         var themeMode = SettingsHost.Get(SettingsRegistry.AppThemeMode);
         SelectedThemeOption = ThemeOptions.FirstOrDefault(option => option.Mode == themeMode) ?? ThemeOptions.FirstOrDefault();
@@ -488,6 +557,18 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
                 break;
             case var name when name == SettingsRegistry.ForceFullImageOptimisations.Name:
                 ForceFullImageOptimisations = SettingsHost.Get(SettingsRegistry.ForceFullImageOptimisations);
+                break;
+            case var name when AggressiveImageSettings.Any(key => key.Name == name):
+                AggressiveImageCompression = ReadAggressiveImageCompression();
+                break;
+            case var name when name == SettingsRegistry.DownscaleRetinaImages.Name:
+                DownscaleLargeImages = SettingsHost.Get(SettingsRegistry.DownscaleRetinaImages);
+                break;
+            case var name when name == SettingsRegistry.AllowWebpImageOutput.Name:
+                AllowWebpOutput = SettingsHost.Get(SettingsRegistry.AllowWebpImageOutput);
+                break;
+            case var name when name == SettingsRegistry.AllowAvifImageOutput.Name:
+                AllowAvifOutput = SettingsHost.Get(SettingsRegistry.AllowAvifImageOutput);
                 break;
             case var name when name == SettingsRegistry.ImageDirs.Name:
             case var name2 when name2 == SettingsRegistry.VideoDirs.Name:
