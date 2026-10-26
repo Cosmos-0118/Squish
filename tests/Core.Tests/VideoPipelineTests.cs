@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Squish.Core.Optimizers;
+using Squish.Core.Settings;
 using Squish.Core.Shared;
 using Xunit;
 
@@ -31,13 +32,13 @@ public sealed class VideoPlanTests
         return new VideoProbeInfo("mov,mp4,m4a,3gp,3g2,mj2", "QuickTime / MOV", duration, 8_200_000, 10_000_000, video, audioStream);
     }
 
-    private static async Task<VideoOptimiserPlan> PlanAsync(VideoProbeInfo probe, VideoOptimiserOptions? options = null, IReadOnlyDictionary<string, object?>? metadata = null, string extension = ".mp4")
+    private static async Task<VideoOptimiserPlan> PlanAsync(VideoProbeInfo probe, VideoOptimiserOptions? options = null, IReadOnlyDictionary<string, object?>? metadata = null, string extension = ".mp4", VideoHardwareCapabilities? hardware = null)
     {
         var source = FilePath.TempFile("plan-test", extension, addUniqueSuffix: true);
         File.WriteAllBytes(source.Value, new byte[4096]);
         var toolchain = new CapturingToolchain();
         var optimiser = new VideoOptimiser(
-            (options ?? VideoOptimiserOptions.Default) with { RequireSmallerSize = false, EnableQualitySearch = false, HardwareOverride = VideoHardwareCapabilities.CpuOnly },
+            (options ?? VideoOptimiserOptions.Default) with { RequireSmallerSize = false, EnableQualitySearch = false, HardwareOverride = hardware ?? VideoHardwareCapabilities.CpuOnly },
             toolchain,
             new FixedProbe(probe));
         try
@@ -83,12 +84,40 @@ public sealed class VideoPlanTests
     [Fact]
     public async Task HevcInMp4IsTaggedHvc1AndStays8BitFor8BitSources()
     {
-        var plan = await PlanAsync(Probe());
+        var plan = await PlanAsync(Probe(), VideoOptimiserOptions.Default with { PreferAv1 = false });
 
         Assert.Equal(VideoCodec.Hevc, plan.Encoder.Codec);
         Assert.Equal("yuv420p", plan.Encoder.PixelFormat);
         var args = plan.VideoCodecArguments.ToList();
         Assert.Equal("hvc1", args[args.IndexOf("-tag:v") + 1]);
+    }
+
+    [Fact]
+    public async Task SvtAv1IsTheDefaultAndStaysInMp4()
+    {
+        var plan = await PlanAsync(Probe());
+
+        Assert.Equal(VideoCodec.Av1, plan.Encoder.Codec);
+        Assert.False(plan.Encoder.UseHardwareEncoder);
+        Assert.Equal("libsvtav1", plan.Encoder.VideoEncoder);
+        Assert.Equal("mp4", plan.OutputExtension);
+    }
+
+    [Fact]
+    public async Task HevcIsUsedWhenFfmpegHasNoSvtAv1()
+    {
+        var noAv1 = VideoHardwareCapabilities.CpuOnly with { SupportsSoftwareAv1 = false };
+        var plan = await PlanAsync(Probe(), VideoOptimiserOptions.Default with { HardwareOverride = noAv1 }, hardware: noAv1);
+
+        Assert.Equal(VideoCodec.Hevc, plan.Encoder.Codec);
+    }
+
+    [Fact]
+    public async Task TheCpuPresetKeepsTheCompatibleCodec()
+    {
+        var plan = await PlanAsync(Probe(), VideoOptimiserOptions.Default with { EncoderPreset = VideoEncoderPreset.Cpu });
+
+        Assert.Equal(VideoCodec.Hevc, plan.Encoder.Codec);
     }
 
     [Fact]
@@ -444,7 +473,8 @@ public sealed class RealFfmpegVideoTests : IDisposable
             FfprobePath = ToolAvailability.Ffprobe!,
             HardwareOverride = VideoHardwareCapabilities.CpuOnly,
             EnableQualitySearch = false,
-            RequireSmallerSize = true
+            RequireSmallerSize = true,
+            PreferAv1 = false
         };
 
         var optimiser = new VideoOptimiser(options);

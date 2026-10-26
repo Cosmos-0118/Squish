@@ -778,7 +778,8 @@ public sealed class VideoOptimiser : IOptimiser
     {
         return extension switch
         {
-            "mp4" or "mov" or "m4v" => codec is VideoCodec.H264 or VideoCodec.Hevc,
+            "mp4" or "m4v" => codec is VideoCodec.H264 or VideoCodec.Hevc or VideoCodec.Av1,
+            "mov" => codec is VideoCodec.H264 or VideoCodec.Hevc,
             "mkv" => true,
             "webm" => codec == VideoCodec.Vp9,
             _ => true
@@ -1121,10 +1122,18 @@ public sealed class VideoOptimiser : IOptimiser
 
     private static VideoEncoderSelection SelectEncoder(VideoOptimiserOptions options, VideoHardwareCapabilities hardware, bool aggressive, bool forceMp4, string requestedExtension, VideoCodec? overrideCodec, VideoEncoderPreset preset, VideoProbeInfo? probe)
     {
-        var candidates = BuildCodecPriorityList(options, aggressive, requestedExtension, overrideCodec);
+        var candidates = BuildCodecPriorityList(options, aggressive, requestedExtension, overrideCodec, preset);
         foreach (var codec in candidates)
         {
+            // Hardware AV1 encoders are far less efficient than SVT-AV1, so the automatic choice stays in software.
+            var softwareAv1 = codec == VideoCodec.Av1 && preset == VideoEncoderPreset.Auto && hardware.SupportsSoftwareAv1;
+            if (codec == VideoCodec.Av1 && !hardware.SupportsSoftwareAv1 && preset is VideoEncoderPreset.Auto or VideoEncoderPreset.Cpu)
+            {
+                continue;
+            }
+
             if (preset != VideoEncoderPreset.Cpu
+                && !softwareAv1
                 && TrySelectHardwareEncoder(options, hardware, codec, aggressive, forceMp4, requestedExtension, preset, out var hardwareSelection))
             {
                 return hardwareSelection;
@@ -1141,7 +1150,7 @@ public sealed class VideoOptimiser : IOptimiser
             ?? VideoEncoderSelection.Software(VideoCodec.H264, options.SoftwareEncoder, ResolveContainerForCodec(VideoCodec.H264, requestedExtension, forceMp4), "yuv420p", AdjustSoftwareCrf(options.SoftwareCrf, aggressive), Array.Empty<string>(), true, true, options.SoftwareLookaheadFrames, true);
     }
 
-    private static IEnumerable<VideoCodec> BuildCodecPriorityList(VideoOptimiserOptions options, bool aggressive, string requestedExtension, VideoCodec? overrideCodec)
+    private static IEnumerable<VideoCodec> BuildCodecPriorityList(VideoOptimiserOptions options, bool aggressive, string requestedExtension, VideoCodec? overrideCodec, VideoEncoderPreset preset)
     {
         var seen = new HashSet<VideoCodec>();
         if (overrideCodec.HasValue)
@@ -1150,7 +1159,9 @@ public sealed class VideoOptimiser : IOptimiser
             yield return overrideCodec.Value;
         }
 
-        if (options.PreferAv1WhenAggressive && aggressive && seen.Add(VideoCodec.Av1))
+        // The CPU preset is the compatibility choice (x264/x265) and keeps AV1 for aggressive mode only.
+        var defaultToAv1 = options.PreferAv1 && preset != VideoEncoderPreset.Cpu;
+        if ((defaultToAv1 || (options.PreferAv1WhenAggressive && aggressive)) && seen.Add(VideoCodec.Av1))
         {
             yield return VideoCodec.Av1;
         }

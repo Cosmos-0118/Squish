@@ -106,6 +106,13 @@ public sealed record VideoOptimiserOptions
 
     public int HardwareQualityVp9 { get; init; } = 28;
 
+    /// <summary>
+    /// Encode with software SVT-AV1 by default: at equal SSIMULACRA2 it is 40-60% smaller than x265 and the GPU encoders,
+    /// at about x265's speed. Falls back to HEVC when ffmpeg has no libsvtav1. Choose a GPU <see cref="EncoderPreset"/>
+    /// to keep hardware encoding instead.
+    /// </summary>
+    public bool PreferAv1 { get; init; } = true;
+
     public bool PreferAv1WhenAggressive { get; init; } = true;
 
     public bool PreferVp9ForWebm { get; init; } = true;

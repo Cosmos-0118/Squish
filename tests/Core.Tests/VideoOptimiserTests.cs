@@ -113,6 +113,7 @@ public sealed class VideoOptimiserTests : IDisposable
         var options = VideoOptimiserOptions.Default with
         {
             ForceMp4 = false,
+            PreferAv1 = false,
             PreferAv1WhenAggressive = true,
             HardwareOverride = hardware,
             RequireSmallerSize = false
@@ -133,7 +134,8 @@ public sealed class VideoOptimiserTests : IDisposable
         Assert.Equal(OptimisationStatus.Succeeded, result.Status);
         var plan = Assert.Single(toolchain.TranscodePlans);
         Assert.Equal(VideoCodec.Av1, plan.Encoder.Codec);
-        Assert.Equal("mkv", plan.OutputExtension);
+        Assert.False(plan.Encoder.UseHardwareEncoder);
+        Assert.Equal("libsvtav1", plan.Encoder.VideoEncoder);
     }
 
     [Fact]

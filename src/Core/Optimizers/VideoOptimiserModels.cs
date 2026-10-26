@@ -187,7 +187,8 @@ public sealed record VideoHardwareCapabilities(
     bool SupportsAv1Qsv,
     bool SupportsHevcNvenc,
     bool SupportsHevcAmf,
-    bool SupportsHevcQsv)
+    bool SupportsHevcQsv,
+    bool SupportsSoftwareAv1 = true)
 {
     public static VideoHardwareCapabilities CpuOnly { get; } = new(false, false, false, false, false, false, false, false, false, false);
 
@@ -246,7 +247,8 @@ public static class VideoHardwareDetector
                     SupportsAv1Qsv: hasQsvDriver && encoders.Any(line => line.Contains("av1_qsv", StringComparison.OrdinalIgnoreCase)),
                     SupportsHevcNvenc: hasNvDriver && encoders.Any(line => line.Contains("hevc_nvenc", StringComparison.OrdinalIgnoreCase)),
                     SupportsHevcAmf: hasAmfDriver && encoders.Any(line => line.Contains("hevc_amf", StringComparison.OrdinalIgnoreCase)),
-                    SupportsHevcQsv: hasQsvDriver && encoders.Any(line => line.Contains("hevc_qsv", StringComparison.OrdinalIgnoreCase)));
+                    SupportsHevcQsv: hasQsvDriver && encoders.Any(line => line.Contains("hevc_qsv", StringComparison.OrdinalIgnoreCase)),
+                    SupportsSoftwareAv1: encoders.Any(line => line.Contains("libsvtav1", StringComparison.OrdinalIgnoreCase)));
 
                 _cached = caps;
                 _cachedKey = cacheKey;

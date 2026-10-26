@@ -13,7 +13,7 @@
 
 ## Video
 
-- ffmpeg software encoders (x264, x265 tagged `hvc1`, SVT-AV1, VP9).
+- ffmpeg software encoders. SVT-AV1 (10-bit, in MP4/MKV) is the default: at equal SSIMULACRA2 it is 40-60% smaller than x265 and the GPU encoders at about x265's speed. Falls back to x265 (tagged `hvc1`) when ffmpeg has no libsvtav1; the CPU encoder preset keeps x265/x264 for compatibility, and a GPU preset keeps hardware HEVC. VP9 stays for WebM sources.
 - CRF is found by a secant search on sampled footage scored with SSIMULACRA2 (normal 74, aggressive 64), with a bitrate cap for grainy sources. The cap may lower the sampled score by at most 10 points below the target (`QualitySearchCapAllowance`); past that the source counts as already efficient and is kept.
 - GPU encoders (AMF, NVENC, QSV) go through the same search over their constant-quality quantiser (`-rc cqp` on AMF, `-rc vbr -cq` on NVENC) instead of a fixed fraction of the source bitrate, which cannot tell grainy footage from clean footage. Samples are decoded in software and encoded with the same arguments as the final run.
 - A re-encode that keeps the codec never replaces the original with a larger file, even when the container changes.
