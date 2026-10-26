@@ -13,6 +13,8 @@ internal sealed class ImageToolset
 
     public string? Jpegtran { get; init; }
 
+    public string? Cjpegli { get; init; }
+
     public string? Oxipng { get; init; }
 
     public string? Pngquant { get; init; }
@@ -34,6 +36,9 @@ internal sealed class ImageToolset
                 : null,
             Jpegtran = preferences.EnableMozJpeg
                 ? ExternalToolResolver.Resolve("jpegtran-static", "mozjpeg", "SQUISH_JPEGTRAN", preferences.JpegtranPath, "jpegtran")
+                : null,
+            Cjpegli = preferences.EnableJpegli
+                ? ExternalToolResolver.Resolve("cjpegli", "jpegli", "SQUISH_CJPEGLI", preferences.JpegliPath)
                 : null,
             Oxipng = preferences.EnableOxipng
                 ? ExternalToolResolver.Resolve("oxipng", "oxipng", "SQUISH_OXIPNG", preferences.OxipngPath)

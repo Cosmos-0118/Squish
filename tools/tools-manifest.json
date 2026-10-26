@@ -26,6 +26,15 @@
       "destination": "mozjpeg"
     },
     {
+      "name": "jpegli",
+      "version": "0.11.1",
+      "url": "https://github.com/libjxl/libjxl/releases/download/v0.11.1/jxl-x64-windows-static.zip",
+      "sha256": "8f53ebce91820c30c9fc9294f06380213c1e2e66b361718880580246b2be008e",
+      "archiveType": "zip",
+      "destination": "jpegli",
+      "include": [ "cjpegli.exe" ]
+    },
+    {
       "name": "oxipng",
       "version": "10.2.1",
       "url": "https://github.com/oxipng/oxipng/releases/download/v10.2.1/oxipng-10.2.1-x86_64-pc-windows-msvc.zip",

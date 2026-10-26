@@ -9,6 +9,7 @@ changes are applied.
 | ----------- | ---------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------- |
 | ffmpeg      | https://ffmpeg.org/                      | GNU GPL/LGPL (depending on configured codecs) | Bundled via BtbN's `ffmpeg-master-latest-win64-gpl` archive which enables GPL codecs. |
 | mozjpeg     | https://github.com/mozilla/mozjpeg       | IJG / BSD-style                               | Windows build sourced from `garyzyg/mozjpeg-windows` (`mozjpeg-x64.zip`).             |
+| jpegli      | https://github.com/libjxl/libjxl         | BSD 3-Clause                                  | `cjpegli.exe` from libjxl's official `jxl-x64-windows-static.zip` release (v0.11.1).  |
 | libwebp     | https://developers.google.com/speed/webp | BSD 3-Clause                                  | Use Google's official `libwebp-1.4.0-windows-x64` distribution.                       |
 | libavif     | https://github.com/AOMediaCodec/libavif  | BSD 2-Clause                                  | Alliance for Open Media's `windows-artifacts.zip` provides `avifenc.exe`.             |
 | Ghostscript | https://www.ghostscript.com/             | GNU AGPL v3.0                                 | Commercial licenses available from Artifex.                                           |

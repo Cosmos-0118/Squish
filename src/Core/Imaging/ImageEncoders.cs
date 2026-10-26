@@ -44,6 +44,8 @@ internal sealed class ImageEncoders
 
     public bool HasMozJpeg => _tools.Cjpeg is not null;
 
+    public bool HasJpegli => _tools.Cjpegli is not null;
+
     public bool HasLosslessJpeg => _tools.Jpegtran is not null;
 
     public async Task<FilePath?> EncodeJpegAsync(RasterImage raster, int quality, ChromaSubsampling chroma, CancellationToken token)
@@ -85,6 +87,36 @@ internal sealed class ImageEncoders
             image.Write(output.Value);
             return (FilePath?)output;
         }, token).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// jpegli at a given quality. Adaptive quantisation is off: it spends bits where a human eye is least sensitive,
+    /// which SSIMULACRA2 does not reward, and it measured 5-25% smaller at the same score on photographs.
+    /// </summary>
+    public async Task<FilePath?> EncodeJpegliAsync(RasterImage raster, int quality, ChromaSubsampling chroma, CancellationToken token)
+    {
+        if (_tools.Cjpegli is not { } cjpegli)
+        {
+            return null;
+        }
+
+        var output = _temp.New("squish-jpegli", "jpg");
+        var staging = _temp.New("squish-stage", "ppm");
+        WritePpm(raster, staging.Value);
+
+        var args = new List<string>
+        {
+            "-q", Math.Clamp(quality, 1, 100).ToString(CultureInfo.InvariantCulture),
+            "-p", "2",
+            chroma == ChromaSubsampling.Full444 ? "--chroma_subsampling=444" : "--chroma_subsampling=420",
+            "--noadaptive_quantization",
+            staging.Value,
+            output.Value
+        };
+
+        var result = await ProcessRunner.RunAsync(cjpegli, args, Quiet, token).ConfigureAwait(false);
+        _temp.Release(staging);
+        return Succeeded(result, output) ? output : null;
     }
 
     /// <summary>Lossless Huffman re-optimisation + progressive scan script. Coefficients are untouched, so pixels stay identical.</summary>

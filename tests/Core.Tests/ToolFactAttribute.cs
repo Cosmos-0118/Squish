@@ -10,6 +10,8 @@ internal static class ToolAvailability
 {
     public static string? Cjpeg => ExternalToolResolver.Resolve("cjpeg-static", "mozjpeg", "SQUISH_CJPEG", null, "mozjpeg", "cjpeg");
 
+    public static string? Cjpegli => ExternalToolResolver.Resolve("cjpegli", "jpegli", "SQUISH_CJPEGLI");
+
     public static string? Jpegtran => ExternalToolResolver.Resolve("jpegtran-static", "mozjpeg", "SQUISH_JPEGTRAN", null, "jpegtran");
 
     public static string? Oxipng => ExternalToolResolver.Resolve("oxipng", "oxipng", "SQUISH_OXIPNG");
@@ -54,6 +56,7 @@ internal static class ToolAvailability
     {
         "mozjpeg" => Cjpeg,
         "jpegtran" => Jpegtran,
+        "jpegli" => Cjpegli,
         "oxipng" => Oxipng,
         "pngquant" => Pngquant,
         "cwebp" => Cwebp,

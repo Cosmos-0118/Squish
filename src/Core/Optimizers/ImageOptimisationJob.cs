@@ -298,16 +298,28 @@ internal sealed class ImageOptimisationJob : IDisposable
 
         // The searches are independent (separate encoder processes, read-only reference), so run them side by side.
         var perceptual = PerceptualReference.Create(reference);
-        var searches = chromas.Select(chroma => SearchLossyAsync(reference, perceptual, lowest, highest,
-            (image, quality, token) => _encoders.EncodeJpegAsync(image, quality, chroma, token))).ToArray();
-        var results = await Task.WhenAll(searches).ConfigureAwait(false);
+        // Every chroma layout is tried with each JPEG encoder; the smallest file that passes wins.
+        var entries = new List<(ChromaSubsampling Chroma, string Encoder, Task<EncodedCandidate?> Search)>();
+        foreach (var chroma in chromas)
+        {
+            var layout = chroma;
+            entries.Add((layout, mozjpeg ? "mozjpeg" : "built-in encoder", SearchLossyAsync(reference, perceptual, lowest, highest,
+                (image, quality, token) => _encoders.EncodeJpegAsync(image, quality, layout, token))));
+            if (_encoders.HasJpegli)
+            {
+                entries.Add((layout, "jpegli", SearchLossyAsync(reference, perceptual, lowest, highest,
+                    (image, quality, token) => _encoders.EncodeJpegliAsync(image, quality, layout, token))));
+            }
+        }
+
+        await Task.WhenAll(entries.Select(e => e.Search)).ConfigureAwait(false);
 
         EncodedCandidate? best = null;
         var bestChroma = chromas[0];
-        for (var i = 0; i < chromas.Count; i++)
+        for (var i = 0; i < entries.Count; i++)
         {
-            var chroma = chromas[i];
-            var candidate = results[i];
+            var chroma = entries[i].Chroma;
+            var candidate = entries[i].Search.Result is { } found ? found with { Encoder = entries[i].Encoder } : null;
             if (candidate is null)
             {
                 continue;
@@ -332,7 +344,7 @@ internal sealed class ImageOptimisationJob : IDisposable
         if (best is not null)
         {
             var layout = bestChroma == ChromaSubsampling.Full444 ? "4:4:4" : "4:2:0";
-            _notes.Add($"{(mozjpeg ? "mozjpeg" : "built-in encoder")} q{best.Quality} {layout}");
+            _notes.Add($"{best.Encoder} q{best.Quality} {layout}");
         }
         else
         {
@@ -348,7 +360,7 @@ internal sealed class ImageOptimisationJob : IDisposable
         data = JpegSegments.Rewrite(data, metadata, addSquishMarker: true);
         await File.WriteAllBytesAsync(encoded.File.Value, data, _token).ConfigureAwait(false);
 
-        var detail = _encoders.HasMozJpeg ? $"{description} (mozjpeg q{encoded.Quality})" : $"{description} (q{encoded.Quality})";
+        var detail = encoded.Encoder is { } encoder ? $"{description} ({encoder} q{encoded.Quality})" : $"{description} (q{encoded.Quality})";
         return new ImageCandidate(encoded.File, "jpg", detail, data.LongLength, true, double.IsNaN(encoded.Score) ? null : encoded.Score);
     }
 

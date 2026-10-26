@@ -342,6 +342,29 @@ public sealed class ImageOptimiserTests
         }
     }
 
+    [ToolFact("jpegli")]
+    public async Task JpegliProducesDecodableJpegsInBothChromaLayouts()
+    {
+        var pixels = TestImages.PhotoLikeRgba(Width, Height, seed: 21);
+        var source = TestImages.SaveJpeg(pixels, Width, Height, quality: 95);
+        using var temp = new TempFileScope();
+        var encoders = new ImageEncoders(ImageToolset.Resolve(new AdvancedCodecPreferences()), temp);
+        Assert.True(encoders.HasJpegli);
+        var reference = ImageIO.DecodeToRaster(source.Value);
+
+        foreach (var (chroma, is420) in new[] { (ChromaSubsampling.Subsampled420, true), (ChromaSubsampling.Full444, false) })
+        {
+            var encoded = await encoders.EncodeJpegliAsync(reference, 80, chroma, default);
+
+            Assert.NotNull(encoded);
+            var decoded = ImageIO.DecodeToRaster(encoded!.Value.Value);
+            Assert.Equal((reference.Width, reference.Height), (decoded.Width, decoded.Height));
+            var probe = ImageIO.Probe(encoded.Value.Value)!;
+            using var image = ImageIO.Decode(encoded.Value.Value, probe.Format, autoOrient: false);
+            Assert.Equal(is420, image.JpegChroma420);
+        }
+    }
+
     [ToolFact("mozjpeg")]
     public async Task MozJpegBeatsTheBuiltInEncoderAtTheSameQualityTarget()
     {
