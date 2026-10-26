@@ -169,9 +169,8 @@ internal sealed class OptimiseCommandHandler
         var failures = new List<CliFailure>();
         var progressPrinter = new ProgressPrinter(_options.ShowProgress);
 
-        var imageOptions = _options.Aggressive
-            ? ImageOptimiserOptions.Default with { TargetJpegQuality = 68, RequireSizeImprovement = true }
-            : ImageOptimiserOptions.Default;
+        // Aggressive image mode is requested per file through the image.aggressive metadata flag (see BuildMetadata).
+        var imageOptions = ImageOptimiserOptionsFactory.FromSettings();
         var videoOptions = (VideoOptimiserOptions.Default with
         {
             AggressiveQuality = _options.Aggressive,
@@ -277,6 +276,14 @@ internal sealed class OptimiseCommandHandler
             return new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
             {
                 ["pdf.aggressive"] = _options.Aggressive
+            };
+        }
+
+        if (type == ItemType.Image && _options.Aggressive)
+        {
+            return new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                [OptimisationMetadata.ImageAggressive] = true
             };
         }
 

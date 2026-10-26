@@ -471,7 +471,8 @@ public sealed class VideoOptimiser : IOptimiser
         // Capping must never *raise* the frame rate: `fps=60` on a 30 fps clip duplicates every frame, doubling encode
         // time and bitrate. Only cap when the probe proves the source is faster than the cap.
         var sourceFps = probeInfo?.Video?.FrameRate;
-        var effectiveCapFps = capFps && sourceFps is double measured && measured > targetFps + 0.5;
+        var capRequestedExplicitly = ReadInt(metadata, "video.targetFps").HasValue || ReadBool(metadata, "video.capFps") == true;
+        var effectiveCapFps = capFps && (capRequestedExplicitly || (sourceFps is double measured && measured > targetFps + 0.5));
         var filters = BuildFilters(maxWidth, maxHeight, playbackSpeed, options.EnforceEvenDimensions, effectiveCapFps, targetFps, frameDecimation);
 
         var lookahead = DetermineLookahead(options, encoderSelection);

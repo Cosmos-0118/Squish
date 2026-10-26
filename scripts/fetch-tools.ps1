@@ -1,3 +1,4 @@
+#requires -Version 7.0
 [CmdletBinding()]
 param(
     [string]$ManifestPath = "tools/tools-manifest.json",
@@ -88,6 +89,13 @@ function Invoke-FileDownload {
 
 # Ensure defaults behave consistently no matter where the script is invoked from.
 # Relative paths are resolved from the repo root, not the caller's current directory.
+if ($SkipChecksum -and $env:CI) {
+    throw "-SkipChecksum is not allowed in CI. Downloads must always match the pinned SHA256 in the manifest."
+}
+if ($SkipChecksum) {
+    Write-Warning "Checksum verification is DISABLED. Only use -SkipChecksum on a throwaway machine."
+}
+
 $ManifestPath = Resolve-RepoPath $ManifestPath
 $DestinationRoot = Resolve-RepoPath $DestinationRoot
 
@@ -362,6 +370,9 @@ foreach ($tool in $tools) {
             $downloadPath = $localArchivePath
             $computedSha = Get-Checksum -Path $downloadPath
             Write-Host "    SHA256: $computedSha"
+            if (-not $SkipChecksum -and $tool.PSObject.Properties['sha256'] -and $tool.sha256 -and $computedSha -ne $tool.sha256.ToLowerInvariant()) {
+                throw "Checksum mismatch for local archive of $($tool.name). Expected $($tool.sha256)"
+            }
             if ($tool.PSObject.Properties['localContentRoot']) {
                 $effectiveContentRoot = $tool.localContentRoot
             }
@@ -389,11 +400,14 @@ foreach ($tool in $tools) {
                 }
             }
             elseif (-not $SkipChecksum -and -not $expectedSha) {
-                Write-Warning "    Manifest missing SHA256. Add '$computedSha' for $($tool.name) or run with -WriteMissingChecksums."
-                if ($WriteMissingChecksums) {
-                    $tool.sha256 = $computedSha
-                    $manifestChanged = $true
+                # Fail closed: an unverified binary must never be staged silently.
+                if (-not $WriteMissingChecksums) {
+                    throw "Manifest entry '$($tool.name)' has no SHA256 (computed: $computedSha). Refusing to install an unverified binary. Verify the download out-of-band, then pin the hash or re-run with -WriteMissingChecksums."
                 }
+
+                Write-Warning "    Pinning computed SHA256 '$computedSha' for $($tool.name). Review the manifest diff before committing."
+                $tool.sha256 = $computedSha
+                $manifestChanged = $true
             }
         }
 

@@ -167,9 +167,7 @@ internal sealed class WatchCommandHandler
             watchers.Add(CreateWatcher(directory, channel.Writer));
         }
 
-        var imageOptions = _options.Aggressive
-            ? ImageOptimiserOptions.Default with { TargetJpegQuality = 68, RequireSizeImprovement = true }
-            : ImageOptimiserOptions.Default;
+        var imageOptions = ImageOptimiserOptionsFactory.FromSettings();
         var videoOptions = (VideoOptimiserOptions.Default with
         {
             AggressiveQuality = _options.Aggressive,
@@ -581,16 +579,21 @@ internal sealed class WatchCommandHandler
         if (_options.Aggressive)
         {
             metadata["watch.aggressive"] = true;
+            metadata[OptimisationMetadata.ImageAggressive] = true;
+            metadata[OptimisationMetadata.VideoAggressive] = true;
+            metadata[OptimisationMetadata.PdfAggressive] = true;
         }
 
         if (_options.RemoveAudio)
         {
             metadata["watch.removeAudio"] = true;
+            metadata["video.removeAudio"] = true;
         }
 
         if (_options.PlaybackSpeedFactor.HasValue)
         {
             metadata["watch.playbackSpeed"] = _options.PlaybackSpeedFactor.Value;
+            metadata["video.playbackSpeed"] = _options.PlaybackSpeedFactor.Value;
         }
 
         return metadata;
