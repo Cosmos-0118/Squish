@@ -20,62 +20,68 @@ internal static class WatchCommandBuilder
     public static Command Create()
     {
         var command = new Command("watch", "Monitor directories and optimise files as they change.");
-        var paths = new Argument<List<string>>("paths", () => new List<string>(), "Directories or files to watch for optimisations.")
+        var paths = new Argument<List<string>>("paths")
         {
+            Description = "Directories or files to watch for optimisations.",
+            DefaultValueFactory = _ => new List<string>(),
             Arity = ArgumentArity.ZeroOrMore
         };
-        command.AddArgument(paths);
+        command.Arguments.Add(paths);
 
-        var recursive = new Option<bool>(new[] { "-r", "--recursive" }, "Watch subdirectories recursively.");
-        var skipErrors = new Option<bool>(new[] { "-s", "--skip-errors" }, "Skip missing paths instead of failing.");
-        var aggressive = new Option<bool>(new[] { "-a", "--aggressive" }, "Use aggressive optimisation presets.");
-        var removeAudio = new Option<bool>("--remove-audio", () => false, "Strip audio tracks from videos.");
-        var json = new Option<bool>(new[] { "-j", "--json" }, "Emit optimisation results as JSON lines.");
-        var noProgress = new Option<bool>(new[] { "-n", "--no-progress" }, "Suppress in-flight progress updates.");
-        var playbackSpeed = new Option<double?>("--playback-speed-factor", "Speed up or slow down videos (1.0 means no change).");
-        var types = new Option<string[]>("--types", () => Array.Empty<string>(), "File types/extensions to include.")
+        var recursive = new Option<bool>("--recursive", "-r") { Description = "Watch subdirectories recursively." };
+        var skipErrors = new Option<bool>("--skip-errors", "-s") { Description = "Skip missing paths instead of failing." };
+        var aggressive = new Option<bool>("--aggressive", "-a") { Description = "Use aggressive optimisation presets." };
+        var removeAudio = new Option<bool>("--remove-audio") { DefaultValueFactory = _ => false, Description = "Strip audio tracks from videos." };
+        var json = new Option<bool>("--json", "-j") { Description = "Emit optimisation results as JSON lines." };
+        var noProgress = new Option<bool>("--no-progress", "-n") { Description = "Suppress in-flight progress updates." };
+        var playbackSpeed = new Option<double?>("--playback-speed-factor") { Description = "Speed up or slow down videos (1.0 means no change)." };
+        var types = new Option<string[]>("--types")
         {
+            DefaultValueFactory = _ => Array.Empty<string>(),
+            Description = "File types/extensions to include.",
             AllowMultipleArgumentsPerToken = true
         };
-        var excludeTypes = new Option<string[]>("--exclude-types", () => Array.Empty<string>(), "File types/extensions to exclude.")
+        var excludeTypes = new Option<string[]>("--exclude-types")
         {
+            DefaultValueFactory = _ => Array.Empty<string>(),
+            Description = "File types/extensions to exclude.",
             AllowMultipleArgumentsPerToken = true
         };
-        var debounce = new Option<int>("--debounce-ms", () => 400, "Suppress duplicate watcher events for this many milliseconds.");
-        var readyTimeout = new Option<int>("--ready-timeout-ms", () => 8000, "Maximum time to wait for files to stop changing before optimising.");
+        var debounce = new Option<int>("--debounce-ms") { DefaultValueFactory = _ => 400, Description = "Suppress duplicate watcher events for this many milliseconds." };
+        var readyTimeout = new Option<int>("--ready-timeout-ms") { DefaultValueFactory = _ => 8000, Description = "Maximum time to wait for files to stop changing before optimising." };
 
-        command.AddOption(recursive);
-        command.AddOption(skipErrors);
-        command.AddOption(aggressive);
-        command.AddOption(removeAudio);
-        command.AddOption(json);
-        command.AddOption(noProgress);
-        command.AddOption(playbackSpeed);
-        command.AddOption(types);
-        command.AddOption(excludeTypes);
-        command.AddOption(debounce);
-        command.AddOption(readyTimeout);
+        command.Options.Add(recursive);
+        command.Options.Add(skipErrors);
+        command.Options.Add(aggressive);
+        command.Options.Add(removeAudio);
+        command.Options.Add(json);
+        command.Options.Add(noProgress);
+        command.Options.Add(playbackSpeed);
+        command.Options.Add(types);
+        command.Options.Add(excludeTypes);
+        command.Options.Add(debounce);
+        command.Options.Add(readyTimeout);
 
-        command.SetHandler(async context =>
+        command.SetAction(async (parse, cancellationToken) =>
         {
             var options = new WatchCommandOptions
             {
-                Paths = context.ParseResult.GetValueForArgument(paths) ?? new List<string>(),
-                Recursive = context.ParseResult.GetValueForOption(recursive),
-                SkipErrors = context.ParseResult.GetValueForOption(skipErrors),
-                Aggressive = context.ParseResult.GetValueForOption(aggressive),
-                RemoveAudio = context.ParseResult.GetValueForOption(removeAudio),
-                Json = context.ParseResult.GetValueForOption(json),
-                ShowProgress = !context.ParseResult.GetValueForOption(noProgress),
-                PlaybackSpeedFactor = context.ParseResult.GetValueForOption(playbackSpeed),
-                IncludeTypes = context.ParseResult.GetValueForOption(types) ?? Array.Empty<string>(),
-                ExcludeTypes = context.ParseResult.GetValueForOption(excludeTypes) ?? Array.Empty<string>(),
-                DebounceMilliseconds = Math.Clamp(context.ParseResult.GetValueForOption(debounce), 50, 10000),
-                ReadyTimeoutMilliseconds = Math.Clamp(context.ParseResult.GetValueForOption(readyTimeout), 500, 60000)
+                Paths = parse.GetValue(paths) ?? new List<string>(),
+                Recursive = parse.GetValue(recursive),
+                SkipErrors = parse.GetValue(skipErrors),
+                Aggressive = parse.GetValue(aggressive),
+                RemoveAudio = parse.GetValue(removeAudio),
+                Json = parse.GetValue(json),
+                ShowProgress = !parse.GetValue(noProgress),
+                PlaybackSpeedFactor = parse.GetValue(playbackSpeed),
+                IncludeTypes = parse.GetValue(types) ?? Array.Empty<string>(),
+                ExcludeTypes = parse.GetValue(excludeTypes) ?? Array.Empty<string>(),
+                DebounceMilliseconds = Math.Clamp(parse.GetValue(debounce), 50, 10000),
+                ReadyTimeoutMilliseconds = Math.Clamp(parse.GetValue(readyTimeout), 500, 60000)
             };
 
-            var handler = new WatchCommandHandler(options, context.GetCancellationToken());
-            context.ExitCode = await handler.ExecuteAsync().ConfigureAwait(false);
+            var handler = new WatchCommandHandler(options, cancellationToken);
+            return await handler.ExecuteAsync().ConfigureAwait(false);
         });
 
         return command;
@@ -161,9 +167,7 @@ internal sealed class WatchCommandHandler
             watchers.Add(CreateWatcher(directory, channel.Writer));
         }
 
-        var imageOptions = _options.Aggressive
-            ? ImageOptimiserOptions.Default with { TargetJpegQuality = 68, RequireSizeImprovement = true }
-            : ImageOptimiserOptions.Default;
+        var imageOptions = ImageOptimiserOptionsFactory.FromSettings();
         var videoOptions = (VideoOptimiserOptions.Default with
         {
             AggressiveQuality = _options.Aggressive,
@@ -575,16 +579,21 @@ internal sealed class WatchCommandHandler
         if (_options.Aggressive)
         {
             metadata["watch.aggressive"] = true;
+            metadata[OptimisationMetadata.ImageAggressive] = true;
+            metadata[OptimisationMetadata.VideoAggressive] = true;
+            metadata[OptimisationMetadata.PdfAggressive] = true;
         }
 
         if (_options.RemoveAudio)
         {
             metadata["watch.removeAudio"] = true;
+            metadata["video.removeAudio"] = true;
         }
 
         if (_options.PlaybackSpeedFactor.HasValue)
         {
             metadata["watch.playbackSpeed"] = _options.PlaybackSpeedFactor.Value;
+            metadata["video.playbackSpeed"] = _options.PlaybackSpeedFactor.Value;
         }
 
         return metadata;

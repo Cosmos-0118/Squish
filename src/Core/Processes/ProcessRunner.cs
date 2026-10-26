@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -20,16 +21,37 @@ public static class ProcessRunner
     public static ProcessResult Run(string command, IEnumerable<string> arguments, ProcessRunnerOptions? options = null, CancellationToken cancellationToken = default)
         => RunAsync(command, arguments, options, cancellationToken).GetAwaiter().GetResult();
 
+    /// <summary>
+    /// Child processes are only ever started from an absolute path. Bare command names are looked up on the
+    /// rooted <c>PATH</c> only, so neither the working directory nor a relative path can supply the binary.
+    /// </summary>
+    private static string ResolveExecutable(string command)
+    {
+        if (string.IsNullOrWhiteSpace(command))
+        {
+            throw new ArgumentException("Command must not be empty.", nameof(command));
+        }
+
+        var resolved = ToolLocator.ResolveOnPath(command);
+        if (resolved is null)
+        {
+            throw new FileNotFoundException($"Unable to locate executable '{command}'. Provide an absolute path or install it on PATH.", command);
+        }
+
+        return resolved;
+    }
+
     private static async Task<ProcessResult> RunInternalAsync(string command, IReadOnlyList<string> args, ProcessRunnerOptions options, CancellationToken cancellationToken)
     {
-        var startInfo = new ProcessStartInfo(command)
+        var executable = ResolveExecutable(command);
+        var startInfo = new ProcessStartInfo(executable)
         {
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             RedirectStandardInput = false,
             UseShellExecute = false,
             CreateNoWindow = true,
-            WorkingDirectory = options.WorkingDirectory?.Value ?? Environment.CurrentDirectory
+            WorkingDirectory = options.WorkingDirectory?.Value ?? Path.GetTempPath()
         };
 
         foreach (var arg in args)

@@ -23,7 +23,7 @@
 
 ## Development setup
 
-1. Install the tooling listed in `docs/windows-deps.md` (✅ .NET 8 SDK, Visual Studio 2022 with WPF + C++ workloads, LLVM/Clang 17, Windows 11 SDK, WebView2 runtime).
+1. Install the tooling listed in `docs/windows-deps.md` (✅ .NET 10 SDK, Visual Studio 2022 with WPF + C++ workloads, LLVM/Clang 17, Windows 11 SDK, WebView2 runtime).
 2. Restore the optimiser binaries once per machine:
 
    ```powershell

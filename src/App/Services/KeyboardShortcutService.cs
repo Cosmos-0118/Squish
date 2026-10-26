@@ -406,10 +406,12 @@ public sealed class KeyboardShortcutService : IDisposable
         public const uint MOD_WIN = 0x0008;
         public const uint MOD_NOREPEAT = 0x4000;
 
+        [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
         [DllImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
 
+        [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
         [DllImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool UnregisterHotKey(IntPtr hWnd, int id);

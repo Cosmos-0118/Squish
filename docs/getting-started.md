@@ -5,7 +5,7 @@ This guide gets a new contributor from clone to running Clop for Windows locally
 ## Prerequisites
 
 - Windows 10/11
-- .NET 8 SDK
+- .NET 10 SDK
 - Visual Studio 2022 (recommended) with .NET desktop workload, or VS Code + C# Dev Kit
 - Git
 

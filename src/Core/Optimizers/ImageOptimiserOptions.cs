@@ -11,13 +11,33 @@ public sealed record ImageOptimiserOptions
         new[] { "png", "jpg", "jpeg", "bmp", "gif", "tif", "tiff", "heic", "heif", "webp", "avif" },
         StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Source formats that are re-encoded as JPEG when the picture is photographic and has no transparency
+    /// (mirrors the "Convert to JPEG" setting).
+    /// </summary>
     public IReadOnlySet<string> FormatsToConvertToJpeg { get; init; } = new HashSet<string>(
-        new[] { "png", "bmp", "tif", "tiff", "gif", "heic", "heif" },
+        new[] { "webp", "avif", "heic", "heif", "bmp" },
         StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>Source formats that are converted to (lossless) PNG instead - TIFF by default.</summary>
+    public IReadOnlySet<string> FormatsToConvertToPng { get; init; } = new HashSet<string>(
+        new[] { "tif", "tiff" },
+        StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// JPEG quality used when the perceptual guard is disabled (a fixed-quality encode), and the quality
+    /// formats without a search fall back to. With the guard enabled the encoder searches for the lowest
+    /// quality that still meets <see cref="PerceptualGuardOptions.MinimumScore"/>.
+    /// </summary>
     public int TargetJpegQuality { get; init; } = 82;
 
-    public bool DownscaleRetina { get; init; } = true;
+    /// <summary>Lowest JPEG/WebP/AVIF quality the perceptual search is allowed to pick.</summary>
+    public int MinimumLossyQuality { get; init; } = 40;
+
+    /// <summary>Highest quality the search will try; above this a re-encode is rarely worth it.</summary>
+    public int MaximumLossyQuality { get; init; } = 95;
+
+    public bool DownscaleRetina { get; init; }
 
     public int RetinaLongEdgePixels { get; init; } = 3840;
 
@@ -27,13 +47,14 @@ public sealed record ImageOptimiserOptions
 
     public bool RequireSizeImprovement { get; init; } = true;
 
-    public AdvancedCodecPreferences AdvancedCodecs { get; init; } = AdvancedCodecPreferences.Disabled;
+    /// <summary>Minimum relative saving (percent) for a result to replace the original.</summary>
+    public double MinimumSavingsPercent { get; init; } = 1.0;
+
+    public AdvancedCodecPreferences AdvancedCodecs { get; init; } = new();
 
     public PerceptualGuardOptions PerceptualGuard { get; init; } = PerceptualGuardOptions.Default;
 
     public CropSuggestionOptions CropSuggestions { get; init; } = CropSuggestionOptions.Disabled;
-
-    public WicFastPathOptions WicFastPath { get; init; } = WicFastPathOptions.Default;
 
     public MetadataPolicyOptions MetadataPolicy
     {
@@ -50,13 +71,39 @@ public sealed record ImageOptimiserOptions
     public static ImageOptimiserOptions Default { get; } = new();
 }
 
+/// <summary>
+/// Which external encoders may be used and where to find them. Tools that cannot be located are skipped
+/// and a built-in (Magick.NET) encoder takes over, so every flag here is safe to leave on.
+/// </summary>
 public sealed record AdvancedCodecPreferences
 {
-    public static AdvancedCodecPreferences Disabled { get; } = new() { EnableMozJpeg = false, EnableWebp = false, EnableAvif = false, EnableHeifConvert = false };
+    /// <summary>No external tools at all - only the built-in encoders. Used by tests and as a safe mode.</summary>
+    public static AdvancedCodecPreferences Disabled { get; } = new()
+    {
+        EnableMozJpeg = false,
+        EnableOxipng = false,
+        EnablePngquant = false,
+        EnableWebp = false,
+        EnableAvif = false,
+        EnableGifsicle = false
+    };
 
+    /// <summary>mozjpeg: trellis-quantised progressive JPEG, ~10-15% smaller than libjpeg-turbo at equal quality.</summary>
     public bool EnableMozJpeg { get; init; } = true;
 
     public string? MozJpegPath { get; init; }
+
+    public string? JpegtranPath { get; init; }
+
+    /// <summary>oxipng: multi-trial lossless PNG recompression (optional Zopfli).</summary>
+    public bool EnableOxipng { get; init; } = true;
+
+    public string? OxipngPath { get; init; }
+
+    /// <summary>pngquant: lossy 256-colour palette conversion for graphics (only used in aggressive mode).</summary>
+    public bool EnablePngquant { get; init; } = true;
+
+    public string? PngquantPath { get; init; }
 
     public bool EnableWebp { get; init; } = true;
 
@@ -66,25 +113,40 @@ public sealed record AdvancedCodecPreferences
 
     public string? AvifEncPath { get; init; }
 
-    public bool EnableHeifConvert { get; init; } = false;
+    public bool EnableGifsicle { get; init; } = true;
 
-    public string? HeifConvertPath { get; init; }
+    public string? GifsiclePath { get; init; }
 
-    public bool PreferAvifForPhotographic { get; init; } = true;
+    /// <summary>
+    /// Allow converting JPEG/PNG sources to WebP when that is smaller at the same perceptual quality.
+    /// Off by default because not every app, site or chat client accepts WebP.
+    /// </summary>
+    public bool AllowWebpOutput { get; init; }
 
-    public bool PreferWebpFallback { get; init; } = true;
-
-    public bool AllowSoftwareFallbacks { get; init; } = true;
+    /// <summary>Same as <see cref="AllowWebpOutput"/> for AVIF (smallest, but least compatible).</summary>
+    public bool AllowAvifOutput { get; init; }
 }
 
 public sealed record PerceptualGuardOptions
 {
     public static PerceptualGuardOptions Default { get; } = new();
 
+    /// <summary>
+    /// Turns the SSIMULACRA2-driven quality search and verification on. When off, lossy encodes use fixed
+    /// qualities (<see cref="ImageOptimiserOptions.TargetJpegQuality"/>) like the very first versions did.
+    /// </summary>
     public bool Enabled { get; init; } = true;
 
-    public double Threshold { get; init; } = 0.965;
+    /// <summary>
+    /// SSIMULACRA2 score (100 = identical, ~90 visually lossless, ~80 very high, ~70 high quality) that a lossy
+    /// result must reach in normal mode.
+    /// </summary>
+    public double MinimumScore { get; init; } = 80;
 
+    /// <summary>Score floor used when the request is flagged aggressive.</summary>
+    public double AggressiveMinimumScore { get; init; } = 68;
+
+    /// <summary>Reject (keep the original) instead of shipping a result below the floor.</summary>
     public bool RejectWhenBelowThreshold { get; init; } = true;
 
     public bool RecordMetrics { get; init; } = true;
@@ -116,19 +178,4 @@ public sealed record MetadataPolicyOptions
     public bool StripGpsMetadata { get; init; } = true;
 
     public IReadOnlySet<int> AdditionalExifTagsToStrip { get; init; } = new HashSet<int>();
-}
-
-public sealed record WicFastPathOptions
-{
-    public static WicFastPathOptions Default { get; } = new();
-
-    public bool Enabled { get; init; } = true;
-
-    public double MinimumSavingsPercent { get; init; } = 2d;
-
-    public bool StripMetadata { get; init; }
-
-    public bool SkipLosslessWhenBelowThreshold { get; init; } = true;
-
-    public int? OverrideJpegQuality { get; init; }
 }

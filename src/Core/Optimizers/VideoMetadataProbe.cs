@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -132,7 +133,9 @@ internal static class VideoProbeParser
         var avgFrameRate = ParseFraction(stream.TryGetProperty("avg_frame_rate", out var afr) ? afr.GetString() : null);
         var rFrameRate = ParseFraction(stream.TryGetProperty("r_frame_rate", out var rfr) ? rfr.GetString() : null);
         var frameRate = avgFrameRate ?? rFrameRate;
-        var isHdr = colorTransfer?.Contains("smpte", StringComparison.OrdinalIgnoreCase) == true;
+        var isHdr = colorTransfer is not null
+            && (colorTransfer.Contains("smpte2084", StringComparison.OrdinalIgnoreCase)
+                || colorTransfer.Contains("arib-std-b67", StringComparison.OrdinalIgnoreCase));
         var isInterlaced = stream.TryGetProperty("field_order", out var field) && !string.Equals(field.GetString(), "progressive", StringComparison.OrdinalIgnoreCase);
 
         return new VideoStreamInfo(codec, profile, pixFmt, colorSpace, colorTransfer, colorPrimaries, colorRange, width, height, bitrate, frameRate, isHdr, isInterlaced);
@@ -155,7 +158,7 @@ internal static class VideoProbeParser
             return null;
         }
 
-        if (double.TryParse(value, out var parsed))
+        if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed))
         {
             return parsed;
         }
@@ -166,7 +169,7 @@ internal static class VideoProbeParser
             return null;
         }
 
-        if (double.TryParse(parts[0], out var numerator) && double.TryParse(parts[1], out var denominator) && denominator != 0)
+        if (double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var numerator) && double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var denominator) && denominator != 0)
         {
             return numerator / denominator;
         }
@@ -186,7 +189,7 @@ internal static class VideoProbeParser
             return value.GetDouble();
         }
 
-        return double.TryParse(value.GetString(), out var parsed) ? parsed : null;
+        return double.TryParse(value.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) ? parsed : null;
     }
 
     private static long? ParseLong(JsonElement element, string property)
@@ -201,7 +204,7 @@ internal static class VideoProbeParser
             return value.TryGetInt64(out var parsed) ? parsed : null;
         }
 
-        return long.TryParse(value.GetString(), out var result) ? result : null;
+        return long.TryParse(value.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var result) ? result : null;
     }
 
     private static int? ParseInt(JsonElement element, string property)
@@ -216,6 +219,6 @@ internal static class VideoProbeParser
             return value.TryGetInt32(out var parsed) ? parsed : null;
         }
 
-        return int.TryParse(value.GetString(), out var result) ? result : null;
+        return int.TryParse(value.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var result) ? result : null;
     }
 }

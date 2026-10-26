@@ -17,8 +17,8 @@ Install these stacks before touching the WPF solution so that every developer ge
 ### Install Commands
 
 ```powershell
-# .NET 8 SDK
-winget install --id Microsoft.DotNet.SDK.8 --exact
+# .NET 10 SDK
+winget install --id Microsoft.DotNet.SDK.10 --exact
 # VS 2022 Community with WPF + desktop workloads (quiet install takes several minutes)
 winget install --id Microsoft.VisualStudio.2022.Community --override "--quiet --wait --norestart --includeRecommended --add Microsoft.VisualStudio.Workload.ManagedDesktop --add Microsoft.VisualStudio.Workload.NativeDesktop --add Microsoft.VisualStudio.Workload.NativeGame"
 # VS 2022 Build Tools with VC workload (for CI boxes that skip the full IDE)

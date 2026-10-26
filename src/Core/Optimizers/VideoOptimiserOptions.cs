@@ -75,29 +75,29 @@ public sealed record VideoOptimiserOptions
     public bool AggressiveQuality { get; init; }
         = false;
 
-    public int SoftwareCrf { get; init; } = 26;
+    public int SoftwareCrf { get; init; } = 24;
 
-    public int SoftwareCrfHevc { get; init; } = 24;
+    public int SoftwareCrfHevc { get; init; } = 26;
 
-    public int SoftwareCrfAv1 { get; init; } = 32;
+    public int SoftwareCrfAv1 { get; init; } = 34;
 
-    public int SoftwareCrfVp9 { get; init; } = 30;
+    public int SoftwareCrfVp9 { get; init; } = 33;
 
     public int HardwareQuality { get; init; } = 23;
 
-    public string SoftwarePresetGentle { get; init; } = "faster";
+    public string SoftwarePresetGentle { get; init; } = "medium";
 
-    public string SoftwarePresetAggressive { get; init; } = "slower";
+    public string SoftwarePresetAggressive { get; init; } = "slow";
 
     public string SoftwarePresetHevcGentle { get; init; } = "medium";
 
     public string SoftwarePresetHevcAggressive { get; init; } = "slow";
 
-    public string SoftwarePresetAv1Gentle { get; init; } = "8";
+    public string SoftwarePresetAv1Gentle { get; init; } = "6";
 
     public string SoftwarePresetAv1Aggressive { get; init; } = "5";
 
-    public string SoftwarePresetVp9Gentle { get; init; } = "3";
+    public string SoftwarePresetVp9Gentle { get; init; } = "2";
 
     public string SoftwarePresetVp9Aggressive { get; init; } = "1";
     public int HardwareQualityHevc { get; init; } = 24;
@@ -110,7 +110,41 @@ public sealed record VideoOptimiserOptions
 
     public bool PreferVp9ForWebm { get; init; } = true;
 
+    /// <summary>Two-pass is only worth it for libvpx-vp9 (see <c>ShouldUseTwoPass</c>); other codecs ignore this.</summary>
     public bool EnableTwoPassEncoding { get; init; } = true;
+
+    /// <summary>
+    /// Choose the CRF per video by encoding short samples and scoring them with SSIMULACRA2 instead of using one fixed CRF.
+    /// </summary>
+    public bool EnableQualitySearch { get; init; } = true;
+
+    /// <summary>Mean SSIMULACRA2 score (weaker half of the sampled frames) a normal-mode encode must reach.</summary>
+    public double QualityTargetScore { get; init; } = 74;
+
+    /// <summary>Score floor in aggressive mode.</summary>
+    public double QualityTargetScoreAggressive { get; init; } = 64;
+
+    /// <summary>Clips shorter than this are encoded at the fixed CRF - sampling would cost as much as the encode.</summary>
+    public double QualitySearchMinimumDurationSeconds { get; init; } = 4;
+
+    public double QualitySearchSampleSeconds { get; init; } = 2;
+
+    public int QualitySearchMaxSamples { get; init; } = 3;
+
+    public int QualitySearchFramesPerSample { get; init; } = 3;
+
+    public int QualitySearchMaxProbes { get; init; } = 4;
+
+    /// <summary>
+    /// When even the sampled encode would use at least this fraction of the source's video bitrate, the source is
+    /// already efficient and is left alone instead of burning minutes on a result that is not smaller.
+    /// </summary>
+    public double QualitySearchSkipRatio { get; init; } = 0.92;
+
+    /// <summary>The chosen encode may cost at most this fraction of the source's video bitrate (grain protection).</summary>
+    public double QualitySearchMaxBitrateRatio { get; init; } = 0.6;
+
+    public double QualitySearchMaxBitrateRatioAggressive { get; init; } = 0.4;
 
     public VideoEncoderPreset EncoderPreset { get; init; } = VideoEncoderPreset.Auto;
 
@@ -152,7 +186,11 @@ public sealed record VideoOptimiserOptions
 
     public double FrameDecimationMaxDifference { get; init; } = 15;
 
-    public bool EnableAudioNormalization { get; init; } = true;
+    /// <summary>Loudness normalisation re-encodes audio and changes how it sounds, so it is strictly opt-in.</summary>
+    public bool EnableAudioNormalization { get; init; }
+
+    /// <summary>Audio streams above this bitrate (kbps) are re-encoded instead of copied.</summary>
+    public int AudioCopyMaxBitrateKbps { get; init; } = 320;
 
     public int AudioTargetBitrateKbps { get; init; } = 160;
 
@@ -255,7 +293,17 @@ public sealed record VideoOptimiserOptions
             return localCandidate;
         }
 
-        throw new FileNotFoundException($"Unable to locate required tool '{fileName}'. Run scripts/fetch-tools.ps1 and ensure the binaries remain under the 'tools' directory.");
+        // Bundled folder, per-user folder and PATH, using the platform's executable naming.
+        var toolName = Path.GetFileNameWithoutExtension(fileName);
+        var discovered = ExternalToolResolver.Resolve(toolName, "ffmpeg");
+        if (!string.IsNullOrWhiteSpace(discovered))
+        {
+            return discovered!;
+        }
+
+        // Never throw from a static initialiser: a missing tool must surface as a failed optimisation with a
+        // readable message, not as a crash that takes image and PDF optimisation down with it.
+        return defaultCommand;
     }
 
     private static string? ResolveFromEnvironment(IEnumerable<string> variableNames)

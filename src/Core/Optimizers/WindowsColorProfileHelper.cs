@@ -14,7 +14,7 @@ internal static class WindowsColorProfileHelper
 
     public static WindowsColorProfileSet GetProfiles(bool allowLookup)
     {
-        if (!allowLookup)
+        if (!allowLookup || !OperatingSystem.IsWindows())
         {
             return WindowsColorProfileSet.Empty;
         }
@@ -95,6 +95,7 @@ internal static class WindowsColorProfileHelper
         StandardPrinter = 0x00000005
     }
 
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     [DllImport("mscms.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern bool WcsGetDefaultColorProfileSize(
         ProfileScope scope,
@@ -104,6 +105,7 @@ internal static class WindowsColorProfileHelper
         uint profileId,
         out uint profileNameSize);
 
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     [DllImport("mscms.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern bool WcsGetDefaultColorProfile(
         ProfileScope scope,

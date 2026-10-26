@@ -10,6 +10,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using ClopWindows.Core.Optimizers;
+using ClopWindows.Core.Security;
 using ClopWindows.Core.Settings;
 using ClopWindows.Core.Shared;
 using Microsoft.Extensions.Logging;
@@ -88,7 +89,25 @@ public sealed class CrossAppAutomationHost : IAsyncDisposable
         _allowTeamsCards = SettingsHost.Get(SettingsRegistry.EnableTeamsAdaptiveCards);
         var port = SettingsHost.Get(SettingsRegistry.AutomationHttpPort);
         _port = Math.Clamp(port, 1024, 65535);
-        _accessToken = SettingsHost.Get(SettingsRegistry.AutomationAccessToken);
+        _accessToken = EnsureAccessToken();
+    }
+
+    /// <summary>
+    /// The API is never open: when no token has been configured a random one is generated and stored.
+    /// Read it with <c>clop automation-token</c> or from the settings file.
+    /// </summary>
+    private string EnsureAccessToken()
+    {
+        var token = SettingsHost.Get(SettingsRegistry.AutomationAccessToken);
+        if (!string.IsNullOrWhiteSpace(token))
+        {
+            return token;
+        }
+
+        token = AutomationRequestGuard.GenerateToken();
+        SettingsHost.Set(SettingsRegistry.AutomationAccessToken, token);
+        _logger.LogInformation("Generated a new automation access token (clop automation-token prints it).");
+        return token;
     }
 
     private void OnSettingChanged(object? sender, SettingChangedEventArgs e)
@@ -252,9 +271,34 @@ public sealed class CrossAppAutomationHost : IAsyncDisposable
             return;
         }
 
-        if (!Authorize(context.Request))
+        var request = context.Request;
+        var verdict = AutomationRequestGuard.Evaluate(
+            request.HttpMethod,
+            request.Headers["Host"],
+            request.Headers["Origin"],
+            request.Headers["Sec-Fetch-Site"],
+            request.Headers["Authorization"],
+            request.ContentType,
+            _accessToken ?? string.Empty,
+            _port);
+
+        if (verdict != AutomationRequestVerdict.Allowed)
         {
-            await WriteStatusAsync(context.Response, HttpStatusCode.Unauthorized, new { error = "unauthorized" }).ConfigureAwait(false);
+            var (status, error) = verdict switch
+            {
+                AutomationRequestVerdict.ForbiddenHost => (HttpStatusCode.Forbidden, "forbidden_host"),
+                AutomationRequestVerdict.ForbiddenBrowserOrigin => (HttpStatusCode.Forbidden, "browser_requests_not_allowed"),
+                AutomationRequestVerdict.UnsupportedMediaType => (HttpStatusCode.UnsupportedMediaType, "content_type_must_be_json"),
+                _ => (HttpStatusCode.Unauthorized, "unauthorized")
+            };
+
+            await WriteStatusAsync(context.Response, status, new { error }).ConfigureAwait(false);
+            return;
+        }
+
+        if (request.ContentLength64 > AutomationRequestGuard.MaxBodyBytes)
+        {
+            await WriteStatusAsync(context.Response, HttpStatusCode.RequestEntityTooLarge, new { error = "payload_too_large" }).ConfigureAwait(false);
             return;
         }
 
@@ -295,42 +339,18 @@ public sealed class CrossAppAutomationHost : IAsyncDisposable
         catch (JsonException ex)
         {
             _logger.LogWarning(ex, "Invalid JSON payload received from automation endpoint {Path}.", path);
-            await WriteStatusAsync(context.Response, HttpStatusCode.BadRequest, new { error = "invalid_json", message = ex.Message }).ConfigureAwait(false);
+            await WriteStatusAsync(context.Response, HttpStatusCode.BadRequest, new { error = "invalid_json" }).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Unhandled automation endpoint error for {Path}.", path);
-            await WriteStatusAsync(context.Response, HttpStatusCode.InternalServerError, new { error = "internal_error", message = ex.Message }).ConfigureAwait(false);
+            await WriteStatusAsync(context.Response, HttpStatusCode.InternalServerError, new { error = "internal_error" }).ConfigureAwait(false);
         }
-    }
-
-    private bool Authorize(HttpListenerRequest request)
-    {
-        if (string.IsNullOrWhiteSpace(_accessToken))
-        {
-            return true;
-        }
-
-        var header = request.Headers["Authorization"];
-        if (string.IsNullOrWhiteSpace(header) || !header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        var presented = header[7..].Trim();
-        if (presented.Length == 0)
-        {
-            return false;
-        }
-
-        var presentedBytes = Encoding.UTF8.GetBytes(presented);
-        var expectedBytes = Encoding.UTF8.GetBytes(_accessToken);
-        return CryptographicOperations.FixedTimeEquals(presentedBytes, expectedBytes);
     }
 
     private async Task HandleOptimiseEndpointAsync(HttpListenerRequest request, HttpListenerResponse response, string origin)
     {
-        var payload = await JsonSerializer.DeserializeAsync<AutomationOptimisePayload>(request.InputStream, SerializerOptions, _runToken).ConfigureAwait(false);
+        var payload = await JsonSerializer.DeserializeAsync<AutomationOptimisePayload>(new LimitedReadStream(request.InputStream, AutomationRequestGuard.MaxBodyBytes), SerializerOptions, _runToken).ConfigureAwait(false);
         if (payload is null)
         {
             await WriteStatusAsync(response, HttpStatusCode.BadRequest, new { error = "invalid_payload" }).ConfigureAwait(false);
@@ -343,7 +363,7 @@ public sealed class CrossAppAutomationHost : IAsyncDisposable
 
     private async Task HandleShareEndpointAsync(HttpListenerRequest request, HttpListenerResponse response)
     {
-        var payload = await JsonSerializer.DeserializeAsync<ShareAutomationPayload>(request.InputStream, SerializerOptions, _runToken).ConfigureAwait(false);
+        var payload = await JsonSerializer.DeserializeAsync<ShareAutomationPayload>(new LimitedReadStream(request.InputStream, AutomationRequestGuard.MaxBodyBytes), SerializerOptions, _runToken).ConfigureAwait(false);
         if (payload is null)
         {
             await WriteStatusAsync(response, HttpStatusCode.BadRequest, new { error = "invalid_payload" }).ConfigureAwait(false);
@@ -362,7 +382,7 @@ public sealed class CrossAppAutomationHost : IAsyncDisposable
             return;
         }
 
-        var payload = await JsonSerializer.DeserializeAsync<TeamsCardRequest>(request.InputStream, SerializerOptions, _runToken).ConfigureAwait(false);
+        var payload = await JsonSerializer.DeserializeAsync<TeamsCardRequest>(new LimitedReadStream(request.InputStream, AutomationRequestGuard.MaxBodyBytes), SerializerOptions, _runToken).ConfigureAwait(false);
         if (payload is null || payload.Results.Count == 0)
         {
             await WriteStatusAsync(response, HttpStatusCode.BadRequest, new { error = "invalid_payload" }).ConfigureAwait(false);
@@ -380,7 +400,7 @@ public sealed class CrossAppAutomationHost : IAsyncDisposable
             enabled = _enabled,
             port = _port,
             teamsCards = _allowTeamsCards,
-            requiresToken = !string.IsNullOrWhiteSpace(_accessToken)
+            requiresToken = true
         };
 
         return WriteStatusAsync(response, HttpStatusCode.OK, status);
@@ -578,5 +598,65 @@ public sealed class CrossAppAutomationHost : IAsyncDisposable
                 return null;
             }
         }
+    }
+
+    /// <summary>Caps how much of a request body is ever read, regardless of what Content-Length claims.</summary>
+    private sealed class LimitedReadStream : Stream
+    {
+        private readonly Stream _inner;
+        private long _remaining;
+
+        public LimitedReadStream(Stream inner, long limit)
+        {
+            _inner = inner;
+            _remaining = limit;
+        }
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+
+        public override int Read(byte[] buffer, int offset, int count) => Read(buffer.AsSpan(offset, count));
+
+        public override int Read(Span<byte> buffer)
+        {
+            if (_remaining <= 0)
+            {
+                // Exactly at the cap: only a clean end-of-stream is acceptable.
+                Span<byte> probe = stackalloc byte[1];
+                return _inner.Read(probe) == 0 ? 0 : throw new InvalidDataException("Request body exceeds the allowed size.");
+            }
+
+            var read = _inner.Read(buffer[..(int)Math.Min(buffer.Length, _remaining)]);
+            _remaining -= read;
+            return read;
+        }
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            if (_remaining <= 0)
+            {
+                var probe = new byte[1];
+                return await _inner.ReadAsync(probe, cancellationToken).ConfigureAwait(false) == 0
+                    ? 0
+                    : throw new InvalidDataException("Request body exceeds the allowed size.");
+            }
+
+            var read = await _inner.ReadAsync(buffer[..(int)Math.Min(buffer.Length, _remaining)], cancellationToken).ConfigureAwait(false);
+            _remaining -= read;
+            return read;
+        }
+
+        public override void Flush()
+        {
+        }
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 }

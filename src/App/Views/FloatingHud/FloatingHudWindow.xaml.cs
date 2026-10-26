@@ -308,7 +308,7 @@ public partial class FloatingHudWindow : Window
         {
             var psi = new ProcessStartInfo
             {
-                FileName = "explorer.exe",
+                FileName = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe"),
                 Arguments = $"/select,\"{path}\"",
                 UseShellExecute = true
             };
@@ -364,6 +364,7 @@ public partial class FloatingHudWindow : Window
     {
         public const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
 
+        [System.Runtime.InteropServices.DefaultDllImportSearchPaths(System.Runtime.InteropServices.DllImportSearchPath.System32)]
         [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
         public static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, int[] attrValue, int attrSize);
     }

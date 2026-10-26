@@ -28,6 +28,7 @@ public sealed class ShortcutsBridge : IAsyncDisposable
 
     private static readonly TimeSpan ShortcutsCacheTtl = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan ClientReadTimeout = TimeSpan.FromSeconds(30);
+    private const int MaxRequestBytes = 1024 * 1024;
 
     private readonly OptimisationCoordinator _coordinator;
     private readonly DirectoryOptimisationService _directoryOptimisations;
@@ -196,7 +197,7 @@ public sealed class ShortcutsBridge : IAsyncDisposable
         catch (Exception ex)
         {
             _logger.LogError(ex, "Automation intent {Intent} crashed.", envelope.Intent);
-            return AutomationResponse.Error("internal_error", ex.Message);
+            return AutomationResponse.Error("internal_error", "The request could not be completed.");
         }
     }
 
@@ -375,6 +376,7 @@ public sealed class ShortcutsBridge : IAsyncDisposable
     {
         var buffer = new byte[4096];
         var builder = new StringBuilder();
+        var total = 0;
 
         do
         {
@@ -382,6 +384,12 @@ public sealed class ShortcutsBridge : IAsyncDisposable
             if (read == 0)
             {
                 return builder.Length == 0 ? null : builder.ToString();
+            }
+
+            total += read;
+            if (total > MaxRequestBytes)
+            {
+                throw new InvalidDataException("Automation request exceeds the maximum allowed size.");
             }
 
             builder.Append(Encoding.UTF8.GetString(buffer, 0, read));
@@ -405,7 +413,8 @@ public sealed class ShortcutsBridge : IAsyncDisposable
             PipeDirection.InOut,
             NamedPipeServerStream.MaxAllowedServerInstances,
             PipeTransmissionMode.Message,
-            PipeOptions.Asynchronous | PipeOptions.WriteThrough);
+            // CurrentUserOnly: only processes of the signed-in user may talk to the bridge (default pipe ACLs are broader).
+            PipeOptions.Asynchronous | PipeOptions.WriteThrough | PipeOptions.CurrentUserOnly);
     }
 
     private readonly record struct AutomationOptimiseResult(string RequestId, string SourcePath, string? OutputPath, string Status, string? Message);

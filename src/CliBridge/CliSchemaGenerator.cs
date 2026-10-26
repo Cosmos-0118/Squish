@@ -13,19 +13,19 @@ internal static class SchemaCommandBuilder
     public static Command Create(RootCommand root)
     {
         var command = new Command("schema", "Export a JSON schema describing the clop CLI surface.");
-        var output = new Option<FileInfo?>(new[] { "-o", "--output" }, "Write schema to this file instead of stdout.");
-        var pretty = new Option<bool>("--pretty", () => true, "Pretty-print the generated JSON.");
-        command.AddOption(output);
-        command.AddOption(pretty);
+        var output = new Option<FileInfo?>("--output", "-o") { Description = "Write schema to this file instead of stdout." };
+        var pretty = new Option<bool>("--pretty") { DefaultValueFactory = _ => true, Description = "Pretty-print the generated JSON." };
+        command.Options.Add(output);
+        command.Options.Add(pretty);
 
-        command.SetHandler(async context =>
+        command.SetAction(async (parse, cancellationToken) =>
         {
-            var target = context.ParseResult.GetValueForOption(output);
+            var target = parse.GetValue(output);
             var schema = CliSchemaGenerator.Generate(root);
             var options = new JsonSerializerOptions
             {
                 PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-                WriteIndented = context.ParseResult.GetValueForOption(pretty)
+                WriteIndented = parse.GetValue(pretty)
             };
 
             var json = JsonSerializer.Serialize(schema, options);
@@ -36,14 +36,14 @@ internal static class SchemaCommandBuilder
             else
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(target.FullName)!);
-                await File.WriteAllTextAsync(target.FullName, json).ConfigureAwait(false);
-                if (!context.ParseResult.GetValueForOption(pretty))
+                await File.WriteAllTextAsync(target.FullName, json, cancellationToken).ConfigureAwait(false);
+                if (!parse.GetValue(pretty))
                 {
                     Console.WriteLine($"[info] Schema written to {target.FullName}.");
                 }
             }
 
-            context.ExitCode = 0;
+            return 0;
         });
 
         return command;
@@ -56,7 +56,7 @@ internal static class CliSchemaGenerator
     {
         ArgumentNullException.ThrowIfNull(root);
         var commands = root.Subcommands.Select(BuildCommand).OrderBy(c => c.Name, StringComparer.Ordinal).ToList();
-        return new CliSchema(root.Name, root.Description ?? string.Empty, commands);
+        return new CliSchema("clop", root.Description ?? string.Empty, commands);
     }
 
     private static CliSchemaCommand BuildCommand(Command command)
@@ -72,7 +72,7 @@ internal static class CliSchemaGenerator
         var aliases = option.Aliases.Where(a => !string.IsNullOrWhiteSpace(a)).ToArray();
         var valueType = option.ValueType?.Name ?? "void";
         var allowsMultiple = option.Arity.MaximumNumberOfValues is > 1 or int.MaxValue;
-        return new CliSchemaOption(option.Name, aliases, option.Description ?? string.Empty, option.IsRequired, valueType, allowsMultiple);
+        return new CliSchemaOption(option.Name, aliases, option.Description ?? string.Empty, option.Required, valueType, allowsMultiple);
     }
 
     private static CliSchemaArgument BuildArgument(Argument argument)

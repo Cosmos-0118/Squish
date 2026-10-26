@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Windows.Threading;
 using ClopWindows.App.Localization;
@@ -301,7 +302,7 @@ public sealed class CompareViewModel : ObservableObject, IDisposable
             var escaped = outputPath.Replace("\"", "\"\"");
             var startInfo = new ProcessStartInfo
             {
-                FileName = "explorer.exe",
+                FileName = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe"),
                 Arguments = $"/select,\"{escaped}\"",
                 UseShellExecute = true
             };

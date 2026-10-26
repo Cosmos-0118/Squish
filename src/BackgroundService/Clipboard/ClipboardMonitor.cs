@@ -299,6 +299,7 @@ public sealed class ClipboardMonitor : IDisposable
         return new ClipboardSnapshot(filePaths, imageBytes, text, hasMarker);
     }
 
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     [DllImport("user32.dll", SetLastError = false)]
     private static extern uint GetClipboardSequenceNumber();
 }

@@ -1,0 +1,7 @@
+<Project>
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+  <PropertyGroup>
+    <!-- Test data generators intentionally use System.Random / fixed seeds for reproducibility. -->
+    <NoWarn>$(NoWarn);CA5394</NoWarn>
+  </PropertyGroup>
+</Project>
