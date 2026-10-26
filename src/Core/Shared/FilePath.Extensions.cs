@@ -19,7 +19,6 @@ public readonly partial record struct FilePath
     public static FilePath SquishBackups => SquishPaths.Backups;
     public static FilePath Videos => SquishPaths.Videos;
     public static FilePath Images => SquishPaths.Images;
-    public static FilePath Pdfs => SquishPaths.Pdfs;
     public static FilePath Conversions => SquishPaths.Conversions;
     public static FilePath Downloads => SquishPaths.Downloads;
     public static FilePath ForResize => SquishPaths.ForResize;
@@ -74,7 +73,6 @@ public readonly partial record struct FilePath
 
     public bool IsVideo => MediaFormats.IsVideo(this);
 
-    public bool IsPdf => MediaFormats.IsPdf(this);
 
     public FilePath TempFile(string? ext = null, bool addUniqueId = false)
     {

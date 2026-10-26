@@ -90,7 +90,7 @@ public sealed class SettingsStoreTests : IDisposable
         var tcs = new TaskCompletionSource<string[]>(TaskCreationOptions.RunContinuationsAsynchronously);
         background.SettingChanged += (sender, args) =>
         {
-            if (args.Name == SettingsRegistry.PdfDirs.Name && args.Value is string[] paths)
+            if (args.Name == SettingsRegistry.VideoDirs.Name && args.Value is string[] paths)
             {
                 tcs.TrySetResult(paths);
             }
@@ -98,7 +98,7 @@ public sealed class SettingsStoreTests : IDisposable
 
         var downloads = Path.Combine(temp.Path, "downloads");
         Directory.CreateDirectory(downloads);
-        ui.Set(SettingsRegistry.PdfDirs, new[] { downloads });
+        ui.Set(SettingsRegistry.VideoDirs, new[] { downloads });
 
         var completed = await Task.WhenAny(tcs.Task, Task.Delay(TimeSpan.FromSeconds(5)));
         Assert.True(ReferenceEquals(completed, tcs.Task), "Background store did not observe external file change.");

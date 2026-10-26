@@ -1,5 +1,5 @@
 <h1 align="center">Squish</h1>
-<p align="center">Clipboard, image, video, and PDF optimisation for Windows 11</p>
+<p align="center">Clipboard, image, and video optimisation for Windows 11</p>
 <p align="center"><em>⚠️ Stable enough for daily use, but expect occasional bugs while we keep polishing.</em></p>
 
 > Squish is usable today. Features are in place, but you may still hit rough edges or small regressions as we keep refining performance.
@@ -18,7 +18,7 @@
 | ------------------------ | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
 | WPF shell & floating HUD | `src/App/Squish.App.csproj`                             | Hosts the tray UI, floating results, drag/drop zones, onboarding, and settings pages.              |
 | Background work          | `src/BackgroundService/Squish.BackgroundService.csproj` | Runs clipboard/file-system watchers plus automation bridges while the UI is closed.                |
-| Optimisation engine      | `src/Core/Squish.Core.csproj`                           | Shared optimisers for images, video, PDF, metadata, and migrations.                                |
+| Optimisation engine      | `src/Core/Squish.Core.csproj`                           | Shared optimisers for images, video, metadata, and migrations.                                |
 | CLI bridge               | `src/CliBridge/Squish.CliBridge.csproj`                 | Provides a `squish` command that forwards requests to the running optimiser service via named pipes. |
 | Explorer integration     | `src/Integrations/Explorer`                                  | Adds context-menu hooks so files can be optimised directly from Windows Explorer.                  |
 | Tests                    | `tests/*`                                                    | Covers shared primitives, optimisers, CLI target resolution, and string catalogs.                  |
@@ -32,7 +32,7 @@
    pwsh scripts/fetch-tools.ps1
    ```
 
-   The script downloads `ffmpeg`, `mozjpeg`, `libwebp`, `libavif`, `ghostscript`, `qpdf`, and `LibreOffice`, then copies the needed binaries during app startup into `%LOCALAPPDATA%\Squish\bin`.
+   The script downloads `ffmpeg`, `mozjpeg`, `libwebp`, `libavif`, `jpegli`, `oxipng`, `pngquant`, and `gifsicle`, then copies the needed binaries during app startup into `%LOCALAPPDATA%\Squish\bin`.
 
 3. Open `src/Squish.sln` in Visual Studio 2022 (or run `dotnet build src/Squish.sln`).
 4. Set `App/Squish.App` as the startup project for the WPF shell and `BackgroundService/Squish.BackgroundService` for watcher testing.
@@ -71,9 +71,6 @@ dotnet test src/Squish.sln
 | libwebp (`cwebp`)       | Static + animated WebP output                              | <https://developers.google.com/speed/webp>       | BSD 3-Clause                 |
 | libavif (`avifenc`)     | AVIF encoding for advanced codec pipeline                  | <https://github.com/AOMediaCodec/libavif>        | BSD 2-Clause                 |
 | pngquant                | Palette quantisation for PNG workflows                     | <https://pngquant.org/>                          | GPL v3 / Commercial          |
-| qpdf                    | Optional PDF linearisation before Ghostscript              | <https://github.com/qpdf/qpdf>                   | Apache 2.0                   |
-| Ghostscript             | Core PDF optimisation/rasterisation engine                 | <https://www.ghostscript.com/>                   | AGPL v3                      |
-| LibreOffice (`soffice`) | Document-to-PDF conversion prior to optimisation           | <https://www.libreoffice.org/about-us/licenses/> | MPL 2.0 / LGPL v3+           |
 
 If you spot behaviour that differs from Clop for Mac or want to help wire up parity items, open an issue or a draft PR. Thanks for following along while I build this hobby project!
 

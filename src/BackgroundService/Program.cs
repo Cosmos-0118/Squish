@@ -19,8 +19,6 @@ builder.Logging.AddSharedFileLogger("background-service", LogLevel.Information);
 
 builder.Services.AddSingleton<IOptimiser>(_ => new SettingsBackedImageOptimiser(ImageOptimiserOptionsFactory.FromSettings));
 builder.Services.AddSingleton<IOptimiser>(_ => new VideoOptimiser(VideoOptimiserOptions.Default.WithHardwareOverride()));
-builder.Services.AddSingleton<IOptimiser, PdfOptimiser>();
-builder.Services.AddSingleton<IOptimiser, DocumentOptimiser>();
 
 builder.Services.AddSingleton(provider =>
 {

@@ -81,6 +81,7 @@ public sealed record AdvancedCodecPreferences
     public static AdvancedCodecPreferences Disabled { get; } = new()
     {
         EnableMozJpeg = false,
+        EnableJpegli = false,
         EnableOxipng = false,
         EnablePngquant = false,
         EnableWebp = false,
@@ -95,12 +96,23 @@ public sealed record AdvancedCodecPreferences
 
     public string? JpegtranPath { get; init; }
 
+    /// <summary>
+    /// jpegli (libjxl's <c>cjpegli</c>): a second JPEG encoder searched next to mozjpeg; whichever file is smaller at the
+    /// perceptual target ships. Usually 5-20% smaller than mozjpeg on photographs, and faster.
+    /// </summary>
+    public bool EnableJpegli { get; init; } = true;
+
+    public string? JpegliPath { get; init; }
+
     /// <summary>oxipng: multi-trial lossless PNG recompression (optional Zopfli).</summary>
     public bool EnableOxipng { get; init; } = true;
 
     public string? OxipngPath { get; init; }
 
-    /// <summary>pngquant: lossy 256-colour palette conversion for graphics (only used in aggressive mode).</summary>
+    /// <summary>
+    /// pngquant: lossy 256-colour palette conversion, shipped only when it meets the perceptual target and beats the
+    /// lossless result. Already-indexed PNGs are re-quantised in aggressive mode only. Turn off to keep PNGs lossless.
+    /// </summary>
     public bool EnablePngquant { get; init; } = true;
 
     public string? PngquantPath { get; init; }

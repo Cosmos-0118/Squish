@@ -173,17 +173,12 @@ internal sealed class WatchCommandHandler
             AggressiveQuality = _options.Aggressive,
             RemoveAudio = _options.RemoveAudio
         }).WithHardwareOverride();
-        var pdfOptions = PdfOptimiserOptions.Default with { AggressiveByDefault = _options.Aggressive };
-        var pdfOptimiser = new PdfOptimiser(pdfOptions);
-        var documentOptions = DocumentConversionOptions.Default;
 
         await using var coordinator = new OptimisationCoordinator(
             new IOptimiser[]
             {
                 new ImageOptimiser(imageOptions),
-                new VideoOptimiser(videoOptions),
-                pdfOptimiser,
-                new DocumentOptimiser(documentOptions, pdfOptimiser: pdfOptimiser)
+                new VideoOptimiser(videoOptions)
             },
             Math.Max(1, Environment.ProcessorCount / 2));
 
@@ -537,23 +532,10 @@ internal sealed class WatchCommandHandler
             return true;
         }
 
-        if (MediaFormats.IsPdf(path))
-        {
-            type = ItemType.Pdf;
-            return true;
-        }
-
-        if (ShouldConvertDocuments() && MediaFormats.IsDocument(path))
-        {
-            type = ItemType.Document;
-            return true;
-        }
-
         type = ItemType.Unknown;
         return false;
     }
 
-    private static bool ShouldConvertDocuments() => SettingsHost.Get(SettingsRegistry.AutoConvertDocumentsToPdf);
 
     private static bool IsWithinWorkRoot(FilePath path)
     {
@@ -581,7 +563,6 @@ internal sealed class WatchCommandHandler
             metadata["watch.aggressive"] = true;
             metadata[OptimisationMetadata.ImageAggressive] = true;
             metadata[OptimisationMetadata.VideoAggressive] = true;
-            metadata[OptimisationMetadata.PdfAggressive] = true;
         }
 
         if (_options.RemoveAudio)

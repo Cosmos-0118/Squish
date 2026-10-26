@@ -97,7 +97,8 @@ internal static class CrfSearch
         int maxCrf,
         Func<int, CancellationToken, Task<CrfProbe?>> probe,
         CancellationToken token,
-        int maxExtraProbes = 2)
+        int maxExtraProbes = 2,
+        double minScore = double.NegativeInfinity)
     {
         var chosen = outcome.Chosen;
         var probes = new List<CrfProbe>(outcome.Probes);
@@ -119,6 +120,32 @@ internal static class CrfSearch
             }
 
             probes.Add(result.Value);
+
+            if (result.Value.Score < minScore)
+            {
+                // The cap went too far. Try once half way; otherwise keep the last acceptable choice.
+                var half = chosen.Crf + (estimated - chosen.Crf) / 2;
+                if (half <= chosen.Crf || half >= estimated)
+                {
+                    break;
+                }
+
+                var middle = await probe(half, token).ConfigureAwait(false);
+                if (middle is null)
+                {
+                    break;
+                }
+
+                probes.Add(middle.Value);
+                if (middle.Value.Score >= minScore)
+                {
+                    chosen = middle.Value;
+                    adjusted = true;
+                }
+
+                break;
+            }
+
             chosen = result.Value;
             adjusted = true;
         }

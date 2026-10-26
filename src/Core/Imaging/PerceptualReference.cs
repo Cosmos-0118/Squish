@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace Squish.Core.Imaging;
 
@@ -26,12 +27,16 @@ internal sealed class PerceptualReference
     private readonly Ssimulacra2.PreparedReference?[,] _prepared;
     private readonly bool?[] _tileTransparency;
 
-    private PerceptualReference(RasterImage reference, IReadOnlyList<SampleTile> tiles, bool wholeImage)
+    // Full-coverage references would cache the whole image's pyramid (~36 bytes per pixel), so they re-prepare instead.
+    private readonly bool _cachePrepared;
+
+    private PerceptualReference(RasterImage reference, IReadOnlyList<SampleTile> tiles, bool wholeImage, bool cachePrepared = true)
     {
         _reference = reference;
         Tiles = tiles;
         IsWholeImage = wholeImage;
         HasAlpha = reference.HasVisibleAlpha();
+        _cachePrepared = cachePrepared;
         _prepared = new Ssimulacra2.PreparedReference?[tiles.Count, 2];
         _tileTransparency = new bool?[tiles.Count];
     }
@@ -63,6 +68,43 @@ internal sealed class PerceptualReference
         return new PerceptualReference(reference, ChooseTiles(reference, tileSize, maxTiles), wholeImage: false);
     }
 
+    /// <summary>
+    /// A reference that judges every pixel: small images whole, larger ones as a grid of tiles covering the full frame,
+    /// a couple at a time so memory stays bounded. Needed for palette quantisation, whose banding and colour shifts are
+    /// low-frequency: SSIMULACRA2 sees them at its coarse scales, which a small tile cannot represent (a 384-512 px tile
+    /// is 12-16 px at the coarsest scale, mostly padding) - small tiles overrated 256-colour screenshots by ~8-10 points
+    /// against a whole-image score. 1024 px tiles track the whole-image score.
+    /// </summary>
+    public static PerceptualReference CreateFullCoverage(RasterImage reference, int fullFramePixels = DefaultFullFramePixels, int tileSize = 1024)
+    {
+        if (reference.PixelCount <= fullFramePixels || reference.Width < tileSize || reference.Height < tileSize)
+        {
+            return Create(reference, fullFramePixels: int.MaxValue);
+        }
+
+        var tiles = new List<SampleTile>();
+        foreach (var (y, height) in Spans(reference.Height, tileSize))
+        {
+            foreach (var (x, width) in Spans(reference.Width, tileSize))
+            {
+                tiles.Add(new SampleTile(x, y, width, height));
+            }
+        }
+
+        return new PerceptualReference(reference, tiles, wholeImage: false, cachePrepared: false);
+    }
+
+    /// <summary>Splits [0, length) into tile-sized spans; a short remainder is merged into the last span.</summary>
+    private static IEnumerable<(int Start, int Length)> Spans(int length, int size)
+    {
+        var count = Math.Max(1, length / size);
+        for (var i = 0; i < count; i++)
+        {
+            var start = i * size;
+            yield return (start, i == count - 1 ? length - start : size);
+        }
+    }
+
     /// <summary>Score of <paramref name="candidate"/> (same dimensions as the reference). Higher is better.</summary>
     public double Score(RasterImage candidate, CancellationToken cancellationToken = default)
     {
@@ -72,13 +114,26 @@ internal sealed class PerceptualReference
         }
 
         var scores = new double[Tiles.Count];
-        for (var i = 0; i < Tiles.Count; i++)
+        void ScoreAt(int i)
         {
             var tile = Tiles[i];
             var crop = tile.Width == candidate.Width && tile.Height == candidate.Height
                 ? candidate
                 : candidate.Crop(tile.X, tile.Y, tile.Width, tile.Height);
             scores[i] = ScoreTile(i, crop, cancellationToken);
+        }
+
+        if (_cachePrepared)
+        {
+            for (var i = 0; i < Tiles.Count; i++)
+            {
+                ScoreAt(i);
+            }
+        }
+        else
+        {
+            // Full coverage: independent ~1 MP tiles (~110 MB of working set each), each already using three threads.
+            Parallel.For(0, Tiles.Count, new ParallelOptions { MaxDegreeOfParallelism = Math.Clamp(Environment.ProcessorCount / 3, 1, 2), CancellationToken = cancellationToken }, ScoreAt);
         }
 
         return Aggregate(scores);
@@ -154,18 +209,31 @@ internal sealed class PerceptualReference
     private double ScoreTile(int index, RasterImage candidate, CancellationToken token)
     {
         var tile = Tiles[index];
-        var referenceAlpha = _tileTransparency[index] ??= HasTransparency(TileOf(tile).Pixels);
-        var alpha = referenceAlpha || HasTransparency(candidate.Pixels);
-        var slot = alpha ? 1 : 0;
-
-        var prepared = _prepared[index, slot];
-        if (prepared is null)
+        if (!_cachePrepared)
         {
-            var reference = TileOf(tile);
-            prepared = alpha
-                ? Ssimulacra2.Prepare(reference.Pixels, reference.Width, reference.Height, 4, token)
-                : Ssimulacra2.Prepare(Rgb(reference), reference.Width, reference.Height, 3, token);
-            _prepared[index, slot] = prepared;
+            return ScorePair(TileOf(tile), candidate, token);
+        }
+
+        var candidateAlpha = HasTransparency(candidate.Pixels);
+        Ssimulacra2.PreparedReference prepared;
+        bool alpha;
+
+        // Concurrent searches share one reference; prepare each tile once, then compare without the lock.
+        lock (_prepared)
+        {
+            var referenceAlpha = _tileTransparency[index] ??= HasTransparency(TileOf(tile).Pixels);
+            alpha = referenceAlpha || candidateAlpha;
+            var slot = alpha ? 1 : 0;
+            if (_prepared[index, slot] is not { } cached)
+            {
+                var reference = TileOf(tile);
+                cached = alpha
+                    ? Ssimulacra2.Prepare(reference.Pixels, reference.Width, reference.Height, 4, token)
+                    : Ssimulacra2.Prepare(Rgb(reference), reference.Width, reference.Height, 3, token);
+                _prepared[index, slot] = cached;
+            }
+
+            prepared = cached;
         }
 
         return alpha ? prepared.Compare(candidate.Pixels, token) : prepared.Compare(Rgb(candidate), token);

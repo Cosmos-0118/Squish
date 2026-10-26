@@ -339,11 +339,6 @@ public sealed class ShortcutsBridge : IAsyncDisposable
                 {
                     enabled = SettingsHost.Get(SettingsRegistry.EnableAutomaticVideoOptimisations),
                     directories = SettingsHost.Get(SettingsRegistry.VideoDirs) ?? Array.Empty<string>()
-                },
-                pdfs = new
-                {
-                    enabled = SettingsHost.Get(SettingsRegistry.EnableAutomaticPdfOptimisations),
-                    directories = SettingsHost.Get(SettingsRegistry.PdfDirs) ?? Array.Empty<string>()
                 }
             }
         };

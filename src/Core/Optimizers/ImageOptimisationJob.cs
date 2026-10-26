@@ -102,13 +102,16 @@ internal sealed class ImageOptimisationJob : IDisposable
         var convertedFormat = !string.Equals(best.Extension, _source.Extension, StringComparison.OrdinalIgnoreCase)
             && !(IsJpegExtension(best.Extension) && IsJpegExtension(_source.Extension));
 
-        if (_options.RequireSizeImprovement && !convertedFormat)
+        if (_options.RequireSizeImprovement)
         {
-            var minimumSaving = _originalSize * (_options.MinimumSavingsPercent / 100.0);
+            // A format conversion has to actually shrink the file: WebP and AVIF are usually already tighter than the
+            // JPEG or PNG they would become.
+            var minimumSaving = convertedFormat ? 0 : _originalSize * (_options.MinimumSavingsPercent / 100.0);
             if (best.Size >= _originalSize - minimumSaving)
             {
+                var kept = convertedFormat ? "Already compact; converting would not save space" : "Original already optimal";
                 _context.ReportProgress(95, "No size improvement; keeping original");
-                return new OptimisationResult(_request.RequestId, OptimisationStatus.Succeeded, _source, "Original already optimal", elapsed);
+                return new OptimisationResult(_request.RequestId, OptimisationStatus.Succeeded, _source, kept, elapsed);
             }
         }
 
@@ -172,11 +175,10 @@ internal sealed class ImageOptimisationJob : IDisposable
         var orientation = blobs.Exif is { Length: > 0 } exif ? JpegSegments.ReadOrientation(exif) : 1;
         var downscale = NeedsDownscale(probe);
 
-        ImageCandidate? lossless = null;
-        if (!downscale)
-        {
-            lossless = await LosslessJpegAsync(bytes, blobs, orientation).ConfigureAwait(false);
-        }
+        // jpegtran runs in its own process, so the lossless pass overlaps the lossy search.
+        var losslessTask = downscale
+            ? Task.FromResult<ImageCandidate?>(null)
+            : LosslessJpegAsync(bytes, blobs, orientation);
 
         _context.ReportProgress(30, "Searching lowest visually-lossless quality");
         ImageCandidate? lossy = null;
@@ -196,8 +198,13 @@ internal sealed class ImageOptimisationJob : IDisposable
         {
             _notes.Add($"Lossy pass skipped: {ex.Message}");
         }
+        finally
+        {
+            // Observe the lossless pass on every path, including cancellation.
+            await losslessTask.ConfigureAwait(false);
+        }
 
-        return PickBest(lossless, lossy);
+        return PickBest(await losslessTask.ConfigureAwait(false), lossy);
     }
 
     private async Task<ImageCandidate?> LosslessJpegAsync(byte[] sourceBytes, MetadataBlobs blobs, int orientation)
@@ -253,9 +260,9 @@ internal sealed class ImageOptimisationJob : IDisposable
         }
 
         var resolved = MetadataPlan.Resolve(blobs, _options.MetadataPolicy, orientationAlreadyApplied: true);
-        var chroma = content.Kind == ImageContentKind.Photograph ? ChromaSubsampling.Subsampled420 : ChromaSubsampling.Full444;
+        var chromas = JpegChromaCandidates(content, decoded.JpegChroma420);
 
-        var encoded = await EncodeJpegWithGuardAsync(reference, chroma, lowest, highest).ConfigureAwait(false);
+        var encoded = await EncodeJpegWithGuardAsync(reference, chromas, lowest, highest).ConfigureAwait(false);
         if (encoded is null)
         {
             return null;
@@ -264,30 +271,90 @@ internal sealed class ImageOptimisationJob : IDisposable
         return await WithJpegMetadataAsync(encoded, resolved, downscale ? "Downscaled and re-encoded JPEG" : "Perceptual JPEG re-encode").ConfigureAwait(false);
     }
 
-    private async Task<EncodedCandidate?> EncodeJpegWithGuardAsync(RasterImage reference, ChromaSubsampling chroma, int lowest, int highest)
+    /// <summary>
+    /// Chroma layouts worth searching. Photos usually win with 4:2:0, but re-subsampling a source that kept full
+    /// chroma (4:4:4 exports, 4:2:2 cameras, PNG/HEIC conversions) often cannot reach the target at any quality,
+    /// while 4:4:4 can - and sometimes is simply smaller. A 4:2:0 source has no chroma detail left to keep.
+    /// </summary>
+    private static ChromaSubsampling[] JpegChromaCandidates(ImageContentProfile content, bool? sourceIs420)
+    {
+        if (content.Kind != ImageContentKind.Photograph)
+        {
+            return [ChromaSubsampling.Full444];
+        }
+
+        return sourceIs420 == true
+            ? [ChromaSubsampling.Subsampled420]
+            : [ChromaSubsampling.Subsampled420, ChromaSubsampling.Full444];
+    }
+
+    private async Task<EncodedCandidate?> EncodeJpegWithGuardAsync(RasterImage reference, IReadOnlyList<ChromaSubsampling> chromas, int lowest, int highest)
     {
         var mozjpeg = _encoders.HasMozJpeg;
-        Task<FilePath?> Encode(RasterImage image, int quality, CancellationToken token) => _encoders.EncodeJpegAsync(image, quality, chroma, token);
 
         if (!GuardEnabled || !PerceptualReference.IsSupported(reference))
         {
             var quality = Math.Clamp(FixedQuality, lowest, Math.Max(lowest, highest));
-            var file = await Encode(reference, quality, _token).ConfigureAwait(false);
+            var file = await _encoders.EncodeJpegAsync(reference, quality, chromas[0], _token).ConfigureAwait(false);
             return file is null ? null : new EncodedCandidate(file.Value, quality, double.NaN);
         }
 
+        // The searches are independent (separate encoder processes, read-only reference), so run them side by side.
         var perceptual = PerceptualReference.Create(reference);
-        var candidate = await SearchLossyAsync(reference, perceptual, lowest, highest, Encode).ConfigureAwait(false);
-        if (candidate is not null)
+        // Every chroma layout is tried with each JPEG encoder; the smallest file that passes wins.
+        var entries = new List<(ChromaSubsampling Chroma, string Encoder, Task<EncodedCandidate?> Search)>();
+        foreach (var chroma in chromas)
         {
-            _notes.Add($"{(mozjpeg ? "mozjpeg" : "built-in encoder")} q{candidate.Quality}");
+            var layout = chroma;
+            entries.Add((layout, mozjpeg ? "mozjpeg" : "built-in encoder", SearchLossyAsync(reference, perceptual, lowest, highest,
+                (image, quality, token) => _encoders.EncodeJpegAsync(image, quality, layout, token))));
+            if (_encoders.HasJpegli)
+            {
+                entries.Add((layout, "jpegli", SearchLossyAsync(reference, perceptual, lowest, highest,
+                    (image, quality, token) => _encoders.EncodeJpegliAsync(image, quality, layout, token))));
+            }
+        }
+
+        await Task.WhenAll(entries.Select(e => e.Search)).ConfigureAwait(false);
+
+        EncodedCandidate? best = null;
+        var bestChroma = chromas[0];
+        for (var i = 0; i < entries.Count; i++)
+        {
+            var chroma = entries[i].Chroma;
+            var candidate = entries[i].Search.Result is { } found ? found with { Encoder = entries[i].Encoder } : null;
+            if (candidate is null)
+            {
+                continue;
+            }
+
+            if (best is null || SafeSize(candidate.File) < SafeSize(best.File))
+            {
+                if (best is not null)
+                {
+                    _temp.Release(best.File);
+                }
+
+                best = candidate;
+                bestChroma = chroma;
+            }
+            else
+            {
+                _temp.Release(candidate.File);
+            }
+        }
+
+        if (best is not null)
+        {
+            var layout = bestChroma == ChromaSubsampling.Full444 ? "4:4:4" : "4:2:0";
+            _notes.Add($"{best.Encoder} q{best.Quality} {layout}");
         }
         else
         {
             _notes.Add("No JPEG quality met the perceptual target");
         }
 
-        return candidate;
+        return best;
     }
 
     private async Task<ImageCandidate> WithJpegMetadataAsync(EncodedCandidate encoded, MetadataBlobs metadata, string description)
@@ -296,7 +363,7 @@ internal sealed class ImageOptimisationJob : IDisposable
         data = JpegSegments.Rewrite(data, metadata, addSquishMarker: true);
         await File.WriteAllBytesAsync(encoded.File.Value, data, _token).ConfigureAwait(false);
 
-        var detail = _encoders.HasMozJpeg ? $"{description} (mozjpeg q{encoded.Quality})" : $"{description} (q{encoded.Quality})";
+        var detail = encoded.Encoder is { } encoder ? $"{description} ({encoder} q{encoded.Quality})" : $"{description} (q{encoded.Quality})";
         return new ImageCandidate(encoded.File, "jpg", detail, data.LongLength, true, double.IsNaN(encoded.Score) ? null : encoded.Score);
     }
 
@@ -317,18 +384,34 @@ internal sealed class ImageOptimisationJob : IDisposable
         var strip = PngStripMode();
         var candidates = new List<ImageCandidate>();
 
-        if (!downscale)
+        // oxipng runs in its own process, so the lossless pass overlaps the decode and the lossy searches below.
+        var losslessTask = downscale
+            ? Task.FromResult<ImageCandidate?>(null)
+            : LosslessPngAsync(_source, probe.PixelCount, strip, "Lossless PNG recompression");
+        try
         {
-            var lossless = await LosslessPngAsync(_source, probe.PixelCount, strip, "Lossless PNG recompression").ConfigureAwait(false);
-            if (lossless is not null)
+            await OptimisePngLossyAsync(probe, info, downscale, strip, candidates).ConfigureAwait(false);
+        }
+        finally
+        {
+            // Always observe the lossless pass, even when the lossy work failed or was cancelled.
+            if (await losslessTask.ConfigureAwait(false) is { } lossless)
             {
-                candidates.Add(lossless);
+                candidates.Insert(0, lossless);
             }
         }
 
+        return PickBest(candidates);
+    }
+
+    private async Task OptimisePngLossyAsync(ImageProbe probe, PngInfo? info, bool downscale, string strip, List<ImageCandidate> candidates)
+    {
         var extension = SourceFormat.Png.DefaultExtension();
         var wantsJpeg = _options.FormatsToConvertToJpeg.Contains(extension);
-        var wantsLossyPalette = _aggressive && _encoders.HasPngquant && info is not { BitDepth: 16 };
+        // Screenshots and UI graphics usually fit a 256-colour palette at the perceptual target for a fraction of the
+        // lossless size; the guard rejects it where banding or dithering would show. An already-indexed source was
+        // quantised before (possibly by us), so only aggressive mode may squeeze its palette further.
+        var wantsLossyPalette = _encoders.HasPngquant && info is not { BitDepth: 16 } && (_aggressive || info is not { IsIndexed: true });
         var wantsModern = _options.AdvancedCodecs.AllowWebpOutput || _options.AdvancedCodecs.AllowAvifOutput;
 
         if (downscale || wantsJpeg || wantsLossyPalette || wantsModern)
@@ -376,17 +459,16 @@ internal sealed class ImageOptimisationJob : IDisposable
                 }
             }
         }
-
-        return PickBest(candidates);
     }
 
     private async Task<ImageCandidate?> LosslessPngAsync(FilePath input, long pixels, string strip, string description)
     {
         _context.ReportProgress(15, "Recompressing PNG");
+        // Higher presets add more filter/deflate trials: worth 1-3% on screenshots while they stay around a second.
         var level = pixels switch
         {
-            <= 1_500_000 => 4,
-            <= 8_000_000 => 2,
+            <= 2_000_000 => 6,
+            <= 8_000_000 => 4,
             _ => 1
         };
 
@@ -413,48 +495,74 @@ internal sealed class ImageOptimisationJob : IDisposable
     private async Task<ImageCandidate?> QuantisedPngAsync(RasterImage reference, string strip)
     {
         _context.ReportProgress(45, "Trying 256-colour palette");
-        var perceptual = GuardEnabled ? PerceptualReference.Create(reference) : null;
+        // Palette error is global (dithering, banding), so every pixel is judged rather than a few sampled tiles.
+        var perceptual = GuardEnabled ? PerceptualReference.CreateFullCoverage(reference) : null;
         var staging = _encoders.WritePngStaging(reference);
 
         FilePath? bestFile = null;
         double? bestScore = null;
         var bestQuality = 0;
 
-        // pngquant's own 0-100 "quality" is not perceptual; we bisect it with our metric instead.
-        var low = 30;
-        var high = 100;
-        for (var i = 0; i < 5 && low <= high; i++)
+        // Quantises at a pngquant quality cap; the file comes back only when it meets the target.
+        async Task<(int Quality, FilePath? File, double? Score)> ProbeAsync(int quality)
         {
-            _token.ThrowIfCancellationRequested();
-            var mid = (low + high) / 2;
-            var quantised = await _encoders.QuantisePngAsync(staging, 0, mid, speed: 3, _token).ConfigureAwait(false);
+            var quantised = await _encoders.QuantisePngAsync(staging, 0, quality, speed: 3, _token).ConfigureAwait(false);
             if (quantised is null)
             {
-                low = mid + 1;
-                continue;
+                return (quality, null, null);
             }
 
-            double? score = null;
-            if (perceptual is not null)
+            if (perceptual is null)
             {
-                score = perceptual.Score(ImageIO.DecodeToRaster(quantised.Value.Value), _token);
-                if (score < _targetScore)
+                return (quality, quantised, null);
+            }
+
+            var score = await Task.Run(() => perceptual.Score(ImageIO.DecodeToRaster(quantised.Value.Value), _token), _token).ConfigureAwait(false);
+            if (score < _targetScore)
+            {
+                _temp.Release(quantised.Value);
+                return (quality, null, score);
+            }
+
+            return (quality, quantised, score);
+        }
+
+        // Runs a round of caps side by side (pngquant is single-threaded and mostly I/O) and keeps the lowest passing cap.
+        async Task<bool[]> RoundAsync(int[] caps)
+        {
+            _token.ThrowIfCancellationRequested();
+            var results = await Task.WhenAll(caps.Select(ProbeAsync)).ConfigureAwait(false);
+            foreach (var result in results.Where(r => r.File is not null).OrderBy(r => r.Quality))
+            {
+                if (bestFile is null || result.Quality < bestQuality)
                 {
-                    _temp.Release(quantised.Value);
-                    low = mid + 1;
-                    continue;
+                    if (bestFile is not null)
+                    {
+                        _temp.Release(bestFile.Value);
+                    }
+
+                    (bestQuality, bestFile, bestScore) = result;
+                }
+                else
+                {
+                    _temp.Release(result.File!.Value);
                 }
             }
 
-            if (bestFile is not null)
-            {
-                _temp.Release(bestFile.Value);
-            }
+            return results.Select(r => r.File is not null).ToArray();
+        }
 
-            bestFile = quantised;
-            bestScore = score;
-            bestQuality = mid;
-            high = mid - 1;
+        // pngquant's 0-100 cap is not perceptual, so it is searched with our metric: lower caps let it drop colours and
+        // dithering for much smaller files. Round one pairs the uncapped palette - the best any palette gets, so a miss
+        // there (photos, gradients) settles it - with a mid cap; round two refines inside the bracket that leaves.
+        const int lowestCap = 30;
+        const int midCap = 65;
+        var first = await RoundAsync([100, midCap]).ConfigureAwait(false);
+        if (first[0])
+        {
+            var (low, high) = first[1] ? (lowestCap, midCap) : (midCap, 100);
+            var refine = Enumerable.Range(1, 4).Select(i => low + (high - low) * i / 5).Distinct().ToArray();
+            await RoundAsync(refine).ConfigureAwait(false);
         }
 
         if (bestFile is null)
@@ -528,14 +636,25 @@ internal sealed class ImageOptimisationJob : IDisposable
             }
         }
 
-        // Converted files change format, so any valid result counts even if it is bigger than the source.
+        // WebP and AVIF already beat JPEG and PNG at the same quality, so a conversion rarely shrinks them. When none
+        // does, re-encode in the original format instead (Finish keeps the original if that is not smaller either).
+        if (probe.Format is SourceFormat.WebP or SourceFormat.Avif && !keepModernFormat && !candidates.Any(c => c.Size < _originalSize))
+        {
+            var inFormat = await ModernFormatAsync(reference, content, hasAlpha, probe.Format).ConfigureAwait(false);
+            if (inFormat is not null)
+            {
+                candidates.Add(inFormat);
+            }
+        }
+
+        // Converted files change format; Finish decides whether the result is small enough to ship.
         return PickBest(candidates);
     }
 
     private async Task<ImageCandidate?> ConvertToJpegAsync(RasterImage reference, ImageContentProfile content, MetadataBlobs blobs, string description)
     {
-        var chroma = content.Kind == ImageContentKind.Photograph ? ChromaSubsampling.Subsampled420 : ChromaSubsampling.Full444;
-        var encoded = await EncodeJpegWithGuardAsync(reference, chroma, _options.MinimumLossyQuality, _options.MaximumLossyQuality).ConfigureAwait(false);
+        var chromas = JpegChromaCandidates(content, sourceIs420: null);
+        var encoded = await EncodeJpegWithGuardAsync(reference, chromas, _options.MinimumLossyQuality, _options.MaximumLossyQuality).ConfigureAwait(false);
         if (encoded is null)
         {
             return null;
@@ -606,6 +725,13 @@ internal sealed class ImageOptimisationJob : IDisposable
     // GIF
     // ------------------------------------------------------------------------------------------------------
 
+    // gifsicle --lossy levels, mildest first. Each step trades LZW-friendly colour noise for size; the search keeps the
+    // strongest one whose sampled frames still score above the perceptual target.
+    private static readonly int[] GifLossyLevels = { 8, 14, 20, 28, 40, 60, 90, 140, 200 };
+
+    private const int GifGuardWindow = 72;
+    private const int GifGuardSamples = 8;
+
     private async Task<ImageCandidate?> OptimiseGifAsync(ImageProbe probe)
     {
         _context.ReportProgress(20, "Optimising GIF frames");
@@ -614,47 +740,123 @@ internal sealed class ImageOptimisationJob : IDisposable
             ? null
             : new ImageCandidate(lossless.Value, "gif", $"Optimised GIF ({(_encoders.HasGifsicle ? "gifsicle" : "built-in")})", SafeSize(lossless.Value), false, null);
 
-        if (_aggressive && _encoders.HasGifsicle)
+        if (_encoders.HasGifsicle)
         {
-            var lossy = await _encoders.OptimiseGifAsync(_source, lossy: 80, _token).ConfigureAwait(false);
-            if (lossy is not null && SafeSize(lossy.Value) < (best?.Size ?? _originalSize))
+            ImageCandidate? lossy = null;
+            if (GuardEnabled)
             {
-                var acceptable = true;
-                if (GuardEnabled)
+                lossy = await SearchGifLossyAsync(probe).ConfigureAwait(false);
+            }
+            else if (_aggressive)
+            {
+                var file = await _encoders.OptimiseGifAsync(_source, lossy: 80, _token).ConfigureAwait(false);
+                if (file is not null)
                 {
-                    acceptable = GifLossyIsAcceptable(lossy.Value);
+                    lossy = new ImageCandidate(file.Value, "gif", "Lossy GIF (gifsicle)", SafeSize(file.Value), true, null);
                 }
+            }
 
-                if (acceptable)
-                {
-                    best = new ImageCandidate(lossy.Value, "gif", "Lossy GIF (gifsicle)", SafeSize(lossy.Value), true, null);
-                }
+            if (lossy is not null && lossy.Size < (best?.Size ?? _originalSize))
+            {
+                best = lossy;
             }
         }
 
         return PickBest(best);
     }
 
-    private bool GifLossyIsAcceptable(FilePath candidate)
+    /// <summary>
+    /// Finds the strongest gifsicle lossy level that keeps evenly spaced composited frames above the perceptual
+    /// target. Quality loss from the lossy LZW pass is uniform across an animation, so the leading frames are
+    /// representative and long GIFs stay cheap to judge.
+    /// </summary>
+    private async Task<ImageCandidate?> SearchGifLossyAsync(ImageProbe probe)
+    {
+        var references = await Task.Run(() =>
+        {
+            var frames = ImageIO.DecodeGifSamples(_source.Value, GifGuardWindow, GifGuardSamples);
+            return frames.Count > 0 && frames.All(f => PerceptualReference.IsSupported(f.Frame))
+                ? frames.Select(f => (f.StartTicks, Reference: PerceptualReference.Create(f.Frame))).ToList()
+                : null;
+        }, _token).ConfigureAwait(false);
+
+        if (references is null)
+        {
+            return null;
+        }
+
+        ImageCandidate? best = null;
+        var low = 0;
+        var high = GifLossyLevels.Length - 1;
+        while (low <= high)
+        {
+            _token.ThrowIfCancellationRequested();
+            var mid = (low + high) / 2;
+            var level = GifLossyLevels[mid];
+            var file = await _encoders.OptimiseGifAsync(_source, level, _token).ConfigureAwait(false);
+            var score = file is null ? double.NegativeInfinity : await Task.Run(() => ScoreGifSamples(references, file.Value), _token).ConfigureAwait(false);
+            if (file is not null && score >= _targetScore)
+            {
+                if (best is not null)
+                {
+                    _temp.Release(best.File);
+                }
+
+                best = new ImageCandidate(file.Value, "gif", $"Lossy GIF (gifsicle --lossy={level})", SafeSize(file.Value), true, score);
+                low = mid + 1;
+            }
+            else
+            {
+                if (file is not null)
+                {
+                    _temp.Release(file.Value);
+                }
+
+                high = mid - 1;
+            }
+        }
+
+        return best;
+    }
+
+    /// <summary>Mean SSIMULACRA2 over the sampled frames, or -inf when any single frame falls well short of the target.</summary>
+    private double ScoreGifSamples(IReadOnlyList<(long StartTicks, PerceptualReference Reference)> references, FilePath candidate)
     {
         try
         {
-            using var original = ImageIO.Decode(_source.Value, SourceFormat.Gif, autoOrient: false);
-            using var optimised = ImageIO.Decode(candidate.Value, SourceFormat.Gif, autoOrient: false);
-            var a = ImageIO.ToRaster(original.Image);
-            var b = ImageIO.ToRaster(optimised.Image);
-            if (a.Width != b.Width || a.Height != b.Height || !PerceptualReference.IsSupported(a))
+            var frames = ImageIO.DecodeGifSamples(candidate.Value, GifGuardWindow, GifGuardSamples, references.Select(r => r.StartTicks).ToList());
+            if (frames.Count != references.Count)
             {
-                return false;
+                return double.NegativeInfinity;
             }
 
-            return PerceptualReference.Create(a).Score(b, _token) >= _targetScore;
+            var total = 0d;
+            for (var i = 0; i < frames.Count; i++)
+            {
+                var reference = references[i].Reference.Reference;
+                if (frames[i].Frame.Width != reference.Width || frames[i].Frame.Height != reference.Height)
+                {
+                    return double.NegativeInfinity;
+                }
+
+                var score = references[i].Reference.Score(frames[i].Frame, _token);
+                if (score < _targetScore - GifWorstFrameSlack)
+                {
+                    return double.NegativeInfinity;
+                }
+
+                total += score;
+            }
+
+            return total / frames.Count;
         }
         catch (Exception ex) when (ex is MagickException or InvalidDataException)
         {
-            return false;
+            return double.NegativeInfinity;
         }
     }
+
+    private const double GifWorstFrameSlack = 10;
 
     // ------------------------------------------------------------------------------------------------------
     // Shared search machinery
@@ -713,7 +915,20 @@ internal sealed class ImageOptimisationJob : IDisposable
             }
         }
 
-        var found = await LossySearch.FindLowestPassingAsync(lowest, highest, _targetScore, Evaluate, iterations, _token).ConfigureAwait(false);
+        // Probe scores are kept so a re-search against a corrected target (below) only pays for new qualities.
+        var probed = new Dictionary<int, double?>();
+        async Task<double?> EvaluateCached(int quality, CancellationToken token)
+        {
+            if (!probed.TryGetValue(quality, out var score))
+            {
+                score = await Evaluate(quality, token).ConfigureAwait(false);
+                probed[quality] = score;
+            }
+
+            return score;
+        }
+
+        var found = await LossySearch.FindLowestPassingAsync(lowest, highest, _targetScore, EvaluateCached, iterations, _token).ConfigureAwait(false);
         if (found is null)
         {
             if (passing is not null)
@@ -734,6 +949,9 @@ internal sealed class ImageOptimisationJob : IDisposable
             _temp.Release(passing.File);
         }
 
+        // The search judged a few sampled tiles; the shipped file is judged on every pixel. Sampled tiles miss
+        // low-frequency error such as chroma re-subsampling of a 4:2:2 / 4:4:4 source (seen 5+ points too generous).
+        var verifier = perceptual.IsWholeImage ? perceptual : PerceptualReference.CreateFullCoverage(reference);
         var quality = found.Value;
         for (var attempt = 0; attempt < VerificationRetries; attempt++)
         {
@@ -745,7 +963,7 @@ internal sealed class ImageOptimisationJob : IDisposable
             }
 
             var decoded = ImageIO.DecodeToRaster(file.Value.Value);
-            var score = perceptual.Score(decoded, _token);
+            var score = verifier.Score(decoded, _token);
             if (score >= _targetScore)
             {
                 return new EncodedCandidate(file.Value, quality, score);
@@ -757,7 +975,11 @@ internal sealed class ImageOptimisationJob : IDisposable
                 break;
             }
 
-            quality = Math.Min(highest, quality + 3);
+            // The probe was too generous by (probe score - real score) at this quality. Search the cheap probe again
+            // against a target raised by that bias instead of blindly stepping up full-size encodes.
+            var bias = probed.TryGetValue(quality, out var probeScore) && probeScore is double p ? Math.Max(0, p - score) : 0;
+            var corrected = await LossySearch.FindLowestPassingAsync(quality + 1, highest, _targetScore + bias + 0.5, EvaluateCached, iterations, _token).ConfigureAwait(false);
+            quality = corrected ?? highest;
         }
 
         return null;

@@ -458,7 +458,17 @@ foreach ($tool in $tools) {
                         $sourcePath = $expandDir
                     }
                 }
-                Copy-Item -Path (Join-Path $sourcePath '*') -Destination $dest -Recurse -Force
+                if ($tool.PSObject.Properties['include']) {
+                    # Release archives that bundle many tools: keep only the ones we use.
+                    foreach ($fileName in $tool.include) {
+                        $match = Get-ChildItem -LiteralPath $sourcePath -Recurse -File -Filter $fileName | Select-Object -First 1
+                        if (-not $match) { throw "'$fileName' not found in the $($tool.name) archive." }
+                        Copy-Item -LiteralPath $match.FullName -Destination $dest -Force
+                    }
+                }
+                else {
+                    Copy-Item -Path (Join-Path $sourcePath '*') -Destination $dest -Recurse -Force
+                }
                 Remove-Item -Recurse -Force -LiteralPath $expandDir
             }
             'raw' {

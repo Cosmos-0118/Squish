@@ -9,21 +9,21 @@
       "destination": "ffmpeg"
     },
     {
-      "name": "ghostscript",
-      "version": "10.08.0",
-      "url": "https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10080/gs10080w64.exe",
-      "sha256": "52a91b8bf09298788d7a57b9206127026c23eacd75405f0a131e26dc381dce50",
-      "archiveType": "7zip",
-      "destination": "ghostscript",
-      "programFilesFallback": "gs\\gs10.08.0"
-    },
-    {
       "name": "mozjpeg",
       "version": "4.1.5",
       "url": "https://github.com/garyzyg/mozjpeg-windows/releases/download/4.1.5/mozjpeg-x64.zip",
       "sha256": "176ef4f632b09dca449e27bc11df090c1222528dff9f583a14bbd026a0c8eb2f",
       "archiveType": "zip",
       "destination": "mozjpeg"
+    },
+    {
+      "name": "jpegli",
+      "version": "0.11.1",
+      "url": "https://github.com/libjxl/libjxl/releases/download/v0.11.1/jxl-x64-windows-static.zip",
+      "sha256": "8f53ebce91820c30c9fc9294f06380213c1e2e66b361718880580246b2be008e",
+      "archiveType": "zip",
+      "destination": "jpegli",
+      "include": [ "cjpegli.exe" ]
     },
     {
       "name": "oxipng",
@@ -66,26 +66,6 @@
       "sha256": "7e47dd0bfd5ee47f911464c57faeed89a8709a7625dd1c449b16579889539ee8",
       "archiveType": "zip",
       "destination": "gifsicle"
-    },
-    {
-      "name": "qpdf",
-      "version": "12.4.0",
-      "url": "https://github.com/qpdf/qpdf/releases/download/v12.4.0/qpdf-12.4.0-msvc64.zip",
-      "sha256": "5bcb25353f7e6df92b5625dbcfe52a5c34a2a5fba2d1a8b98b8a6a0972c3ff72",
-      "archiveType": "zip",
-      "destination": "qpdf",
-      "contentRoot": "qpdf-12.4.0-msvc64"
-    },
-    {
-      "name": "libreoffice",
-      "version": "26.2.7.1",
-      "url": "https://downloadarchive.documentfoundation.org/libreoffice/old/26.2.7.1/win/x86_64/LibreOffice_26.2.7.1_Win_x86-64.msi",
-      "checksumSource": {
-        "url": "https://downloadarchive.documentfoundation.org/libreoffice/old/26.2.7.1/win/x86_64/LibreOffice_26.2.7.1_Win_x86-64.msi.sha256",
-        "pattern": "^(?<sha256>[0-9a-f]{64})"
-      },
-      "archiveType": "msi",
-      "destination": "libreoffice"
     }
   ]
 }

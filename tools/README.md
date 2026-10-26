@@ -43,11 +43,8 @@ The bundled ffmpeg entry points at the `ffmpeg-git-full.7z` build from gyan.dev 
 ## Subfolders
 
 - `ffmpeg/`
-- `ghostscript/`
 - `mozjpeg/`
 - `libwebp/`
 - `libavif/`
-- `qpdf/`
-- `libreoffice/`
 
 Keep large binaries out of Git when possible; commit only the README, checksum, and license files while storing the actual payloads in release artifacts or package feeds.

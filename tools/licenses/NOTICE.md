@@ -9,11 +9,9 @@ changes are applied.
 | ----------- | ---------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------- |
 | ffmpeg      | https://ffmpeg.org/                      | GNU GPL/LGPL (depending on configured codecs) | Bundled via BtbN's `ffmpeg-master-latest-win64-gpl` archive which enables GPL codecs. |
 | mozjpeg     | https://github.com/mozilla/mozjpeg       | IJG / BSD-style                               | Windows build sourced from `garyzyg/mozjpeg-windows` (`mozjpeg-x64.zip`).             |
+| jpegli      | https://github.com/libjxl/libjxl         | BSD 3-Clause                                  | `cjpegli.exe` from libjxl's official `jxl-x64-windows-static.zip` release (v0.11.1).  |
 | libwebp     | https://developers.google.com/speed/webp | BSD 3-Clause                                  | Use Google's official `libwebp-1.4.0-windows-x64` distribution.                       |
 | libavif     | https://github.com/AOMediaCodec/libavif  | BSD 2-Clause                                  | Alliance for Open Media's `windows-artifacts.zip` provides `avifenc.exe`.             |
-| Ghostscript | https://www.ghostscript.com/             | GNU AGPL v3.0                                 | Commercial licenses available from Artifex.                                           |
-| qpdf        | https://github.com/qpdf/qpdf             | Apache License 2.0                            | Official `qpdf-12.2.0-msvc64` archives include NOTICE + DLL dependencies.             |
-| LibreOffice | https://www.libreoffice.org/             | MPL 2.0 / LGPL v3+                            | Headless `soffice` used for DOC/XLS/PPT → PDF conversion.                             |
 
 Each entry below reproduces the text required by the upstream license.
 
@@ -54,31 +52,3 @@ libavif is licensed under the BSD 2-Clause license by the Alliance for Open Medi
 Releases (including `windows-artifacts.zip`) are available at
 <https://github.com/AOMediaCodec/libavif>. Redistributions must retain the
 copyright notice and license text.
-
----
-
-## Ghostscript — GNU Affero General Public License v3.0
-
-Ghostscript Community Edition is made available under the AGPL v3.0. Refer to
-<https://www.gnu.org/licenses/agpl-3.0.txt>. Commercial licenses may be purchased
-from Artifex (<https://artifex.com/licensing/>).
-
----
-
-## qpdf — Apache License 2.0
-
-qpdf is licensed under the Apache License 2.0. Source code and Windows binaries
-are published at <https://github.com/qpdf/qpdf>. Redistributions must include the
-Apache 2.0 license text and the upstream NOTICE file.
-
----
-
-## LibreOffice — MPL 2.0 or LGPL v3+
-
-LibreOffice is dual-licensed under the Mozilla Public License 2.0 and the GNU
-Lesser General Public License v3 or later. The upstream installer bundles the
-complete license stack inside `license.txt`; copies of the MPL 2.0 and LGPL 3.0
-texts are mirrored in this folder. Clop distributes the untouched MSI payload
-to provide `program/soffice.com` for document-to-PDF conversion. Refer to
-<https://www.libreoffice.org/about-us/licenses/> for attribution guidelines and
-commercial support options.

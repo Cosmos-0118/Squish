@@ -20,10 +20,8 @@ public enum SquishErrorKind
     AlreadyResized,
     ImageSizeLarger,
     VideoSizeLarger,
-    PdfSizeLarger,
     UnknownImageType,
     VideoError,
-    PdfError,
     DownloadError,
     SkippedType,
     OptimisationPaused,
@@ -33,8 +31,6 @@ public enum SquishErrorKind
     DecompressingBinariesError,
     DownscaleFailed,
     AppNotRunning,
-    EncryptedPdf,
-    InvalidPdf,
     CouldNotCreateOutputDirectory,
     UnknownType
 }
@@ -51,10 +47,8 @@ public readonly record struct SquishError(SquishErrorKind Kind, FilePath? Path =
         SquishErrorKind.AlreadyResized => $"Image is already at the correct size or smaller: {DescribePath(Path)}",
         SquishErrorKind.ImageSizeLarger => $"Optimised image size is larger: {DescribePath(Path)}",
         SquishErrorKind.VideoSizeLarger => $"Optimised video size is larger: {DescribePath(Path)}",
-        SquishErrorKind.PdfSizeLarger => $"Optimised PDF size is larger: {DescribePath(Path)}",
         SquishErrorKind.UnknownImageType => $"Unknown image type: {DescribePath(Path)}",
         SquishErrorKind.VideoError => $"Error processing video: {Message ?? string.Empty}",
-        SquishErrorKind.PdfError => $"Error processing PDF: {Message ?? string.Empty}",
         SquishErrorKind.DownloadError => $"Download failed: {Message ?? string.Empty}",
         SquishErrorKind.SkippedType => $"Type is skipped: {Message ?? string.Empty}",
         SquishErrorKind.OptimisationPaused => $"Optimisation paused: {DescribePath(Path)}",
@@ -64,8 +58,6 @@ public readonly record struct SquishError(SquishErrorKind Kind, FilePath? Path =
         SquishErrorKind.DecompressingBinariesError => "Decompressing binaries",
         SquishErrorKind.DownscaleFailed => $"Downscale failed: {DescribePath(Path)}",
         SquishErrorKind.AppNotRunning => $"App is not running, integration failed: {DescribePath(Path)}",
-        SquishErrorKind.EncryptedPdf => $"PDF is encrypted: {DescribePath(Path)}",
-        SquishErrorKind.InvalidPdf => $"Can't parse PDF: {DescribePath(Path)}",
         SquishErrorKind.CouldNotCreateOutputDirectory => $"Could not create output directory: {Message ?? string.Empty}",
         SquishErrorKind.UnknownType => "Unknown type",
         _ => Message ?? Kind.ToString()
@@ -81,10 +73,8 @@ public readonly record struct SquishError(SquishErrorKind Kind, FilePath? Path =
         SquishErrorKind.AlreadyResized => "Image is already at the correct size or smaller",
         SquishErrorKind.ImageSizeLarger => "Already optimised",
         SquishErrorKind.VideoSizeLarger => "Already optimised",
-        SquishErrorKind.PdfSizeLarger => "Already optimised",
         SquishErrorKind.UnknownImageType => "Unknown image type",
         SquishErrorKind.VideoError => "Video error",
-        SquishErrorKind.PdfError => "PDF error",
         SquishErrorKind.DownloadError => "Download failed",
         SquishErrorKind.SkippedType => "Type is skipped",
         SquishErrorKind.OptimisationPaused => "Optimisation paused",
@@ -93,8 +83,6 @@ public readonly record struct SquishError(SquishErrorKind Kind, FilePath? Path =
         SquishErrorKind.DownscaleFailed => "Downscale failed",
         SquishErrorKind.OptimisationFailed => "Optimisation failed",
         SquishErrorKind.AppNotRunning => "App integration not running",
-        SquishErrorKind.EncryptedPdf => "PDF is encrypted",
-        SquishErrorKind.InvalidPdf => "Can't parse PDF",
         SquishErrorKind.CouldNotCreateOutputDirectory => "Could not create output directory",
         SquishErrorKind.DecompressingBinariesError => "Decompressing binaries",
         SquishErrorKind.UnknownType => "Unknown type",
@@ -142,27 +130,9 @@ public static class MediaFormats
         "webp", "avif", "heic", "bmp", "tiff", "tif", "png", "jpeg", "jpg", "gif"
     };
 
-    private static readonly HashSet<string> PdfExtensions = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "pdf"
-    };
-
-    private static readonly HashSet<string> DocumentExtensions = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "doc", "docx", "docm", "dot", "dotm", "dotx",
-        "rtf", "odt", "ott", "fodt",
-        "ppt", "pptx", "pptm", "pot", "potx", "odp", "otp", "fodp",
-        "xls", "xlsx", "xlsm", "xlsb", "xlt", "xltx", "ods", "ots", "fods",
-        "csv", "tsv", "txt", "html", "htm"
-    };
-
     public static IReadOnlyCollection<string> ImageExtensionNames => ImageExtensions;
 
     public static IReadOnlyCollection<string> VideoExtensionNames => VideoExtensions;
-
-    public static IReadOnlyCollection<string> PdfExtensionNames => PdfExtensions;
-
-    public static IReadOnlyCollection<string> DocumentExtensionNames => DocumentExtensions;
 
     public static IReadOnlySet<string> ImageVideoFormats { get; } = ImageExtensions.Union(VideoExtensions, StringComparer.OrdinalIgnoreCase).ToHashSet();
 
@@ -173,14 +143,6 @@ public static class MediaFormats
     public static bool IsVideo(FilePath path) => IsVideo(path.Extension);
 
     public static bool IsVideo(string? extension) => !string.IsNullOrWhiteSpace(extension) && VideoExtensions.Contains(extension.TrimStart('.'));
-
-    public static bool IsPdf(FilePath path) => IsPdf(path.Extension);
-
-    public static bool IsPdf(string? extension) => !string.IsNullOrWhiteSpace(extension) && PdfExtensions.Contains(extension.TrimStart('.'));
-
-    public static bool IsDocument(FilePath path) => IsDocument(path.Extension);
-
-    public static bool IsDocument(string? extension) => !string.IsNullOrWhiteSpace(extension) && DocumentExtensions.Contains(extension.TrimStart('.'));
 }
 
 public enum CropOrientation

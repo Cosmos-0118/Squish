@@ -35,8 +35,6 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
     private volatile bool _copyImageFilePath;
     private volatile bool _useCustomTemplate;
     private volatile bool _optimiseVideoClipboard;
-    private volatile bool _optimisePdfClipboard;
-    private volatile bool _autoConvertDocuments;
     private volatile bool _optimiseClipboardFileDrops;
     private volatile bool _optimiseImagePathClipboard;
     private string _customTemplate = string.Empty;
@@ -161,7 +159,7 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
                     {
                         await CopyImageToClipboardAsync(finalPath).ConfigureAwait(false);
                     }
-                    else if (item.IsVideo || item.IsPdf || item.IsDocument)
+                    else if (item.IsVideo)
                     {
                         await CopyFileToClipboardAsync(finalPath).ConfigureAwait(false);
                     }
@@ -282,17 +280,6 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
                         results.Add(new ClipboardItem(filePath, ItemType.Video, ClipboardOrigin.FileDrop, false, false));
                     }
                 }
-                else if (MediaFormats.IsPdf(filePath))
-                {
-                    if (_optimisePdfClipboard)
-                    {
-                        results.Add(new ClipboardItem(filePath, ItemType.Pdf, ClipboardOrigin.FileDrop, false, false));
-                    }
-                }
-                else if (_autoConvertDocuments && _optimisePdfClipboard && MediaFormats.IsDocument(filePath))
-                {
-                    results.Add(new ClipboardItem(filePath, ItemType.Document, ClipboardOrigin.FileDrop, false, false));
-                }
             }
         }
 
@@ -328,18 +315,6 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
                 if (MediaFormats.IsImage(filePath))
                 {
                     results.Add(new ClipboardItem(filePath, ItemType.Image, ClipboardOrigin.TextPath, false, true));
-                    continue;
-                }
-
-                if (_optimisePdfClipboard && MediaFormats.IsPdf(filePath))
-                {
-                    results.Add(new ClipboardItem(filePath, ItemType.Pdf, ClipboardOrigin.TextPath, false, false));
-                    continue;
-                }
-
-                if (_autoConvertDocuments && _optimisePdfClipboard && MediaFormats.IsDocument(filePath))
-                {
-                    results.Add(new ClipboardItem(filePath, ItemType.Document, ClipboardOrigin.TextPath, false, false));
                     continue;
                 }
 
@@ -635,8 +610,6 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
               string.Equals(name, SettingsRegistry.CustomNameTemplateForClipboardImages.Name, StringComparison.Ordinal) ||
               string.Equals(name, SettingsRegistry.OptimiseVideoClipboard.Name, StringComparison.Ordinal) ||
             string.Equals(name, SettingsRegistry.OptimiseClipboardFileDrops.Name, StringComparison.Ordinal) ||
-            string.Equals(name, SettingsRegistry.OptimisePdfClipboard.Name, StringComparison.Ordinal) ||
-                        string.Equals(name, SettingsRegistry.AutoConvertDocumentsToPdf.Name, StringComparison.Ordinal) ||
               string.Equals(name, SettingsRegistry.OptimiseImagePathClipboard.Name, StringComparison.Ordinal);
     }
 
@@ -651,8 +624,6 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
             _useCustomTemplate = SettingsHost.Get(SettingsRegistry.UseCustomNameTemplateForClipboardImages);
             _customTemplate = SettingsHost.Get(SettingsRegistry.CustomNameTemplateForClipboardImages) ?? string.Empty;
             _optimiseVideoClipboard = SettingsHost.Get(SettingsRegistry.OptimiseVideoClipboard);
-            _optimisePdfClipboard = SettingsHost.Get(SettingsRegistry.OptimisePdfClipboard);
-            _autoConvertDocuments = SettingsHost.Get(SettingsRegistry.AutoConvertDocumentsToPdf);
             _optimiseClipboardFileDrops = SettingsHost.Get(SettingsRegistry.OptimiseClipboardFileDrops);
             _optimiseImagePathClipboard = SettingsHost.Get(SettingsRegistry.OptimiseImagePathClipboard);
         }

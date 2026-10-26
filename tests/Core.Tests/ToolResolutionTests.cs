@@ -43,34 +43,6 @@ public sealed class ToolResolutionTests
         Assert.Equal(expected, options.FfmpegPath);
         Assert.Equal(expectedProbe, options.FfprobePath);
     }
-
-    [Fact]
-    public void PdfOptimiserOptions_FindsBundledGhostscriptExecutable()
-    {
-        using var env1 = new EnvironmentVariableScope("SQUISH_GS", null);
-        using var env2 = new EnvironmentVariableScope("GS_EXECUTABLE", null);
-        using var sandbox = new ToolSandbox();
-
-        var expected = sandbox.CreateFile("ghostscript", "bin", "gswin64c.exe");
-
-        var options = new PdfOptimiserOptions();
-
-        Assert.Equal(expected, options.GhostscriptPath);
-    }
-
-    [Fact]
-    public void PdfOptimiserOptions_FindsBundledGhostscriptResources()
-    {
-        using var env1 = new EnvironmentVariableScope("SQUISH_GS_LIB", null);
-        using var env2 = new EnvironmentVariableScope("GS_LIB", null);
-        using var sandbox = new ToolSandbox();
-
-        var expected = sandbox.CreateDirectory("ghostscript", "Resource", "Init");
-
-        var options = new PdfOptimiserOptions();
-
-        Assert.Equal(expected, options.GhostscriptResourceDirectory);
-    }
 }
 
 [CollectionDefinition("ToolResolution", DisableParallelization = true)]

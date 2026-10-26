@@ -21,8 +21,6 @@ public static class SettingsRegistry
     public static readonly SettingKey<bool> OptimiseVideoClipboard = Bool("optimiseVideoClipboard", true);
     public static readonly SettingKey<bool> OptimiseClipboardFileDrops = Bool("optimiseClipboardFileDrops", false);
     public static readonly SettingKey<bool> OptimiseImagePathClipboard = Bool("optimiseImagePathClipboard", false);
-    public static readonly SettingKey<bool> OptimisePdfClipboard = Bool("optimisePdfClipboard", true);
-    public static readonly SettingKey<bool> AutoConvertDocumentsToPdf = Bool("autoConvertDocumentsToPdf", true);
     public static readonly SettingKey<bool> StripMetadata = Bool("stripMetadata", true);
     public static readonly SettingKey<bool> PreserveDates = Bool("preserveDates", true);
     public static readonly SettingKey<bool> PreserveColorMetadata = Bool("preserveColorMetadata", true);
@@ -44,15 +42,12 @@ public static class SettingsRegistry
 
     public static readonly SettingKey<OptimisedFileBehaviour> OptimisedImageBehaviour = new("optimisedImageBehaviour", OptimisedFileBehaviour.InPlace);
     public static readonly SettingKey<OptimisedFileBehaviour> OptimisedVideoBehaviour = new("optimisedVideoBehaviour", OptimisedFileBehaviour.InPlace);
-    public static readonly SettingKey<OptimisedFileBehaviour> OptimisedPdfBehaviour = new("optimisedPDFBehaviour", OptimisedFileBehaviour.InPlace);
 
     public static readonly SettingKey<string> SameFolderNameTemplateImage = new("sameFolderNameTemplateImage", DefaultSameFolderTemplate);
     public static readonly SettingKey<string> SameFolderNameTemplateVideo = new("sameFolderNameTemplateVideo", DefaultSameFolderTemplate);
-    public static readonly SettingKey<string> SameFolderNameTemplatePdf = new("sameFolderNameTemplatePDF", DefaultSameFolderTemplate);
 
     public static readonly SettingKey<string> SpecificFolderNameTemplateImage = new("specificFolderNameTemplateImage", DefaultSpecificFolderTemplate);
     public static readonly SettingKey<string> SpecificFolderNameTemplateVideo = new("specificFolderNameTemplateVideo", DefaultSpecificFolderTemplate);
-    public static readonly SettingKey<string> SpecificFolderNameTemplatePdf = new("specificFolderNameTemplatePDF", DefaultSpecificFolderTemplate);
 
     public static readonly SettingKey<bool> CapVideoFps = Bool("capVideoFPS", true);
     public static readonly SettingKey<float> TargetVideoFps = Float("targetVideoFPS", 60);
@@ -62,23 +57,18 @@ public static class SettingsRegistry
     public static readonly SettingKey<bool> UseAggressiveOptimisationJpeg = Bool("useAggressiveOptimisationJPEG", false);
     public static readonly SettingKey<bool> UseAggressiveOptimisationPng = Bool("useAggressiveOptimisationPNG", false);
     public static readonly SettingKey<bool> UseAggressiveOptimisationGif = Bool("useAggressiveOptimisationGIF", false);
-    public static readonly SettingKey<bool> UseAggressiveOptimisationPdf = Bool("useAggressiveOptimisationPDF", true);
     public static readonly SettingKey<VideoEncoderPreset> VideoEncoderPresetPreference = new("videoEncoderPreset", VideoEncoderPreset.Auto);
     public static readonly SettingKey<bool> ForceFullImageOptimisations = Bool("forceFullImageOptimisations", false);
 
     public static readonly SettingKey<string[]> ImageDirs = Array("imageDirs", DesktopPath);
     public static readonly SettingKey<string[]> VideoDirs = Array("videoDirs", DesktopPath);
-    public static readonly SettingKey<string[]> PdfDirs = Array("pdfDirs");
     public static readonly SettingKey<bool> EnableAutomaticImageOptimisations = Bool("enableAutomaticImageOptimisations", true);
     public static readonly SettingKey<bool> EnableAutomaticVideoOptimisations = Bool("enableAutomaticVideoOptimisations", true);
-    public static readonly SettingKey<bool> EnableAutomaticPdfOptimisations = Bool("enableAutomaticPDFOptimisations", true);
 
     public static readonly SettingKey<int> MaxVideoSizeMb = Int("maxVideoSizeMB", 500);
     public static readonly SettingKey<int> MaxImageSizeMb = Int("maxImageSizeMB", 50);
-    public static readonly SettingKey<int> MaxPdfSizeMb = Int("maxPDFSizeMB", 100);
     public static readonly SettingKey<int> MaxVideoFileCount = Int("maxVideoFileCount", 1);
     public static readonly SettingKey<int> MaxImageFileCount = Int("maxImageFileCount", 4);
-    public static readonly SettingKey<int> MaxPdfFileCount = Int("maxPDFFileCount", 2);
 
     public static readonly SettingKey<HashSet<string>> ImageFormatsToSkip = Set("imageFormatsToSkip", new[] { "tiff" });
     public static readonly SettingKey<HashSet<string>> VideoFormatsToSkip = Set("videoFormatsToSkip", new[] { "mkv", "m4v" });
@@ -142,8 +132,6 @@ public static class SettingsRegistry
         EnableClipboardOptimiser,
         OptimiseVideoClipboard,
         OptimiseClipboardFileDrops,
-        OptimisePdfClipboard,
-        AutoConvertDocumentsToPdf,
         OptimiseImagePathClipboard,
         StripMetadata,
         PreserveDates,
@@ -161,13 +149,10 @@ public static class SettingsRegistry
         ConvertedVideoBehaviour,
         OptimisedImageBehaviour,
         OptimisedVideoBehaviour,
-        OptimisedPdfBehaviour,
         SameFolderNameTemplateImage,
         SameFolderNameTemplateVideo,
-        SameFolderNameTemplatePdf,
         SpecificFolderNameTemplateImage,
         SpecificFolderNameTemplateVideo,
-        SpecificFolderNameTemplatePdf,
         CapVideoFps,
         TargetVideoFps,
         MinVideoFps,
@@ -176,21 +161,16 @@ public static class SettingsRegistry
         UseAggressiveOptimisationJpeg,
         UseAggressiveOptimisationPng,
         UseAggressiveOptimisationGif,
-        UseAggressiveOptimisationPdf,
         VideoEncoderPresetPreference,
         ForceFullImageOptimisations,
         ImageDirs,
         VideoDirs,
-        PdfDirs,
         EnableAutomaticImageOptimisations,
         EnableAutomaticVideoOptimisations,
-        EnableAutomaticPdfOptimisations,
         MaxVideoSizeMb,
         MaxImageSizeMb,
-        MaxPdfSizeMb,
         MaxVideoFileCount,
         MaxImageFileCount,
-        MaxPdfFileCount,
         ImageFormatsToSkip,
         VideoFormatsToSkip,
         AdaptiveVideoSize,

@@ -37,21 +37,16 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
     private volatile bool _paused;
     private volatile bool _autoImages;
     private volatile bool _autoVideos;
-    private volatile bool _autoPdfs;
-    private volatile bool _autoConvertDocuments;
 
     private string[] _imageDirectories = Array.Empty<string>();
     private string[] _videoDirectories = Array.Empty<string>();
-    private string[] _pdfDirectories = Array.Empty<string>();
     private HashSet<string> _skipImageFormats = new(StringComparer.OrdinalIgnoreCase);
     private HashSet<string> _skipVideoFormats = new(StringComparer.OrdinalIgnoreCase);
 
     private int _maxImageSizeMb;
     private int _maxVideoSizeMb;
-    private int _maxPdfSizeMb;
     private int _maxImageFileCount;
     private int _maxVideoFileCount;
-    private int _maxPdfFileCount;
 
     public DirectoryOptimisationService(OptimisationCoordinator coordinator, OptimisedFileRegistry optimisedFiles, ILogger<DirectoryOptimisationService> logger)
     {
@@ -342,8 +337,6 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
         {
             ItemType.Image => MediaFormats.IsImage(path),
             ItemType.Video => MediaFormats.IsVideo(path),
-            ItemType.Pdf => MediaFormats.IsPdf(path) || (_autoConvertDocuments && MediaFormats.IsDocument(path)),
-            ItemType.Document => MediaFormats.IsDocument(path),
             _ => false
         };
     }
@@ -354,8 +347,6 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
         {
             ItemType.Image when MediaFormats.IsImage(path) => ItemType.Image,
             ItemType.Video when MediaFormats.IsVideo(path) => ItemType.Video,
-            ItemType.Pdf when MediaFormats.IsPdf(path) => ItemType.Pdf,
-            ItemType.Pdf when _autoConvertDocuments && MediaFormats.IsDocument(path) => ItemType.Document,
             _ => null
         };
     }
@@ -367,8 +358,6 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
         {
             ItemType.Image => _maxImageSizeMb <= 0 || sizeMb <= _maxImageSizeMb,
             ItemType.Video => _maxVideoSizeMb <= 0 || sizeMb <= _maxVideoSizeMb,
-            ItemType.Pdf => _maxPdfSizeMb <= 0 || sizeMb <= _maxPdfSizeMb,
-            ItemType.Document => _maxPdfSizeMb <= 0 || sizeMb <= _maxPdfSizeMb,
             _ => false
         };
     }
@@ -395,7 +384,6 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
         {
             ItemType.Image => _autoImages,
             ItemType.Video => _autoVideos,
-            ItemType.Pdf => _autoPdfs,
             _ => false
         };
     }
@@ -516,8 +504,6 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
     {
         ItemType.Image => _maxImageFileCount,
         ItemType.Video => _maxVideoFileCount,
-        ItemType.Pdf => _maxPdfFileCount,
-        ItemType.Document => _maxPdfFileCount,
         _ => 0
     };
 
@@ -577,18 +563,13 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
     {
         return string.Equals(name, SettingsRegistry.ImageDirs.Name, StringComparison.Ordinal) ||
                string.Equals(name, SettingsRegistry.VideoDirs.Name, StringComparison.Ordinal) ||
-               string.Equals(name, SettingsRegistry.PdfDirs.Name, StringComparison.Ordinal) ||
                string.Equals(name, SettingsRegistry.EnableAutomaticImageOptimisations.Name, StringComparison.Ordinal) ||
                string.Equals(name, SettingsRegistry.EnableAutomaticVideoOptimisations.Name, StringComparison.Ordinal) ||
-               string.Equals(name, SettingsRegistry.EnableAutomaticPdfOptimisations.Name, StringComparison.Ordinal) ||
                string.Equals(name, SettingsRegistry.PauseAutomaticOptimisations.Name, StringComparison.Ordinal) ||
                string.Equals(name, SettingsRegistry.MaxImageSizeMb.Name, StringComparison.Ordinal) ||
                string.Equals(name, SettingsRegistry.MaxVideoSizeMb.Name, StringComparison.Ordinal) ||
-               string.Equals(name, SettingsRegistry.MaxPdfSizeMb.Name, StringComparison.Ordinal) ||
-               string.Equals(name, SettingsRegistry.AutoConvertDocumentsToPdf.Name, StringComparison.Ordinal) ||
                string.Equals(name, SettingsRegistry.MaxImageFileCount.Name, StringComparison.Ordinal) ||
                string.Equals(name, SettingsRegistry.MaxVideoFileCount.Name, StringComparison.Ordinal) ||
-               string.Equals(name, SettingsRegistry.MaxPdfFileCount.Name, StringComparison.Ordinal) ||
                string.Equals(name, SettingsRegistry.ImageFormatsToSkip.Name, StringComparison.Ordinal) ||
                string.Equals(name, SettingsRegistry.VideoFormatsToSkip.Name, StringComparison.Ordinal);
     }
@@ -600,19 +581,14 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
             _paused = SettingsHost.Get(SettingsRegistry.PauseAutomaticOptimisations);
             _autoImages = SettingsHost.Get(SettingsRegistry.EnableAutomaticImageOptimisations);
             _autoVideos = SettingsHost.Get(SettingsRegistry.EnableAutomaticVideoOptimisations);
-            _autoPdfs = SettingsHost.Get(SettingsRegistry.EnableAutomaticPdfOptimisations);
-            _autoConvertDocuments = SettingsHost.Get(SettingsRegistry.AutoConvertDocumentsToPdf);
             _imageDirectories = SettingsHost.Get(SettingsRegistry.ImageDirs) ?? Array.Empty<string>();
             _videoDirectories = SettingsHost.Get(SettingsRegistry.VideoDirs) ?? Array.Empty<string>();
-            _pdfDirectories = SettingsHost.Get(SettingsRegistry.PdfDirs) ?? Array.Empty<string>();
             _skipImageFormats = new HashSet<string>(SettingsHost.Get(SettingsRegistry.ImageFormatsToSkip), StringComparer.OrdinalIgnoreCase);
             _skipVideoFormats = new HashSet<string>(SettingsHost.Get(SettingsRegistry.VideoFormatsToSkip), StringComparer.OrdinalIgnoreCase);
             _maxImageSizeMb = SettingsHost.Get(SettingsRegistry.MaxImageSizeMb);
             _maxVideoSizeMb = SettingsHost.Get(SettingsRegistry.MaxVideoSizeMb);
-            _maxPdfSizeMb = SettingsHost.Get(SettingsRegistry.MaxPdfSizeMb);
             _maxImageFileCount = SettingsHost.Get(SettingsRegistry.MaxImageFileCount);
             _maxVideoFileCount = SettingsHost.Get(SettingsRegistry.MaxVideoFileCount);
-            _maxPdfFileCount = SettingsHost.Get(SettingsRegistry.MaxPdfFileCount);
         }
 
         if (updateWatchers)
@@ -649,16 +625,6 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
                 }
             }
 
-            if (_autoPdfs)
-            {
-                foreach (var path in _pdfDirectories)
-                {
-                    if (TryCreateDescriptor(path, ItemType.Pdf, out var descriptor))
-                    {
-                        desired[descriptor.Key] = descriptor;
-                    }
-                }
-            }
         }
 
         lock (_watcherGate)

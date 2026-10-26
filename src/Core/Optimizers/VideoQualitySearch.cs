@@ -50,7 +50,7 @@ internal sealed class FfmpegVideoQualitySearch : IVideoQualitySearch
     public async Task<VideoQualitySearchResult?> SearchAsync(VideoOptimiserPlan plan, OptimiserExecutionContext context, CancellationToken cancellationToken)
     {
         if (!_options.EnableQualitySearch
-            || plan.Encoder.UseHardwareEncoder
+            || (plan.Encoder.UseHardwareEncoder && !HardwareConstantQuality.TryGetSearchRange(plan.Encoder, out _))
             || plan.Mode != VideoOptimiserMode.Video
             || plan.SourceProbe?.DurationSeconds is not double duration
             || duration < _options.QualitySearchMinimumDurationSeconds
@@ -79,7 +79,18 @@ internal sealed class FfmpegVideoQualitySearch : IVideoQualitySearch
             }
 
             var target = plan.AggressiveQuality ? _options.QualityTargetScoreAggressive : _options.QualityTargetScore;
-            var (minCrf, maxCrf, slope) = Range(plan.Encoder.Codec);
+            // GPU encoders are searched over their own constant-quality quantiser instead of a CRF.
+            int minCrf, maxCrf, startCrf;
+            double slope;
+            if (plan.Encoder.UseHardwareEncoder && HardwareConstantQuality.TryGetSearchRange(plan.Encoder, out var hardware))
+            {
+                (minCrf, maxCrf, slope, startCrf) = (hardware.Min, hardware.Max, hardware.Slope, hardware.Start);
+            }
+            else
+            {
+                (minCrf, maxCrf, slope) = Range(plan.Encoder.Codec);
+                startCrf = plan.Encoder.Quality;
+            }
 
             async Task<CrfProbe?> Probe(int crf, CancellationToken token)
             {
@@ -87,7 +98,7 @@ internal sealed class FfmpegVideoQualitySearch : IVideoQualitySearch
                 return await MeasureAsync(plan, references, crf, workDirectory, token).ConfigureAwait(false);
             }
 
-            var outcome = await CrfSearch.FindAsync(plan.Encoder.Quality, minCrf, maxCrf, target, slope, Probe, _options.QualitySearchMaxProbes, cancellationToken).ConfigureAwait(false);
+            var outcome = await CrfSearch.FindAsync(startCrf, minCrf, maxCrf, target, slope, Probe, _options.QualitySearchMaxProbes, cancellationToken).ConfigureAwait(false);
             if (outcome is null)
             {
                 return null;
@@ -98,7 +109,8 @@ internal sealed class FfmpegVideoQualitySearch : IVideoQualitySearch
             if (sourceKbps is double source && source > 0)
             {
                 var ratio = plan.AggressiveQuality ? _options.QualitySearchMaxBitrateRatioAggressive : _options.QualitySearchMaxBitrateRatio;
-                outcome = await CrfSearch.EnforceBitrateCapAsync(outcome, source * ratio, maxCrf, Probe, cancellationToken).ConfigureAwait(false);
+                // ...but not by more than the allowance below the target: an efficient source is better kept than crushed.
+                outcome = await CrfSearch.EnforceBitrateCapAsync(outcome, source * ratio, maxCrf, Probe, cancellationToken, minScore: target - _options.QualitySearchCapAllowance).ConfigureAwait(false);
             }
 
             Log.Info($"Quality search for {plan.SourcePath.Name}: CRF {outcome.Chosen.Crf} score {outcome.Chosen.Score:0.0} (target {target:0.0}, met={outcome.TargetMet}) after {outcome.Probes.Count} probes");
@@ -363,9 +375,10 @@ internal sealed class FfmpegVideoQualitySearch : IVideoQualitySearch
         double totalBytes = 0;
         double totalSeconds = 0;
 
-        var encoder = plan.Encoder with { Quality = crf };
+        var encoder = VideoOptimiser.WithSearchedQuality(plan.Encoder, crf);
         var codecArgs = VideoOptimiser.BuildVideoCodecArguments(_options, encoder, plan.AggressiveQuality, plan.LookaheadFrames, plan.SourceProbe);
-        codecArgs = FasterPresetForSampling(codecArgs, encoder.Codec);
+        // Samples are decoded in software, so the GPU's decode flags (input options) do not apply.
+        codecArgs = FasterPresetForSampling(ExternalVideoToolchain.PartitionCodecArguments(codecArgs).EncoderScoped, encoder.Codec);
 
         for (var index = 0; index < references.Count; index++)
         {

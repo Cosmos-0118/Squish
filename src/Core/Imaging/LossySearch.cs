@@ -6,7 +6,11 @@ using Squish.Core.Shared;
 namespace Squish.Core.Imaging;
 
 /// <summary>An encoded candidate together with the quality setting and perceptual score that produced it.</summary>
-internal sealed record EncodedCandidate(FilePath File, int Quality, double Score);
+internal sealed record EncodedCandidate(FilePath File, int Quality, double Score)
+{
+    /// <summary>Which encoder produced the file, for the result description.</summary>
+    public string? Encoder { get; init; }
+}
 
 /// <summary>
 /// Finds the <em>lowest</em> quality setting whose output still meets a perceptual target. Quality-to-score is
