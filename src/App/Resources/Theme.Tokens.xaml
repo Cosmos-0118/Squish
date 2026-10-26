@@ -16,21 +16,29 @@
     <Color x:Key="Color.CoolGray">#FFCBD5F5</Color>
 
     <!-- Typography -->
-    <FontFamily x:Key="Font.Display">Segoe UI Variable Display</FontFamily>
-    <FontFamily x:Key="Font.Body">Inter, Segoe UI, Arial</FontFamily>
+    <FontFamily x:Key="Font.Display">Segoe UI Variable Display, Segoe UI</FontFamily>
+    <FontFamily x:Key="Font.Body">Segoe UI Variable Text, Segoe UI</FontFamily>
+    <FontFamily x:Key="Font.Icons">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
+    <FontFamily x:Key="Font.Mono">Cascadia Mono, Consolas</FontFamily>
     <sys:Double x:Key="FontSize.Display">24</sys:Double>
     <sys:Double x:Key="FontSize.Title">18</sys:Double>
     <sys:Double x:Key="FontSize.Body">13</sys:Double>
+    <sys:Double x:Key="FontSize.Small">12</sys:Double>
 
     <!-- Layout tokens -->
+    <sys:Double x:Key="Layout.SidebarWidth">232</sys:Double>
+    <sys:Double x:Key="Layout.SidebarRailWidth">60</sys:Double>
+    <sys:Double x:Key="Layout.ContentMaxWidth">760</sys:Double>
+    <sys:Double x:Key="Layout.ControlHeight">32</sys:Double>
     <Thickness x:Key="Spacing.CardPadding">20</Thickness>
     <Thickness x:Key="Spacing.Panel">0,16,0,0</Thickness>
-    <Thickness x:Key="Spacing.WindowPadding">14</Thickness>
-    <Thickness x:Key="Spacing.SidebarMargin">14,14,10,14</Thickness>
-    <Thickness x:Key="Spacing.ContentPadding">24</Thickness>
+    <Thickness x:Key="Spacing.WindowPadding">0</Thickness>
+    <Thickness x:Key="Spacing.ContentPadding">40,32,40,40</Thickness>
+    <Thickness x:Key="Spacing.ContentPaddingCompact">20,20,20,28</Thickness>
+    <Thickness x:Key="Spacing.SettingRow">16,14</Thickness>
     <Thickness x:Key="Spacing.Section">0,12,0,12</Thickness>
-    <CornerRadius x:Key="Radius.Card">12</CornerRadius>
+    <CornerRadius x:Key="Radius.Control">6</CornerRadius>
+    <CornerRadius x:Key="Radius.Card">10</CornerRadius>
     <CornerRadius x:Key="Radius.Hud">16</CornerRadius>
-    <CornerRadius x:Key="Radius.NavigationCard">22</CornerRadius>
-    <CornerRadius x:Key="Radius.ContentCard">18</CornerRadius>
+    <CornerRadius x:Key="Radius.Pill">999</CornerRadius>
 </ResourceDictionary>

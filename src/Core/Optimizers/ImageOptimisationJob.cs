@@ -527,14 +527,16 @@ internal sealed class ImageOptimisationJob : IDisposable
             return (quality, quantised, score);
         }
 
-        // Runs a round of caps side by side (pngquant is single-threaded and mostly I/O) and keeps the lowest passing cap.
+        // Runs a round of caps side by side (pngquant is single-threaded and mostly I/O) and keeps the smallest passing
+        // file. Size is not monotonic in the cap: a lower cap drops colours but can dither more, and dither noise
+        // deflates worse (a UI screenshot came out 19 KB at q37 against 12 KB at q51).
         async Task<bool[]> RoundAsync(int[] caps)
         {
             _token.ThrowIfCancellationRequested();
             var results = await Task.WhenAll(caps.Select(ProbeAsync)).ConfigureAwait(false);
             foreach (var result in results.Where(r => r.File is not null).OrderBy(r => r.Quality))
             {
-                if (bestFile is null || result.Quality < bestQuality)
+                if (bestFile is null || SafeSize(result.File!.Value) < SafeSize(bestFile.Value))
                 {
                     if (bestFile is not null)
                     {

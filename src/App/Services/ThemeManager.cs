@@ -25,6 +25,9 @@ public sealed class ThemeManager : IDisposable
     private AppThemeMode _requestedMode = AppThemeMode.FollowSystem;
     private bool _disposed;
 
+    /// <summary>Raised on the UI thread after a theme dictionary has been swapped in.</summary>
+    public static event EventHandler? ThemeApplied;
+
     public ThemeManager()
     {
         if (Application.Current is null)
@@ -121,6 +124,7 @@ public sealed class ThemeManager : IDisposable
         }
 
         _activeTheme = dictionary;
+        ThemeApplied?.Invoke(this, EventArgs.Empty);
     }
 
     private static ResourceDictionary ResolveDictionary(IList<ResourceDictionary> dictionaries, string resourceName)

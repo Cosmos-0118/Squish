@@ -151,9 +151,11 @@ public sealed record PerceptualGuardOptions
 
     /// <summary>
     /// SSIMULACRA2 score (100 = identical, ~90 visually lossless, ~80 very high, ~70 high quality) that a lossy
-    /// result must reach in normal mode.
+    /// result must reach in normal mode. The score is measured against the decoded source, which for downloaded
+    /// photos is itself a ~q75-85 JPEG: at 80 those barely moved (about 25% saved), while 74 saves about 37% with no
+    /// visible difference at 1:1. Camera originals clear any of these targets with large savings.
     /// </summary>
-    public double MinimumScore { get; init; } = 80;
+    public double MinimumScore { get; init; } = 74;
 
     /// <summary>Score floor used when the request is flagged aggressive.</summary>
     public double AggressiveMinimumScore { get; init; } = 68;

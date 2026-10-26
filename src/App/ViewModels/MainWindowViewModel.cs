@@ -10,6 +10,8 @@ namespace Squish.App.ViewModels;
 
 public sealed class MainWindowViewModel : ObservableObject, IDisposable
 {
+    private const double CompactLayoutBreakpoint = 860;
+
     private readonly OnboardingViewModel _onboardingViewModel;
     private readonly CompareViewModel _compareViewModel;
     private readonly SettingsViewModel _settingsViewModel;
@@ -19,6 +21,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
     private NavigationItemViewModel? _selectedItem;
     private ObservableObject? _currentView;
     private bool _isSidebarCollapsed;
+    private bool _isCompactLayout;
 
     public MainWindowViewModel(
         OnboardingViewModel onboardingViewModel,
@@ -86,7 +89,34 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
     public bool IsSidebarCollapsed
     {
         get => _isSidebarCollapsed;
-        set => SetProperty(ref _isSidebarCollapsed, value);
+        set
+        {
+            if (SetProperty(ref _isSidebarCollapsed, value))
+            {
+                OnPropertyChanged(nameof(IsSidebarRail));
+            }
+        }
+    }
+
+    /// <summary>True when the window is too narrow for the full sidebar and page padding.</summary>
+    public bool IsCompactLayout
+    {
+        get => _isCompactLayout;
+        private set
+        {
+            if (SetProperty(ref _isCompactLayout, value))
+            {
+                OnPropertyChanged(nameof(IsSidebarRail));
+            }
+        }
+    }
+
+    /// <summary>True when the sidebar shows icons only, either by choice or because the window is narrow.</summary>
+    public bool IsSidebarRail => IsSidebarCollapsed || IsCompactLayout;
+
+    public void UpdateLayoutWidth(double windowWidth)
+    {
+        IsCompactLayout = windowWidth < CompactLayoutBreakpoint;
     }
 
     public NavigationItemViewModel? SelectedItem

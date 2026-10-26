@@ -1,33 +1,81 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <SolidColorBrush x:Key="Brush.WindowBackground" Color="#FF030712" />
+    <!-- Shell -->
+    <SolidColorBrush x:Key="Brush.WindowBackground" Color="#FF050505" />
     <SolidColorBrush x:Key="Brush.NavigationBackground" Color="#FF050505" />
-    <SolidColorBrush x:Key="Brush.NavigationBorder" Color="#FF1F1F1F" />
+    <SolidColorBrush x:Key="Brush.NavigationBorder" Color="#FF2A1A40" />
     <SolidColorBrush x:Key="Brush.NavigationTitle" Color="#FFFDFEFF" />
     <SolidColorBrush x:Key="Brush.NavigationSubtitle" Color="#FF63C3FF" />
     <SolidColorBrush x:Key="Brush.NavigationItemBorder" Color="#FF1C2738" />
-    <SolidColorBrush x:Key="Brush.NavigationItemSelectedBorder" Color="#FF2C3A52" />
-    <SolidColorBrush x:Key="Brush.NavigationItemSelectedBackground" Color="#CC4FFFB0" />
-    <SolidColorBrush x:Key="Brush.NavigationItemHoverBackground" Color="#9938D7FF" />
+    <SolidColorBrush x:Key="Brush.NavigationItemSelectedBorder" Color="#FF8C5BFF" />
+    <SolidColorBrush x:Key="Brush.NavigationItemSelectedBackground" Color="#3D8C5BFF" />
+    <SolidColorBrush x:Key="Brush.NavigationItemHoverBackground" Color="#1F8C5BFF" />
     <SolidColorBrush x:Key="Brush.NavigationIndicator" Color="#FF4FFFB0" />
     <SolidColorBrush x:Key="Brush.NavigationAccentGlow" Color="#334FFFB0" />
     <SolidColorBrush x:Key="Brush.ContentBackground" Color="#FF050505" />
+
+    <!-- Surfaces -->
     <SolidColorBrush x:Key="Brush.SurfaceBackground" Color="#FF0E1016" />
     <SolidColorBrush x:Key="Brush.SurfaceSecondaryBackground" Color="#FF131926" />
     <SolidColorBrush x:Key="Brush.SurfaceBorder" Color="#FF1F5A4F" />
     <SolidColorBrush x:Key="Brush.SurfaceAltBorder" Color="#FF3D1953" />
+    <SolidColorBrush x:Key="Brush.Divider" Color="#FF1B2A33" />
+    <SolidColorBrush x:Key="Brush.CardBackground" Color="#FF0E1016" />
+    <SolidColorBrush x:Key="Brush.CardBorder" Color="#FF1F5A4F" />
+    <SolidColorBrush x:Key="Brush.CardHoverBackground" Color="#FF131926" />
+
+    <!-- Text -->
     <SolidColorBrush x:Key="Brush.PrimaryText" Color="#FFFDFEFF" />
     <SolidColorBrush x:Key="Brush.SecondaryText" Color="#FF63C3FF" />
     <SolidColorBrush x:Key="Brush.MutedText" Color="#FFFFB86C" />
     <SolidColorBrush x:Key="Brush.PlaceholderText" Color="#FFA4B3FF" />
-    <SolidColorBrush x:Key="Brush.CardBackground" Color="#FF111C2B" />
-    <SolidColorBrush x:Key="Brush.CardBorder" Color="#FF254040" />
+
+    <!-- Controls -->
     <SolidColorBrush x:Key="Brush.FieldBackground" Color="#FF161C2A" />
     <SolidColorBrush x:Key="Brush.FieldBorder" Color="#FF3D1953" />
+    <SolidColorBrush x:Key="Brush.FieldHoverBorder" Color="#FF8C5BFF" />
     <SolidColorBrush x:Key="Brush.FieldForeground" Color="#FFFDFEFF" />
     <SolidColorBrush x:Key="Brush.FieldPlaceholder" Color="#FF63C3FF" />
+    <SolidColorBrush x:Key="Brush.ControlBackground" Color="#FF161C2A" />
+    <SolidColorBrush x:Key="Brush.ControlHoverBackground" Color="#FF1F2638" />
+    <SolidColorBrush x:Key="Brush.ControlPressedBackground" Color="#FF2A3248" />
+    <SolidColorBrush x:Key="Brush.ControlBorder" Color="#FF3D1953" />
+    <SolidColorBrush x:Key="Brush.ControlForeground" Color="#FFFDFEFF" />
+    <SolidColorBrush x:Key="Brush.GhostHoverBackground" Color="#1F8C5BFF" />
+    <SolidColorBrush x:Key="Brush.GhostPressedBackground" Color="#3D8C5BFF" />
     <SolidColorBrush x:Key="Brush.PrimaryButtonBackground" Color="#FF8C5BFF" />
+    <SolidColorBrush x:Key="Brush.PrimaryButtonHoverBackground" Color="#FF9F75FF" />
+    <SolidColorBrush x:Key="Brush.PrimaryButtonPressedBackground" Color="#FF7A45F0" />
     <SolidColorBrush x:Key="Brush.PrimaryButtonForeground" Color="#FFFFFFFF" />
+    <SolidColorBrush x:Key="Brush.DisabledBackground" Color="#FF131926" />
+    <SolidColorBrush x:Key="Brush.DisabledForeground" Color="#FF5A6478" />
+    <SolidColorBrush x:Key="Brush.SwitchTrack" Color="#FF2A3248" />
+    <SolidColorBrush x:Key="Brush.SwitchTrackHover" Color="#FF353F5A" />
+    <SolidColorBrush x:Key="Brush.SwitchTrackOn" Color="#FF4FFFB0" />
+    <SolidColorBrush x:Key="Brush.SwitchThumb" Color="#FFA4B3FF" />
+    <SolidColorBrush x:Key="Brush.SwitchThumbOn" Color="#FF050505" />
+    <SolidColorBrush x:Key="Brush.SelectionBackground" Color="#268C5BFF" />
+    <SolidColorBrush x:Key="Brush.SelectionBorder" Color="#FF8C5BFF" />
+    <SolidColorBrush x:Key="Brush.BadgeBackground" Color="#FF1F2638" />
+    <SolidColorBrush x:Key="Brush.BadgeForeground" Color="#FF63C3FF" />
+    <SolidColorBrush x:Key="Brush.AccentBadgeBackground" Color="#294FFFB0" />
+    <SolidColorBrush x:Key="Brush.AccentBadgeForeground" Color="#FF4FFFB0" />
+    <SolidColorBrush x:Key="Brush.KbdBackground" Color="#FF161C2A" />
+    <SolidColorBrush x:Key="Brush.KbdBorder" Color="#FF3D1953" />
+    <SolidColorBrush x:Key="Brush.DropZoneBackground" Color="#FF0A0C12" />
+    <SolidColorBrush x:Key="Brush.DropZoneBorder" Color="#FF3D1953" />
+    <SolidColorBrush x:Key="Brush.DropZoneActiveBackground" Color="#1F8C5BFF" />
+    <SolidColorBrush x:Key="Brush.DropZoneActiveBorder" Color="#FF8C5BFF" />
+    <SolidColorBrush x:Key="Brush.PopupBackground" Color="#FF0E1016" />
+    <SolidColorBrush x:Key="Brush.PopupBorder" Color="#FF3D1953" />
+    <SolidColorBrush x:Key="Brush.FocusRing" Color="#FF4FFFB0" />
+
+    <!-- Status -->
+    <SolidColorBrush x:Key="Brush.StatusSuccess" Color="#FF4FFFB0" />
+    <SolidColorBrush x:Key="Brush.StatusWarning" Color="#FFFF8A3D" />
+    <SolidColorBrush x:Key="Brush.StatusDanger" Color="#FFF45D5D" />
+
+    <!-- Floating HUD -->
     <SolidColorBrush x:Key="Brush.HudBackground" Color="#F0050505" />
     <SolidColorBrush x:Key="Brush.HudCardBackground" Color="#FF111C2B" />
     <SolidColorBrush x:Key="Brush.HudCardBorder" Color="#FF37304A" />
@@ -35,11 +83,9 @@
     <SolidColorBrush x:Key="Brush.HudTextSecondary" Color="#FFB0F1D7" />
     <SolidColorBrush x:Key="Brush.HudProgress" Color="#FFFF8A3D" />
     <SolidColorBrush x:Key="Brush.HudProgressBackground" Color="#33231B10" />
-    <SolidColorBrush x:Key="Brush.FocusRing" Color="#FF4FFFB0" />
-    <SolidColorBrush x:Key="Brush.StatusSuccess" Color="#FF4FFFB0" />
-    <SolidColorBrush x:Key="Brush.StatusWarning" Color="#FFFF8A3D" />
-    <SolidColorBrush x:Key="Brush.StatusDanger" Color="#FFF45D5D" />
-    <SolidColorBrush x:Key="Brush.ScrollBar.Track" Color="#1E63C3FF" />
+
+    <!-- Scroll bars -->
+    <SolidColorBrush x:Key="Brush.ScrollBar.Track" Color="Transparent" />
     <SolidColorBrush x:Key="Brush.ScrollBar.Thumb" Color="#5863C3FF" />
     <SolidColorBrush x:Key="Brush.ScrollBar.ThumbHover" Color="#8A63C3FF" />
     <SolidColorBrush x:Key="Brush.ScrollBar.ThumbDrag" Color="#BB63C3FF" />
