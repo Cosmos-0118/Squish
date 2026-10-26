@@ -2,402 +2,777 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Runtime.Versioning;
+using System.Threading;
 using System.Threading.Tasks;
+using ClopWindows.Core.Imaging;
 using ClopWindows.Core.Optimizers;
 using ClopWindows.Core.Shared;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.Advanced;
-using SixLabors.ImageSharp.Formats;
-using SixLabors.ImageSharp.Formats.Bmp;
-using SixLabors.ImageSharp.Formats.Jpeg;
-using SixLabors.ImageSharp.Formats.Png;
-using SixLabors.ImageSharp.Metadata.Profiles.Exif;
-using SixLabors.ImageSharp.PixelFormats;
+using ImageMagick;
 using Xunit;
 
 namespace Core.Tests;
 
-[SupportedOSPlatform("windows6.1")]
 public sealed class ImageOptimiserTests
 {
-    [Fact]
-    public async Task ConvertsPngToJpegWhenEligible()
+    private const int Width = 640;
+    private const int Height = 480;
+
+    private static readonly ImageOptimiserOptions BuiltIn = new()
     {
-        var source = CreateSampleImage("png", width: 1600, height: 900, includeAlpha: false, includeMetadata: true);
-        var outputs = new List<FilePath>();
+        AdvancedCodecs = AdvancedCodecPreferences.Disabled,
+        CropSuggestions = CropSuggestionOptions.Disabled
+    };
+
+    // ---- JPEG ------------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task ReEncodesHighQualityJpegWithinThePerceptualTarget()
+    {
+        var pixels = TestImages.PhotoLikeRgba(Width, Height);
+        var source = TestImages.SaveJpeg(pixels, Width, Height, quality: 97);
+        var output = default(FilePath?);
         try
         {
-            var optimiser = new ImageOptimiser(new ImageOptimiserOptions { TargetJpegQuality = 60 });
-            var result = await RunOptimiserAsync(optimiser, source);
+            var result = await RunAsync(new ImageOptimiser(BuiltIn), source);
 
             Assert.Equal(OptimisationStatus.Succeeded, result.Status);
-            var output = EnsureOutputPath(result);
-            outputs.Add(output);
-            Assert.EndsWith(".jpg", output.Value, StringComparison.OrdinalIgnoreCase);
+            output = result.OutputPath;
+            Assert.NotNull(output);
+            Assert.True(new FileInfo(output!.Value.Value).Length < new FileInfo(source.Value).Length * 0.8);
 
-            var originalSize = new FileInfo(source.Value).Length;
-            var newSize = new FileInfo(output.Value).Length;
-            Assert.True(newSize < originalSize, $"Expected JPEG ({newSize}) to be smaller than PNG ({originalSize})");
+            var reference = ImageIO.DecodeToRaster(source.Value);
+            var candidate = ImageIO.DecodeToRaster(output.Value.Value);
+            var score = PerceptualReference.Create(reference).Score(candidate);
+            Assert.True(score >= BuiltIn.PerceptualGuard.MinimumScore - 0.5, $"score {score} below target");
         }
         finally
         {
-            CleanupFiles(source, outputs);
+            TestImages.TryDelete(source, output);
         }
     }
 
     [Fact]
-    public async Task RejectsImagesExceedingPixelLimit()
+    public async Task AggressiveModeAcceptsLowerQualityThanNormalMode()
     {
-        var source = CreateSampleImage("jpg", width: 200, height: 200, includeAlpha: false, includeMetadata: false);
-        var outputs = new List<FilePath>();
+        var pixels = TestImages.PhotoLikeRgba(Width, Height, seed: 11);
+        var source = TestImages.SaveJpeg(pixels, Width, Height, quality: 98);
+        var normalCopy = FilePath.TempFile("normal", "jpg", addUniqueSuffix: true);
+        var aggressiveCopy = FilePath.TempFile("aggressive", "jpg", addUniqueSuffix: true);
+        File.Copy(source.Value, normalCopy.Value);
+        File.Copy(source.Value, aggressiveCopy.Value);
         try
         {
-            var options = new ImageOptimiserOptions { MaxInputPixels = 10_000, MaxDimension = null };
-            var optimiser = new ImageOptimiser(options);
+            var normal = await RunAsync(new ImageOptimiser(BuiltIn), normalCopy);
+            var aggressive = await RunAsync(new ImageOptimiser(BuiltIn), aggressiveCopy, new Dictionary<string, object?> { [OptimisationMetadata.ImageAggressive] = true });
 
-            var result = await RunOptimiserAsync(optimiser, source);
-
-            Assert.Equal(OptimisationStatus.Failed, result.Status);
-            Assert.Contains("pixel limit", result.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal(OptimisationStatus.Succeeded, normal.Status);
+            Assert.Equal(OptimisationStatus.Succeeded, aggressive.Status);
+            Assert.True(new FileInfo(aggressive.OutputPath!.Value.Value).Length <= new FileInfo(normal.OutputPath!.Value.Value).Length);
         }
         finally
         {
-            CleanupFiles(source, outputs);
+            TestImages.TryDelete(source, normalCopy, aggressiveCopy);
         }
     }
 
     [Fact]
-    public async Task RejectsImagesExceedingDimensionLimit()
+    public async Task KeepsOriginalWhenNothingCanBeSavedWithoutVisibleLoss()
     {
-        var source = CreateSampleImage("jpg", width: 200, height: 80, includeAlpha: false, includeMetadata: false);
-        var outputs = new List<FilePath>();
+        // Random noise cannot be compressed without destroying it; the guard must keep the original.
+        var noise = new byte[Width * Height * 4];
+        System.Security.Cryptography.RandomNumberGenerator.Fill(noise);
+        for (var i = 3; i < noise.Length; i += 4)
+        {
+            noise[i] = 255;
+        }
+
+        var source = TestImages.SaveJpeg(noise, Width, Height, quality: 92);
+        var before = File.ReadAllBytes(source.Value);
         try
         {
-            var options = new ImageOptimiserOptions { MaxDimension = 100, MaxInputPixels = 1_000_000 };
-            var optimiser = new ImageOptimiser(options);
+            var result = await RunAsync(new ImageOptimiser(BuiltIn), source);
 
-            var result = await RunOptimiserAsync(optimiser, source);
-
-            Assert.Equal(OptimisationStatus.Failed, result.Status);
-            Assert.Contains("dimension limit", result.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal(OptimisationStatus.Succeeded, result.Status);
+            Assert.Equal(source.Value, result.OutputPath!.Value.Value);
+            Assert.Equal(before, File.ReadAllBytes(source.Value));
         }
         finally
         {
-            CleanupFiles(source, outputs);
+            TestImages.TryDelete(source);
+        }
+    }
+
+    [Fact]
+    public async Task OptimisingTwiceIsStable()
+    {
+        var pixels = TestImages.PhotoLikeRgba(Width, Height, seed: 5);
+        var source = TestImages.SaveJpeg(pixels, Width, Height, quality: 97);
+        try
+        {
+            var first = await RunAsync(new ImageOptimiser(BuiltIn), source, ReplaceInPlace());
+            Assert.Equal(OptimisationStatus.Succeeded, first.Status);
+            var sizeAfterFirst = new FileInfo(source.Value).Length;
+
+            var second = await RunAsync(new ImageOptimiser(BuiltIn), source, ReplaceInPlace());
+            Assert.Equal(OptimisationStatus.Succeeded, second.Status);
+            Assert.Equal(sizeAfterFirst, new FileInfo(source.Value).Length);
+        }
+        finally
+        {
+            TestImages.TryDelete(source);
+        }
+    }
+
+    [Fact]
+    public async Task KeepsPicturesUprightWhenMetadataIsStripped()
+    {
+        // A 640x480 landscape stored with orientation "rotate 90 CW" displays as 480x640 portrait. After optimisation the
+        // picture must still display that way, either because the pixels were rotated or because a bare orientation
+        // tag survived - but nothing else from the EXIF block may.
+        var pixels = TestImages.PhotoLikeRgba(Width, Height, seed: 9);
+        var source = TestImages.SaveJpeg(pixels, Width, Height, quality: 97);
+        var exifProfile = new ExifProfile();
+        exifProfile.SetValue(ExifTag.Make, "TestCam");
+        exifProfile.SetValue(ExifTag.Orientation, (ushort)6);
+        var exifBytes = exifProfile.ToByteArray()![6..];
+        File.WriteAllBytes(source.Value, JpegSegments.Rewrite(File.ReadAllBytes(source.Value), new MetadataBlobs(exifBytes, null, null, null)));
+        var output = default(FilePath?);
+        try
+        {
+            var sourceExif = JpegSegments.Extract(File.ReadAllBytes(source.Value)).Exif;
+            Assert.Equal(6, JpegSegments.ReadOrientation(sourceExif!));
+
+            var result = await RunAsync(new ImageOptimiser(BuiltIn), source);
+
+            Assert.Equal(OptimisationStatus.Succeeded, result.Status);
+            output = result.OutputPath;
+            using var oriented = ImageIO.Decode(output!.Value.Value, SourceFormat.Jpeg, autoOrient: true);
+            Assert.Equal((Height, Width), (oriented.Width, oriented.Height));
+
+            using var raw = new MagickImage(output.Value.Value);
+            Assert.Null(raw.GetExifProfile()?.GetValue(ExifTag.Make));
+        }
+        finally
+        {
+            TestImages.TryDelete(source, output);
+        }
+    }
+
+    [Fact]
+    public async Task StripsGpsButKeepsDescriptionWhenPreservingMetadata()
+    {
+        var pixels = TestImages.PhotoLikeRgba(Width, Height, seed: 13);
+        var source = TestImages.SaveJpeg(pixels, Width, Height, quality: 97, image =>
+        {
+            var exif = new ExifProfile();
+            exif.SetValue(ExifTag.ImageDescription, "Clop Windows Test");
+            exif.SetValue(ExifTag.GPSLatitudeRef, "N");
+            exif.SetValue(ExifTag.GPSLatitude, new[] { new Rational(37, 1), new Rational(25, 1), new Rational(19, 1) });
+            exif.SetValue(ExifTag.GPSLongitudeRef, "W");
+            exif.SetValue(ExifTag.GPSLongitude, new[] { new Rational(122, 1), new Rational(5, 1), new Rational(2, 1) });
+            image.SetProfile(exif);
+        });
+        var output = default(FilePath?);
+        try
+        {
+            var options = BuiltIn with { MetadataPolicy = new MetadataPolicyOptions { PreserveMetadata = true, StripGpsMetadata = true } };
+            var result = await RunAsync(new ImageOptimiser(options), source);
+
+            Assert.Equal(OptimisationStatus.Succeeded, result.Status);
+            output = result.OutputPath;
+            using var image = new MagickImage(output!.Value.Value);
+            var profile = image.GetExifProfile();
+            Assert.NotNull(profile);
+            Assert.Equal("Clop Windows Test", profile!.GetValue(ExifTag.ImageDescription)?.Value);
+            Assert.Null(profile.GetValue(ExifTag.GPSLatitude));
+            Assert.Null(profile.GetValue(ExifTag.GPSLongitude));
+        }
+        finally
+        {
+            TestImages.TryDelete(source, output);
+        }
+    }
+
+    [Fact]
+    public async Task DefaultPolicyRemovesAllExifButKeepsNonSrgbColourProfile()
+    {
+        var pixels = TestImages.PhotoLikeRgba(Width, Height, seed: 17);
+        var source = TestImages.SaveJpeg(pixels, Width, Height, quality: 97, image =>
+        {
+            var exif = new ExifProfile();
+            exif.SetValue(ExifTag.Make, "TestCam");
+            image.SetProfile(exif);
+            image.SetProfile(new ColorProfile(TestIccProfile.Create()));
+        });
+        var output = default(FilePath?);
+        try
+        {
+            var result = await RunAsync(new ImageOptimiser(BuiltIn), source);
+
+            Assert.Equal(OptimisationStatus.Succeeded, result.Status);
+            output = result.OutputPath;
+            using var image = new MagickImage(output!.Value.Value);
+            Assert.Null(image.GetExifProfile());
+            var icc = image.GetColorProfile();
+            Assert.NotNull(icc);
+            Assert.Equal(TestIccProfile.Description, icc!.Description);
+        }
+        finally
+        {
+            TestImages.TryDelete(source, output);
         }
     }
 
     [Fact]
     public async Task DownscalesRetinaImages()
     {
-        var source = CreateSampleImage("jpg", width: 5200, height: 3400, includeAlpha: false, includeMetadata: false);
-        var outputs = new List<FilePath>();
+        var width = 2600;
+        var height = 1700;
+        var pixels = TestImages.PhotoLikeRgba(width, height, seed: 21);
+        var source = TestImages.SaveJpeg(pixels, width, height, quality: 95);
+        var output = default(FilePath?);
         try
         {
-            var options = new ImageOptimiserOptions
-            {
-                TargetJpegQuality = 75,
-                DownscaleRetina = true,
-                RetinaLongEdgePixels = 2048
-            };
-            var optimiser = new ImageOptimiser(options);
-            var result = await RunOptimiserAsync(optimiser, source);
+            var options = BuiltIn with { DownscaleRetina = true, RetinaLongEdgePixels = 1024 };
+            var result = await RunAsync(new ImageOptimiser(options), source);
 
             Assert.Equal(OptimisationStatus.Succeeded, result.Status);
-            var output = EnsureOutputPath(result);
-            outputs.Add(output);
-
-            using var image = Image.Load<Rgba32>(output.Value);
-            Assert.True(Math.Max(image.Width, image.Height) <= options.RetinaLongEdgePixels,
-                $"Expected long edge <= {options.RetinaLongEdgePixels}, got {image.Width}x{image.Height}");
+            output = result.OutputPath;
+            var (w, h) = TestImages.Dimensions(output!.Value.Value);
+            Assert.Equal(1024, Math.Max(w, h));
+            Assert.InRange((double)w / h, (double)width / height - 0.01, (double)width / height + 0.01);
         }
         finally
         {
-            CleanupFiles(source, outputs);
+            TestImages.TryDelete(source, output);
         }
     }
 
     [Fact]
-    public async Task PreservesMetadataWhenRequested()
+    public async Task RejectsImagesExceedingPixelLimit()
     {
-        var source = CreateSampleImage("jpg", width: 800, height: 600, includeAlpha: false, includeMetadata: true);
-        var outputs = new List<FilePath>();
+        var source = TestImages.SaveJpeg(TestImages.PhotoLikeRgba(200, 200), 200, 200, 90);
         try
         {
-            var options = new ImageOptimiserOptions { PreserveMetadata = true };
-            var optimiser = new ImageOptimiser(options);
-            var result = await RunOptimiserAsync(optimiser, source);
+            var result = await RunAsync(new ImageOptimiser(BuiltIn with { MaxInputPixels = 10_000, MaxDimension = null }), source);
 
-            Assert.Equal(OptimisationStatus.Succeeded, result.Status);
-            var output = EnsureOutputPath(result);
-            outputs.Add(output);
-
-            using var image = Image.Load<Rgba32>(output.Value);
-            var exif = image.Metadata.ExifProfile;
-            Assert.NotNull(exif);
-            var nonNullExif = exif!;
-            Assert.True(nonNullExif.TryGetValue(ExifTag.ImageDescription, out var description));
-            var descriptionValue = description?.Value?.ToString();
-            Assert.Equal("Clop Windows Test", descriptionValue);
+            Assert.Equal(OptimisationStatus.Failed, result.Status);
+            Assert.Contains("pixel limit", result.Message, StringComparison.OrdinalIgnoreCase);
         }
         finally
         {
-            CleanupFiles(source, outputs);
+            TestImages.TryDelete(source);
         }
     }
 
     [Fact]
-    public async Task FastPathRemovesMetadataWhenSavingsThresholdMet()
+    public async Task RejectsImagesExceedingDimensionLimit()
     {
-        var source = CreateSampleImage("jpg", width: 1024, height: 768, includeAlpha: false, includeMetadata: true);
-        var outputs = new List<FilePath>();
+        var source = TestImages.SaveJpeg(TestImages.PhotoLikeRgba(200, 80), 200, 80, 90);
         try
         {
+            var result = await RunAsync(new ImageOptimiser(BuiltIn with { MaxDimension = 100, MaxInputPixels = 1_000_000 }), source);
+
+            Assert.Equal(OptimisationStatus.Failed, result.Status);
+            Assert.Contains("dimension limit", result.Message, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            TestImages.TryDelete(source);
+        }
+    }
+
+    [Fact]
+    public async Task LeavesCmykJpegUntouched()
+    {
+        var pixels = TestImages.PhotoLikeRgba(Width, Height, seed: 33);
+        var source = TestImages.Save(pixels, Width, Height, "jpg", image =>
+        {
+            image.Alpha(AlphaAction.Off);
+            image.ColorSpace = ColorSpace.CMYK;
+            image.Quality = 97;
+        });
+        var before = File.ReadAllBytes(source.Value);
+        try
+        {
+            var result = await RunAsync(new ImageOptimiser(BuiltIn), source);
+
+            Assert.Equal(OptimisationStatus.Succeeded, result.Status);
+            Assert.Equal(source.Value, result.OutputPath!.Value.Value);
+            Assert.Equal(before, File.ReadAllBytes(source.Value));
+        }
+        finally
+        {
+            TestImages.TryDelete(source);
+        }
+    }
+
+    [ToolFact("jpegtran")]
+    public async Task LosslessJpegRecompressionKeepsEveryPixel()
+    {
+        var pixels = TestImages.PhotoLikeRgba(Width, Height, seed: 4);
+        var source = TestImages.SaveJpeg(pixels, Width, Height, quality: 80);
+        var output = default(FilePath?);
+        try
+        {
+            // An unreachable perceptual target disables every lossy candidate, leaving only the lossless pass.
             var options = new ImageOptimiserOptions
             {
-                DownscaleRetina = false,
-                AdvancedCodecs = AdvancedCodecPreferences.Disabled,
                 CropSuggestions = CropSuggestionOptions.Disabled,
-                WicFastPath = new WicFastPathOptions
-                {
-                    Enabled = true,
-                    StripMetadata = true,
-                    MinimumSavingsPercent = 0,
-                    SkipLosslessWhenBelowThreshold = false,
-                    OverrideJpegQuality = 80
-                },
-                MetadataPolicy = MetadataPolicyOptions.Default with { PreserveMetadata = false, PreserveColorProfiles = false, StripGpsMetadata = false }
+                PerceptualGuard = PerceptualGuardOptions.Default with { MinimumScore = 99.99 }
             };
-
-            var optimiser = new ImageOptimiser(options);
-            var result = await RunOptimiserAsync(optimiser, source);
+            var result = await RunAsync(new ImageOptimiser(options), source);
 
             Assert.Equal(OptimisationStatus.Succeeded, result.Status);
-            Assert.Contains("fast path", result.Message, StringComparison.OrdinalIgnoreCase);
-
-            var output = EnsureOutputPath(result);
-            outputs.Add(output);
-
-            var originalSize = new FileInfo(source.Value).Length;
-            var newSize = new FileInfo(output.Value).Length;
-            Assert.True(newSize < originalSize, "Fast path should reduce file size when metadata is stripped.");
-
-            using var optimisedImage = Image.Load<Rgba32>(output.Value);
-            Assert.Null(optimisedImage.Metadata.ExifProfile);
+            output = result.OutputPath;
+            Assert.True(new FileInfo(output!.Value.Value).Length < new FileInfo(source.Value).Length);
+            Assert.Equal(TestImages.ReadRgba(source.Value), TestImages.ReadRgba(output.Value.Value));
         }
         finally
         {
-            CleanupFiles(source, outputs);
+            TestImages.TryDelete(source, output);
+        }
+    }
+
+    [ToolFact("mozjpeg")]
+    public async Task MozJpegBeatsTheBuiltInEncoderAtTheSameQualityTarget()
+    {
+        var pixels = TestImages.PhotoLikeRgba(Width, Height, seed: 15);
+        var sourceA = TestImages.SaveJpeg(pixels, Width, Height, quality: 98);
+        var sourceB = FilePath.TempFile("clop-b", "jpg", addUniqueSuffix: true);
+        File.Copy(sourceA.Value, sourceB.Value);
+        try
+        {
+            var builtIn = await RunAsync(new ImageOptimiser(BuiltIn), sourceA);
+            var moz = await RunAsync(new ImageOptimiser(new ImageOptimiserOptions
+            {
+                AdvancedCodecs = AdvancedCodecPreferences.Disabled with { EnableMozJpeg = true }
+            }), sourceB);
+
+            Assert.True(new FileInfo(moz.OutputPath!.Value.Value).Length <= new FileInfo(builtIn.OutputPath!.Value.Value).Length);
+            Assert.Contains("mozjpeg", moz.Message, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            TestImages.TryDelete(sourceA, sourceB);
+        }
+    }
+
+    // ---- PNG -------------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task PngRecompressionIsPixelIdenticalAndKeepsTransparency()
+    {
+        var pixels = TestImages.GraphicRgba(Width, Height, transparentBackground: true);
+        var source = TestImages.SavePng(pixels, Width, Height);
+        var output = default(FilePath?);
+        try
+        {
+            var result = await RunAsync(new ImageOptimiser(BuiltIn), source);
+
+            Assert.Equal(OptimisationStatus.Succeeded, result.Status);
+            output = result.OutputPath;
+            Assert.EndsWith(".png", output!.Value.Value, StringComparison.OrdinalIgnoreCase);
+            Assert.True(new FileInfo(output.Value.Value).Length < new FileInfo(source.Value).Length);
+            Assert.Equal(TestImages.ReadRgba(source.Value), TestImages.ReadRgba(output.Value.Value));
+        }
+        finally
+        {
+            TestImages.TryDelete(source, output);
+        }
+    }
+
+    [ToolFact("oxipng")]
+    public async Task OxipngShrinksPngFurtherThanTheBuiltInEncoder()
+    {
+        var pixels = TestImages.GraphicRgba(Width, Height);
+        var sourceA = TestImages.SavePng(pixels, Width, Height);
+        var sourceB = FilePath.TempFile("clop-b", "png", addUniqueSuffix: true);
+        File.Copy(sourceA.Value, sourceB.Value);
+        try
+        {
+            var builtIn = await RunAsync(new ImageOptimiser(BuiltIn), sourceA);
+            var oxi = await RunAsync(new ImageOptimiser(new ImageOptimiserOptions
+            {
+                AdvancedCodecs = AdvancedCodecPreferences.Disabled with { EnableOxipng = true }
+            }), sourceB);
+
+            Assert.True(new FileInfo(oxi.OutputPath!.Value.Value).Length <= new FileInfo(builtIn.OutputPath!.Value.Value).Length);
+            Assert.Equal(TestImages.ReadRgba(sourceA.Value), TestImages.ReadRgba(oxi.OutputPath.Value.Value));
+        }
+        finally
+        {
+            TestImages.TryDelete(sourceA, sourceB);
+        }
+    }
+
+    [ToolFact("pngquant")]
+    public async Task AggressiveModeQuantisesGraphicPngsWhenTheyStayWithinTheTarget()
+    {
+        var pixels = TestImages.GraphicRgba(Width, Height);
+        var source = TestImages.SavePng(pixels, Width, Height);
+        var output = default(FilePath?);
+        try
+        {
+            var options = new ImageOptimiserOptions { AdvancedCodecs = AdvancedCodecPreferences.Disabled with { EnablePngquant = true } };
+            var lossless = await RunAsync(new ImageOptimiser(BuiltIn), CopyOf(source));
+            var result = await RunAsync(new ImageOptimiser(options), source, new Dictionary<string, object?> { [OptimisationMetadata.ImageAggressive] = true });
+
+            Assert.Equal(OptimisationStatus.Succeeded, result.Status);
+            output = result.OutputPath;
+            Assert.True(new FileInfo(output!.Value.Value).Length <= new FileInfo(lossless.OutputPath!.Value.Value).Length);
+        }
+        finally
+        {
+            TestImages.TryDelete(source, output);
         }
     }
 
     [Fact]
-    public async Task FastPathSkipsWhenSavingsBelowThreshold()
+    public async Task AnimatedPngIsLeftUntouched()
     {
-        var source = CreateSampleImage("png", width: 256, height: 256, includeAlpha: false, includeMetadata: false);
-        var outputs = new List<FilePath>();
+        var source = FilePath.TempFile("apng", "png", addUniqueSuffix: true);
+        using (var frames = new MagickImageCollection())
+        {
+            for (var i = 0; i < 3; i++)
+            {
+                var frame = new MagickImage(i % 2 == 0 ? MagickColors.Red : MagickColors.Blue, 64, 64);
+                frame.AnimationDelay = 10;
+                frames.Add(frame);
+            }
+
+            frames.Write(source.Value, MagickFormat.APng);
+        }
+
+        var before = File.ReadAllBytes(source.Value);
         try
         {
-            var options = new ImageOptimiserOptions
-            {
-                DownscaleRetina = false,
-                AdvancedCodecs = AdvancedCodecPreferences.Disabled,
-                CropSuggestions = CropSuggestionOptions.Disabled,
-                WicFastPath = new WicFastPathOptions
-                {
-                    Enabled = true,
-                    MinimumSavingsPercent = 50,
-                    SkipLosslessWhenBelowThreshold = true
-                }
-            };
-
-            var optimiser = new ImageOptimiser(options);
-            var result = await RunOptimiserAsync(optimiser, source);
+            var result = await RunAsync(new ImageOptimiser(BuiltIn), source);
 
             Assert.Equal(OptimisationStatus.Succeeded, result.Status);
-            Assert.Equal(source.Value, result.OutputPath?.Value);
-            Assert.Equal("Original already optimal (fast path)", result.Message);
+            Assert.Equal(source.Value, result.OutputPath!.Value.Value);
+            Assert.Equal(before, File.ReadAllBytes(source.Value));
         }
         finally
         {
-            CleanupFiles(source, outputs);
+            TestImages.TryDelete(source);
+        }
+    }
+
+    // ---- GIF -------------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task OptimisedAnimatedGifKeepsAllFrames()
+    {
+        var source = FilePath.TempFile("anim", "gif", addUniqueSuffix: true);
+        using (var frames = new MagickImageCollection())
+        {
+            for (var i = 0; i < 6; i++)
+            {
+                var frame = new MagickImage(MagickColors.White, 120, 90);
+                frame.Draw(new ImageMagick.Drawing.DrawableFillColor(MagickColors.Orange), new ImageMagick.Drawing.DrawableCircle(20 + i * 15, 45, 35 + i * 15, 45));
+                frame.AnimationDelay = 8;
+                frames.Add(frame);
+            }
+
+            frames.Write(source.Value, MagickFormat.Gif);
+        }
+
+        var output = default(FilePath?);
+        try
+        {
+            var result = await RunAsync(new ImageOptimiser(BuiltIn with { RequireSizeImprovement = false }), source);
+
+            Assert.Equal(OptimisationStatus.Succeeded, result.Status);
+            output = result.OutputPath;
+            Assert.Equal(6, new MagickImageCollection(output!.Value.Value).Count);
+        }
+        finally
+        {
+            TestImages.TryDelete(source, output);
+        }
+    }
+
+    // ---- Conversions & output planning -------------------------------------------------------------------
+
+    [Fact]
+    public async Task ConvertsPhotographicBmpToJpeg()
+    {
+        var pixels = TestImages.PhotoLikeRgba(Width, Height, seed: 25);
+        var source = TestImages.Save(pixels, Width, Height, "bmp", image => image.Alpha(AlphaAction.Off));
+        var output = default(FilePath?);
+        try
+        {
+            var result = await RunAsync(new ImageOptimiser(BuiltIn), source);
+
+            Assert.Equal(OptimisationStatus.Succeeded, result.Status);
+            output = result.OutputPath;
+            Assert.EndsWith(".jpg", output!.Value.Value, StringComparison.OrdinalIgnoreCase);
+            Assert.True(new FileInfo(output.Value.Value).Length < new FileInfo(source.Value).Length / 4);
+        }
+        finally
+        {
+            TestImages.TryDelete(source, output);
+        }
+    }
+
+    [Fact]
+    public async Task ConvertsGraphicBmpToPngInsteadOfJpeg()
+    {
+        var pixels = TestImages.GraphicRgba(Width, Height);
+        var source = TestImages.Save(pixels, Width, Height, "bmp", image => image.Alpha(AlphaAction.Off));
+        var output = default(FilePath?);
+        try
+        {
+            var result = await RunAsync(new ImageOptimiser(BuiltIn), source);
+
+            Assert.Equal(OptimisationStatus.Succeeded, result.Status);
+            output = result.OutputPath;
+            Assert.EndsWith(".png", output!.Value.Value, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal(TestImages.ReadRgba(source.Value), TestImages.ReadRgba(output.Value.Value));
+        }
+        finally
+        {
+            TestImages.TryDelete(source, output);
+        }
+    }
+
+    [Fact]
+    public async Task ConvertsTiffToPng()
+    {
+        var pixels = TestImages.GraphicRgba(Width, Height);
+        var source = TestImages.Save(pixels, Width, Height, "tif");
+        var output = default(FilePath?);
+        try
+        {
+            var result = await RunAsync(new ImageOptimiser(BuiltIn), source);
+
+            Assert.Equal(OptimisationStatus.Succeeded, result.Status);
+            output = result.OutputPath;
+            Assert.EndsWith(".png", output!.Value.Value, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            TestImages.TryDelete(source, output);
+        }
+    }
+
+    [Fact]
+    public async Task ConvertsWebpPhotoToJpegAndKeepsAlphaWebpAsPng()
+    {
+        var photo = TestImages.PhotoLikeRgba(Width, Height, seed: 27);
+        var webpPhoto = TestImages.Save(photo, Width, Height, "webp", image =>
+        {
+            image.Alpha(AlphaAction.Off);
+            image.Quality = 90;
+        });
+        var alpha = TestImages.GraphicRgba(Width, Height, transparentBackground: true);
+        var webpAlpha = TestImages.Save(alpha, Width, Height, "webp", image => image.Settings.SetDefine(MagickFormat.WebP, "lossless", "true"));
+        FilePath? first = null, second = null;
+        try
+        {
+            var a = await RunAsync(new ImageOptimiser(BuiltIn), webpPhoto);
+            var b = await RunAsync(new ImageOptimiser(BuiltIn), webpAlpha);
+
+            first = a.OutputPath;
+            second = b.OutputPath;
+            Assert.EndsWith(".jpg", first!.Value.Value, StringComparison.OrdinalIgnoreCase);
+            Assert.EndsWith(".png", second!.Value.Value, StringComparison.OrdinalIgnoreCase);
+            Assert.True(ImageIO.DecodeToRaster(second.Value.Value).HasVisibleAlpha());
+        }
+        finally
+        {
+            TestImages.TryDelete(webpPhoto, webpAlpha, first, second);
         }
     }
 
     [Fact]
     public async Task ReplacesOriginalWhenMetadataRequestsInPlace()
     {
-        var source = CreateSampleImage("jpg", width: 1200, height: 800, includeAlpha: false, includeMetadata: false);
-        var outputs = new List<FilePath>();
+        var source = TestImages.SaveJpeg(TestImages.PhotoLikeRgba(Width, Height, seed: 2), Width, Height, 97);
         try
         {
-            var metadata = new Dictionary<string, object?>(StringComparer.Ordinal)
-            {
-                [OptimisationMetadata.OutputReplaceOriginal] = true
-            };
+            var result = await RunAsync(new ImageOptimiser(BuiltIn), source, ReplaceInPlace());
 
-            var optimiser = CreateMetadataOptimiser();
-            var result = await RunOptimiserAsync(optimiser, source, metadata);
-
-            Assert.True(result.Status == OptimisationStatus.Succeeded, $"Optimisation failed: {result.Message}");
+            Assert.Equal(OptimisationStatus.Succeeded, result.Status);
             Assert.Equal(source.Value, result.OutputPath?.Value);
-
-            var clopCopy = source.Parent.Append($"{source.Stem}.clop.jpg");
-            Assert.False(File.Exists(clopCopy.Value));
-
+            Assert.False(File.Exists(source.Parent.Append($"{source.Stem}.clop.jpg").Value));
         }
         finally
         {
-            CleanupFiles(source, outputs);
+            TestImages.TryDelete(source);
         }
     }
 
     [Fact]
     public async Task ConversionKeepsOriginalWhenDeleteFlagNotSet()
     {
-        var source = CreateSampleImage("bmp", width: 1024, height: 768, includeAlpha: false, includeMetadata: false);
-        var outputs = new List<FilePath>();
+        var source = TestImages.Save(TestImages.PhotoLikeRgba(Width, Height, seed: 8), Width, Height, "bmp", image => image.Alpha(AlphaAction.Off));
+        var expected = source.Parent.Append($"{source.Stem}.jpg");
         try
         {
-            var metadata = new Dictionary<string, object?>(StringComparer.Ordinal)
-            {
-                [OptimisationMetadata.OutputReplaceOriginal] = true
-            };
+            var result = await RunAsync(new ImageOptimiser(BuiltIn), source, ReplaceInPlace());
 
-            var optimiser = CreateMetadataOptimiser();
-            var result = await RunOptimiserAsync(optimiser, source, metadata);
-            Assert.True(result.Status == OptimisationStatus.Succeeded, $"Optimisation failed: {result.Message}");
-
-            var expectedOutput = source.Parent.Append($"{source.Stem}.jpg");
-            outputs.Add(expectedOutput);
-            Assert.Equal(expectedOutput.Value, result.OutputPath?.Value);
+            Assert.Equal(expected.Value, result.OutputPath?.Value);
             Assert.True(File.Exists(source.Value));
         }
         finally
         {
-            CleanupFiles(source, outputs);
+            TestImages.TryDelete(source, expected);
         }
     }
 
     [Fact]
     public async Task ConversionDeletesOriginalWhenDeleteFlagSet()
     {
-        var source = CreateSampleImage("bmp", width: 1024, height: 768, includeAlpha: false, includeMetadata: false);
-        var outputs = new List<FilePath>();
+        var source = TestImages.Save(TestImages.PhotoLikeRgba(Width, Height, seed: 8), Width, Height, "bmp", image => image.Alpha(AlphaAction.Off));
+        var expected = source.Parent.Append($"{source.Stem}.jpg");
         try
         {
-            var metadata = new Dictionary<string, object?>(StringComparer.Ordinal)
-            {
-                [OptimisationMetadata.OutputReplaceOriginal] = true,
-                [OptimisationMetadata.OutputDeleteConvertedSource] = true
-            };
+            var metadata = ReplaceInPlace();
+            metadata[OptimisationMetadata.OutputDeleteConvertedSource] = true;
+            var result = await RunAsync(new ImageOptimiser(BuiltIn), source, metadata);
 
-            var optimiser = CreateMetadataOptimiser();
-            var result = await RunOptimiserAsync(optimiser, source, metadata);
-            Assert.True(result.Status == OptimisationStatus.Succeeded, $"Optimisation failed: {result.Message}");
-
-            var expectedOutput = source.Parent.Append($"{source.Stem}.jpg");
-            outputs.Add(expectedOutput);
-            Assert.Equal(expectedOutput.Value, result.OutputPath?.Value);
+            Assert.Equal(expected.Value, result.OutputPath?.Value);
             Assert.False(File.Exists(source.Value));
         }
         finally
         {
-            CleanupFiles(source, outputs);
+            TestImages.TryDelete(source, expected);
         }
     }
 
-    private static async Task<OptimisationResult> RunOptimiserAsync(ImageOptimiser optimiser, FilePath source, IReadOnlyDictionary<string, object?>? metadata = null)
+    // ---- Robustness ------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task CorruptImagesFailGracefullyWithoutTouchingTheFile()
     {
-        await using var coordinator = new OptimisationCoordinator(new IOptimiser[] { optimiser });
-        var ticket = coordinator.Enqueue(new OptimisationRequest(ItemType.Image, source, metadata: metadata));
-        return await ticket.Completion.WaitAsync(TimeSpan.FromSeconds(15));
-    }
-
-    private static ImageOptimiser CreateMetadataOptimiser()
-    {
-        var options = new ImageOptimiserOptions
-        {
-            TargetJpegQuality = 70,
-            RequireSizeImprovement = false,
-            DownscaleRetina = false,
-            AdvancedCodecs = AdvancedCodecPreferences.Disabled,
-            CropSuggestions = CropSuggestionOptions.Disabled,
-            WicFastPath = new WicFastPathOptions { Enabled = false }
-        };
-
-        return new ImageOptimiser(options);
-    }
-
-    private static FilePath EnsureOutputPath(OptimisationResult result)
-    {
-        Assert.NotNull(result.OutputPath);
-        return result.OutputPath!.Value;
-    }
-
-    private static FilePath CreateSampleImage(string extension, int width, int height, bool includeAlpha, bool includeMetadata)
-    {
-        var path = FilePath.TempFile("image-optimiser-test", extension, addUniqueSuffix: true);
-        using var image = new Image<Rgba32>(width, height);
-
-        var random = new Random(42);
-        for (var y = 0; y < height; y++)
-        {
-            var row = image.DangerousGetPixelRowMemory(y).Span;
-            for (var x = 0; x < width; x++)
-            {
-                var r = (byte)random.Next(32, 240);
-                var g = (byte)random.Next(32, 240);
-                var b = (byte)random.Next(32, 240);
-                var color = includeAlpha
-                    ? new Rgba32(r, g, b, 220)
-                    : new Rgba32(r, g, b);
-                row[x] = color;
-            }
-        }
-
-        if (includeMetadata)
-        {
-            var exif = image.Metadata.ExifProfile ??= new ExifProfile();
-            exif.SetValue(ExifTag.ImageDescription, "Clop Windows Test");
-        }
-
-        image.Save(path.Value, GetEncoder(extension));
-        return path;
-    }
-
-    private static IImageEncoder GetEncoder(string extension)
-    {
-        return extension.ToLowerInvariant() switch
-        {
-            "png" => new PngEncoder(),
-            "bmp" => new BmpEncoder(),
-            _ => new JpegEncoder { Quality = 85 }
-        };
-    }
-
-    private static void CleanupFiles(FilePath source, IEnumerable<FilePath> outputs)
-    {
-        TryDelete(source);
-        foreach (var output in outputs)
-        {
-            TryDelete(output);
-        }
-    }
-
-    private static void TryDelete(FilePath path)
-    {
+        var source = FilePath.TempFile("corrupt", "jpg", addUniqueSuffix: true);
+        File.WriteAllBytes(source.Value, new byte[] { 0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00 });
+        var before = File.ReadAllBytes(source.Value);
         try
         {
-            if (File.Exists(path.Value))
-            {
-                File.Delete(path.Value);
-            }
+            var result = await RunAsync(new ImageOptimiser(BuiltIn), source);
+
+            Assert.NotEqual(OptimisationStatus.Cancelled, result.Status);
+            Assert.Equal(before, File.ReadAllBytes(source.Value));
         }
-        catch
+        finally
         {
-            // ignore cleanup issues
+            TestImages.TryDelete(source);
         }
+    }
+
+    [Theory]
+    [InlineData("push graphic-context\nviewbox 0 0 64 64\nfill 'url(https://example.invalid/x.png)'\npop graphic-context\n")]
+    [InlineData("<?xml version=\"1.0\"?><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"8\" height=\"8\"><rect width=\"8\" height=\"8\"/></svg>")]
+    [InlineData("<image><read filename=\"/etc/passwd\"/><write filename=\"/tmp/pwned.png\"/></image>")]
+    public async Task NeverFeedsNonImageContentToImageMagickDelegates(string payload)
+    {
+        // ImageMagick will happily interpret MVG/SVG/MSL scripts by file *content*; the optimiser must only ever
+        // decode formats it identified from real image magic bytes.
+        var source = FilePath.TempFile("script", "png", addUniqueSuffix: true);
+        File.WriteAllText(source.Value, payload);
+        try
+        {
+            var result = await RunAsync(new ImageOptimiser(BuiltIn), source);
+
+            Assert.Equal(OptimisationStatus.Failed, result.Status);
+            Assert.False(File.Exists("/tmp/pwned.png"));
+        }
+        finally
+        {
+            TestImages.TryDelete(source);
+        }
+    }
+
+    [Fact]
+    public async Task MislabelledImagesAreHandledByTheirRealFormat()
+    {
+        var pixels = TestImages.PhotoLikeRgba(Width, Height, seed: 31);
+        var png = TestImages.SavePng(pixels, Width, Height);
+        var disguised = FilePath.TempFile("disguised", "jpg", addUniqueSuffix: true);
+        File.Copy(png.Value, disguised.Value);
+        var output = default(FilePath?);
+        try
+        {
+            var result = await RunAsync(new ImageOptimiser(BuiltIn), disguised);
+
+            Assert.Equal(OptimisationStatus.Succeeded, result.Status);
+            output = result.OutputPath;
+            Assert.True(ImageFormatSniffer.Sniff(output!.Value.Value) == SourceFormat.Png);
+        }
+        finally
+        {
+            TestImages.TryDelete(png, disguised, output);
+        }
+    }
+
+    [Fact]
+    public async Task CancellationStopsTheRun()
+    {
+        var source = TestImages.SaveJpeg(TestImages.PhotoLikeRgba(1600, 1200, seed: 6), 1600, 1200, 97);
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        try
+        {
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+            {
+                var optimiser = new ImageOptimiser(BuiltIn);
+                var request = new OptimisationRequest(ItemType.Image, source);
+                await optimiser.OptimiseAsync(request, NewContext(request), cts.Token);
+            });
+        }
+        finally
+        {
+            TestImages.TryDelete(source);
+        }
+    }
+
+    [Fact]
+    public async Task MissingFilesReportAFailure()
+    {
+        var source = FilePath.TempFile("missing", "png", addUniqueSuffix: true);
+        var result = await RunAsync(new ImageOptimiser(BuiltIn), source);
+        Assert.Equal(OptimisationStatus.Failed, result.Status);
+    }
+
+    [Fact]
+    public async Task UnsupportedExtensionsAreRejected()
+    {
+        var source = FilePath.TempFile("notes", "txt", addUniqueSuffix: true);
+        File.WriteAllText(source.Value, "hello");
+        try
+        {
+            var result = await RunAsync(new ImageOptimiser(BuiltIn), source);
+            Assert.Equal(OptimisationStatus.Unsupported, result.Status);
+        }
+        finally
+        {
+            TestImages.TryDelete(source);
+        }
+    }
+
+    // ---- helpers ---------------------------------------------------------------------------------------
+
+    private static Dictionary<string, object?> ReplaceInPlace() => new(StringComparer.Ordinal)
+    {
+        [OptimisationMetadata.OutputReplaceOriginal] = true
+    };
+
+    private static FilePath CopyOf(FilePath source)
+    {
+        var copy = FilePath.TempFile("copy", source.Extension, addUniqueSuffix: true);
+        File.Copy(source.Value, copy.Value);
+        return copy;
+    }
+
+    private static OptimiserExecutionContext NewContext(OptimisationRequest request)
+        => new(request.RequestId, _ => { });
+
+    private static async Task<OptimisationResult> RunAsync(ImageOptimiser optimiser, FilePath source, IReadOnlyDictionary<string, object?>? metadata = null)
+    {
+        var request = new OptimisationRequest(ItemType.Image, source, metadata: metadata);
+        return await optimiser.OptimiseAsync(request, NewContext(request), CancellationToken.None).WaitAsync(TimeSpan.FromMinutes(2));
     }
 }

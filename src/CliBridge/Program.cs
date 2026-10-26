@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.CommandLine;
 using System.IO;
@@ -27,11 +27,10 @@ internal static class Program
         SettingsHost.EnsureInitialized();
 
         var root = new RootCommand("Clop for Windows CLI");
-        root.Name = "clop";
-        root.AddCommand(OptimiseCommandBuilder.Create());
-        root.AddCommand(WatchCommandBuilder.Create());
-        root.AddCommand(SchemaCommandBuilder.Create(root));
-        return await root.InvokeAsync(args).ConfigureAwait(false);
+        root.Subcommands.Add(OptimiseCommandBuilder.Create());
+        root.Subcommands.Add(WatchCommandBuilder.Create());
+        root.Subcommands.Add(SchemaCommandBuilder.Create(root));
+        return await root.Parse(args).InvokeAsync().ConfigureAwait(false);
     }
 }
 
@@ -40,77 +39,79 @@ internal static class OptimiseCommandBuilder
     public static Command Create()
     {
         var command = new Command("optimise", "Optimise images, videos, and PDFs using the Windows pipeline.");
-        var items = new Argument<List<string>>("items", "Images, videos, PDFs, or folders to optimise")
+        var items = new Argument<List<string>>("items")
         {
+            Description = "Images, videos, PDFs, or folders to optimise",
             Arity = ArgumentArity.OneOrMore
         };
-        command.AddArgument(items);
+        command.Arguments.Add(items);
 
-        var recursive = new Option<bool>(new[] { "-r", "--recursive" }, "Optimise files inside subfolders when passing directories.");
-        var skipErrors = new Option<bool>(new[] { "-s", "--skip-errors" }, "Skip files that are missing or unsupported.");
-        var aggressive = new Option<bool>(new[] { "-a", "--aggressive" }, "Use aggressive optimisation presets.");
-        var adaptive = new Option<bool>("--adaptive-optimisation", description: "Match macOS adaptive conversion heuristics (not yet available on Windows).");
-        var removeAudio = new Option<bool>("--remove-audio", () => false, "Strip audio tracks from videos.");
-        var json = new Option<bool>(new[] { "-j", "--json" }, "Return optimisation results as JSON.");
-        var noProgress = new Option<bool>(new[] { "-n", "--no-progress" }, "Suppress in-flight progress output.");
-        var copy = new Option<bool>(new[] { "-c", "--copy" }, "Copy optimised files to the clipboard (not yet available on Windows).");
-        var gui = new Option<bool>(new[] { "-g", "--gui" }, "Show the floating HUD UI (not yet available on Windows).");
-        var asyncOption = new Option<bool>("--async", "Queue work without waiting for completion (not yet available on Windows).");
-        var playbackSpeed = new Option<double?>("--playback-speed-factor", "Speed up or slow down videos (1.0 means no change).");
-        var types = new Option<string[]>("--types", description: "File types/extensions to include (e.g. image, video, png, mp4)")
+        var recursive = new Option<bool>("--recursive", "-r") { Description = "Optimise files inside subfolders when passing directories." };
+        var skipErrors = new Option<bool>("--skip-errors", "-s") { Description = "Skip files that are missing or unsupported." };
+        var aggressive = new Option<bool>("--aggressive", "-a") { Description = "Use aggressive optimisation presets." };
+        var adaptive = new Option<bool>("--adaptive-optimisation") { Description = "Match macOS adaptive conversion heuristics (not yet available on Windows)." };
+        var removeAudio = new Option<bool>("--remove-audio") { DefaultValueFactory = _ => false, Description = "Strip audio tracks from videos." };
+        var json = new Option<bool>("--json", "-j") { Description = "Return optimisation results as JSON." };
+        var noProgress = new Option<bool>("--no-progress", "-n") { Description = "Suppress in-flight progress output." };
+        var copy = new Option<bool>("--copy", "-c") { Description = "Copy optimised files to the clipboard (not yet available on Windows)." };
+        var gui = new Option<bool>("--gui", "-g") { Description = "Show the floating HUD UI (not yet available on Windows)." };
+        var asyncOption = new Option<bool>("--async") { Description = "Queue work without waiting for completion (not yet available on Windows)." };
+        var playbackSpeed = new Option<double?>("--playback-speed-factor") { Description = "Speed up or slow down videos (1.0 means no change)." };
+        var types = new Option<string[]>("--types")
         {
+            Description = "File types/extensions to include (e.g. image, video, png, mp4)",
             AllowMultipleArgumentsPerToken = true
         };
-        var excludeTypes = new Option<string[]>("--exclude-types", description: "File types/extensions to exclude")
+        var excludeTypes = new Option<string[]>("--exclude-types")
         {
+            Description = "File types/extensions to exclude",
             AllowMultipleArgumentsPerToken = true
         };
 
-        command.AddOption(recursive);
-        command.AddOption(skipErrors);
-        command.AddOption(aggressive);
-        command.AddOption(removeAudio);
-        command.AddOption(json);
-        command.AddOption(noProgress);
-        command.AddOption(copy);
-        command.AddOption(gui);
-        command.AddOption(asyncOption);
-        command.AddOption(adaptive);
-        command.AddOption(playbackSpeed);
-        command.AddOption(types);
-        command.AddOption(excludeTypes);
+        command.Options.Add(recursive);
+        command.Options.Add(skipErrors);
+        command.Options.Add(aggressive);
+        command.Options.Add(removeAudio);
+        command.Options.Add(json);
+        command.Options.Add(noProgress);
+        command.Options.Add(copy);
+        command.Options.Add(gui);
+        command.Options.Add(asyncOption);
+        command.Options.Add(adaptive);
+        command.Options.Add(playbackSpeed);
+        command.Options.Add(types);
+        command.Options.Add(excludeTypes);
 
-        command.SetHandler(async context =>
+        command.SetAction(async (parse, cancellationToken) =>
         {
-            var parse = context.ParseResult;
             var options = new OptimiseCommandOptions
             {
-                Items = parse.GetValueForArgument(items) ?? new List<string>(),
-                Recursive = parse.GetValueForOption(recursive),
-                SkipErrors = parse.GetValueForOption(skipErrors),
-                Aggressive = parse.GetValueForOption(aggressive),
-                RemoveAudio = parse.GetValueForOption(removeAudio),
-                AdaptiveOptimisation = parse.GetValueForOption(adaptive),
-                Json = parse.GetValueForOption(json),
-                ShowProgress = !parse.GetValueForOption(noProgress),
-                CopyToClipboard = parse.GetValueForOption(copy),
-                ShowGui = parse.GetValueForOption(gui),
-                Async = parse.GetValueForOption(asyncOption),
-                PlaybackSpeedFactor = parse.GetValueForOption(playbackSpeed),
-                IncludeTypes = parse.GetValueForOption(types) ?? Array.Empty<string>(),
-                ExcludeTypes = parse.GetValueForOption(excludeTypes) ?? Array.Empty<string>()
+                Items = parse.GetValue(items) ?? new List<string>(),
+                Recursive = parse.GetValue(recursive),
+                SkipErrors = parse.GetValue(skipErrors),
+                Aggressive = parse.GetValue(aggressive),
+                RemoveAudio = parse.GetValue(removeAudio),
+                AdaptiveOptimisation = parse.GetValue(adaptive),
+                Json = parse.GetValue(json),
+                ShowProgress = !parse.GetValue(noProgress),
+                CopyToClipboard = parse.GetValue(copy),
+                ShowGui = parse.GetValue(gui),
+                Async = parse.GetValue(asyncOption),
+                PlaybackSpeedFactor = parse.GetValue(playbackSpeed),
+                IncludeTypes = parse.GetValue(types) ?? Array.Empty<string>(),
+                ExcludeTypes = parse.GetValue(excludeTypes) ?? Array.Empty<string>()
             };
 
             var handler = new OptimiseCommandHandler(options);
             try
             {
-                context.ExitCode = await handler.ExecuteAsync().ConfigureAwait(false);
+                return await handler.ExecuteAsync().ConfigureAwait(false);
             }
             catch (Exception ex)
             {
                 Log.Error("CLI optimise command failed", ex);
                 Console.Error.WriteLine($"[error] {ex.Message}");
-                context.ExitCode = 1;
+                return 1;
             }
         });
 

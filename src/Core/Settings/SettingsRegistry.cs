@@ -35,6 +35,8 @@ public static class SettingsRegistry
 
     public static readonly SettingKey<HashSet<string>> FormatsToConvertToJpeg = Set("formatsToConvertToJPEG", new[] { "webp", "avif", "heic", "bmp" });
     public static readonly SettingKey<HashSet<string>> FormatsToConvertToPng = Set("formatsToConvertToPNG", new[] { "tiff" });
+    public static readonly SettingKey<bool> AllowWebpImageOutput = Bool("allowWebpImageOutput", false);
+    public static readonly SettingKey<bool> AllowAvifImageOutput = Bool("allowAvifImageOutput", false);
     public static readonly SettingKey<HashSet<string>> FormatsToConvertToMp4 = Set("formatsToConvertToMP4", new[] { "mov", "mpg", "mpeg", "webm" });
 
     public static readonly SettingKey<ConvertedFileBehaviour> ConvertedImageBehaviour = new("convertedImageBehaviour", ConvertedFileBehaviour.SameFolder);
@@ -152,6 +154,8 @@ public static class SettingsRegistry
         WorkdirCleanupInterval,
         FormatsToConvertToJpeg,
         FormatsToConvertToPng,
+        AllowWebpImageOutput,
+        AllowAvifImageOutput,
         FormatsToConvertToMp4,
         ConvertedImageBehaviour,
         ConvertedVideoBehaviour,

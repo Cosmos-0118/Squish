@@ -6,9 +6,8 @@ using System.Text.Json;
 using ClopWindows.Core.Shared;
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.Advanced;
-using SixLabors.ImageSharp.PixelFormats;
+using ClopWindows.Core.Imaging;
+using ImageMagick;
 
 namespace ClopWindows.Core.Optimizers;
 
@@ -29,7 +28,7 @@ internal sealed class CropSuggestionService
         }
     }
 
-    public CropSuggestionResult Generate(FilePath sourcePath, Image<Rgba32> processedImage)
+    public CropSuggestionResult Generate(FilePath sourcePath, RasterImage processedImage)
     {
         if (!_options.Enabled)
         {
@@ -69,7 +68,7 @@ internal sealed class CropSuggestionService
         return suggestions;
     }
 
-    private CropSuggestionResult Analyse(Image<Rgba32> image)
+    private CropSuggestionResult Analyse(RasterImage image)
     {
         if (_onnxModelPath is not null && TrySegmentWithOnnx(image, out var onnxResult))
         {
@@ -92,7 +91,7 @@ internal sealed class CropSuggestionService
         return new CropSuggestionResult(new[] { crop }, null);
     }
 
-    private Rectangle DetectForegroundBounds(Image<Rgba32> image)
+    private Rect DetectForegroundBounds(RasterImage image)
     {
         var width = image.Width;
         var height = image.Height;
@@ -105,18 +104,17 @@ internal sealed class CropSuggestionService
 
         for (var y = 0; y < height; y++)
         {
-            var row = image.DangerousGetPixelRowMemory(y).Span;
             var rowActive = false;
 
             for (var x = 0; x < width; x++)
             {
-                var pixel = row[x];
-                if (pixel.A < 12)
+                var index = (y * width + x) * 4;
+                if (image.Pixels[index + 3] < 12)
                 {
                     continue;
                 }
 
-                var luma = ToLuminance(pixel);
+                var luma = ToLuminance(image.Pixels, index);
                 if (luma < threshold)
                 {
                     rowActive = true;
@@ -146,7 +144,7 @@ internal sealed class CropSuggestionService
 
         if (top < 0 || right < 0)
         {
-            return Rectangle.Empty;
+            return default;
         }
 
         left = Math.Max(0, left);
@@ -155,10 +153,10 @@ internal sealed class CropSuggestionService
         var rectWidth = right - left + 1;
         var rectHeight = bottom - top + 1;
 
-        return new Rectangle(left, top, rectWidth, rectHeight);
+        return new Rect(left, top, rectWidth, rectHeight);
     }
 
-    private bool TrySegmentWithOnnx(Image<Rgba32> image, out CropSuggestionResult result)
+    private bool TrySegmentWithOnnx(RasterImage image, out CropSuggestionResult result)
     {
         result = CropSuggestionResult.Empty;
         var session = GetOnnxSession();
@@ -178,14 +176,13 @@ internal sealed class CropSuggestionService
             for (var y = 0; y < expectedHeight; y++)
             {
                 var sourceY = Math.Min((int)Math.Round(y * (image.Height / (double)expectedHeight)), image.Height - 1);
-                var row = image.DangerousGetPixelRowMemory(sourceY).Span;
                 for (var x = 0; x < expectedWidth; x++)
                 {
                     var sourceX = Math.Min((int)Math.Round(x * (image.Width / (double)expectedWidth)), image.Width - 1);
-                    var pixel = row[sourceX];
-                    tensor[0, 0, y, x] = pixel.R / 255f;
-                    tensor[0, 1, y, x] = pixel.G / 255f;
-                    tensor[0, 2, y, x] = pixel.B / 255f;
+                    var index = (sourceY * image.Width + sourceX) * 4;
+                    tensor[0, 0, y, x] = image.Pixels[index] / 255f;
+                    tensor[0, 1, y, x] = image.Pixels[index + 1] / 255f;
+                    tensor[0, 2, y, x] = image.Pixels[index + 2] / 255f;
                 }
             }
 
@@ -283,7 +280,7 @@ internal sealed class CropSuggestionService
         }
     }
 
-    private static Rectangle ExtractBoundsFromMask(bool[,] mask)
+    private static Rect ExtractBoundsFromMask(bool[,] mask)
     {
         var height = mask.GetLength(0);
         var width = mask.GetLength(1);
@@ -328,52 +325,61 @@ internal sealed class CropSuggestionService
 
         if (top < 0 || right < 0)
         {
-            return Rectangle.Empty;
+            return default;
         }
 
-        return new Rectangle(left, top, right - left + 1, bottom - top + 1);
+        return new Rect(left, top, right - left + 1, bottom - top + 1);
     }
 
-    private static void SaveMask(Image<Rgba32> image, IReadOnlyList<CropSuggestion> crops, FilePath maskPath)
+    private static void SaveMask(RasterImage image, IReadOnlyList<CropSuggestion> crops, FilePath maskPath)
     {
-        using var mask = new Image<L8>(image.Width, image.Height);
-        var rectangles = crops.Select(c => new Rectangle(c.X, c.Y, c.Width, c.Height)).ToArray();
-
-        mask.ProcessPixelRows(accessor =>
+        var mask = new byte[image.Width * image.Height];
+        foreach (var crop in crops)
         {
-            for (var y = 0; y < mask.Height; y++)
+            for (var y = Math.Max(0, crop.Y); y < Math.Min(image.Height, crop.Y + crop.Height); y++)
             {
-                var span = accessor.GetRowSpan(y);
-                for (var x = 0; x < mask.Width; x++)
+                var row = y * image.Width;
+                for (var x = Math.Max(0, crop.X); x < Math.Min(image.Width, crop.X + crop.Width); x++)
                 {
-                    var inside = rectangles.Any(rect => rect.Contains(x, y));
-                    span[x] = inside ? new L8(byte.MaxValue) : new L8(0);
+                    mask[row + x] = byte.MaxValue;
                 }
             }
-        });
+        }
 
-        mask.Save(maskPath.Value);
+        WriteMask(mask, image.Width, image.Height, maskPath);
     }
 
     private static void SaveMask(bool[,] binaryMask, FilePath maskPath)
     {
         var height = binaryMask.GetLength(0);
         var width = binaryMask.GetLength(1);
-
-        using var mask = new Image<L8>(width, height);
-        mask.ProcessPixelRows(accessor =>
+        var mask = new byte[width * height];
+        for (var y = 0; y < height; y++)
         {
-            for (var y = 0; y < height; y++)
+            for (var x = 0; x < width; x++)
             {
-                var row = accessor.GetRowSpan(y);
-                for (var x = 0; x < width; x++)
-                {
-                    row[x] = binaryMask[y, x] ? new L8(byte.MaxValue) : new L8(0);
-                }
+                mask[y * width + x] = binaryMask[y, x] ? byte.MaxValue : (byte)0;
             }
-        });
+        }
 
-        mask.Save(maskPath.Value);
+        WriteMask(mask, width, height, maskPath);
+    }
+
+    private static void WriteMask(byte[] gray, int width, int height, FilePath maskPath)
+    {
+        ImageIO.EnsureConfigured();
+        var rgb = new byte[gray.Length * 3];
+        for (var i = 0; i < gray.Length; i++)
+        {
+            rgb[i * 3] = rgb[i * 3 + 1] = rgb[i * 3 + 2] = gray[i];
+        }
+
+        var settings = new PixelReadSettings((uint)width, (uint)height, StorageType.Char, PixelMapping.RGB);
+        using var image = new MagickImage();
+        image.ReadPixels(rgb, settings);
+        image.ColorType = ColorType.Grayscale;
+        image.Format = MagickFormat.Png;
+        image.Write(maskPath.Value);
     }
 
     private static bool TryLoadFromCache(FilePath suggestionsPath, FilePath maskPath, out CropSuggestionResult result)
@@ -429,11 +435,8 @@ internal sealed class CropSuggestionService
         return string.Join("-", fileName, stamp).Replace(Path.DirectorySeparatorChar, '-').Replace(Path.AltDirectorySeparatorChar, '-');
     }
 
-    private static double ToLuminance(Rgba32 pixel)
-    {
-        const double scale = 1.0 / 255.0;
-        return (pixel.R * 0.299 * scale) + (pixel.G * 0.587 * scale) + (pixel.B * 0.114 * scale);
-    }
+    private static double ToLuminance(byte[] pixels, int index)
+        => (pixels[index] * 0.299 + pixels[index + 1] * 0.587 + pixels[index + 2] * 0.114) / 255.0;
 
     private sealed class CropSuggestionCacheDto
     {
@@ -443,6 +446,8 @@ internal sealed class CropSuggestionService
         public sealed record Crop(int X, int Y, int Width, int Height, string Label);
     }
 }
+
+internal readonly record struct Rect(int X, int Y, int Width, int Height);
 
 internal sealed record CropSuggestion(int X, int Y, int Width, int Height, string Label);
 

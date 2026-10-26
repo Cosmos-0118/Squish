@@ -50,6 +50,11 @@ internal static class ToolLocator
         }
     }
 
+    /// <summary>
+    /// Resolves <paramref name="command"/> against rooted <c>PATH</c> entries. The current directory (and any
+    /// relative <c>PATH</c> entry) is deliberately ignored so a file dropped next to the user's documents can
+    /// never shadow a real tool. On Windows <c>.exe</c>/<c>.com</c> are tried when no extension is given.
+    /// </summary>
     public static string? ResolveOnPath(string command)
     {
         if (string.IsNullOrWhiteSpace(command))
@@ -57,18 +62,46 @@ internal static class ToolLocator
             return null;
         }
 
-        if (Path.IsPathRooted(command) && File.Exists(command))
+        if (Path.IsPathRooted(command))
         {
-            return command;
+            return File.Exists(command) ? command : null;
+        }
+
+        if (command.IndexOfAny(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }) >= 0)
+        {
+            // Relative paths such as ".\\tool.exe" are never resolved implicitly.
+            return null;
+        }
+
+        var candidates = new List<string> { command };
+        if (OperatingSystem.IsWindows() && string.IsNullOrEmpty(Path.GetExtension(command)))
+        {
+            candidates.Add(command + ".exe");
+            candidates.Add(command + ".com");
         }
 
         var environmentPath = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
         foreach (var segment in environmentPath.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
-            var probe = Path.Combine(segment, command);
-            if (File.Exists(probe))
+            if (!Path.IsPathRooted(segment))
             {
-                return probe;
+                continue;
+            }
+
+            foreach (var name in candidates)
+            {
+                try
+                {
+                    var probe = Path.Combine(segment.Trim('"'), name);
+                    if (File.Exists(probe))
+                    {
+                        return probe;
+                    }
+                }
+                catch (ArgumentException)
+                {
+                    // malformed PATH entry
+                }
             }
         }
 

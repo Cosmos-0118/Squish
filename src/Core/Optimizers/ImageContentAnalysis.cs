@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.Advanced;
-using SixLabors.ImageSharp.PixelFormats;
+using ClopWindows.Core.Imaging;
 
 namespace ClopWindows.Core.Optimizers;
 
@@ -24,75 +22,93 @@ internal readonly record struct ImageContentProfile(
     public bool IsPhotographic => Kind == ImageContentKind.Photograph;
 }
 
+/// <summary>
+/// Cheap content classifier (photo vs. flat graphic vs. text document) driving codec and chroma-subsampling
+/// choices. It samples at most ~256x256 points so it stays negligible next to the encode itself.
+/// </summary>
 internal static class ImageContentAnalyzer
 {
     private const double DocumentWhitespaceThreshold = 0.52;
     private const double GraphicUniqueColorThreshold = 0.18;
     private const double GraphicEdgeThreshold = 0.12;
+    private const double GraphicTopColorCoverage = 0.90;
+    private const int TopColorCount = 48;
 
-    public static ImageContentProfile Analyse(Image<Rgba32> image, bool hasAlpha)
+    public static ImageContentProfile Analyse(RasterImage image, bool hasAlpha)
     {
-        if (image.Width == 0 || image.Height == 0)
-        {
-            return new ImageContentProfile(ImageContentKind.Graphic, 0, 0, 0, 0, hasAlpha);
-        }
+        var width = image.Width;
+        var height = image.Height;
+        var pixels = image.Pixels;
 
-        var totalPixels = (double)(image.Width * image.Height);
-        var stepX = Math.Max(1, image.Width / 256);
-        var stepY = Math.Max(1, image.Height / 256);
+        var stepX = Math.Max(1, width / 256);
+        var stepY = Math.Max(1, height / 256);
 
-        var colors = new HashSet<int>();
+        var colorHistogram = new Dictionary<int, int>();
         double edgeCount = 0;
         double whitespaceCount = 0;
         double luminanceSum = 0;
         double luminanceSqSum = 0;
+        double samples = 0;
 
-        for (var y = 0; y < image.Height; y += stepY)
+        for (var y = 0; y < height; y += stepY)
         {
-            var row = image.DangerousGetPixelRowMemory(y).Span;
-            var nextRow = y + stepY < image.Height ? image.DangerousGetPixelRowMemory(y + stepY).Span : row;
-
-            for (var x = 0; x < image.Width; x += stepX)
+            var nextY = Math.Min(y + stepY, height - 1);
+            for (var x = 0; x < width; x += stepX)
             {
-                var pixel = row[x];
-                var nextX = x + stepX < image.Width ? row[x + stepX] : pixel;
-                var diagonal = nextRow[Math.Min(x, nextRow.Length - 1)];
+                var nextX = Math.Min(x + stepX, width - 1);
+                var index = (y * width + x) * 4;
+                var rightIndex = (y * width + nextX) * 4;
+                var belowIndex = (nextY * width + x) * 4;
 
-                var luminance = ToLuminance(pixel);
+                var luminance = Luminance(pixels, index);
                 luminanceSum += luminance;
                 luminanceSqSum += luminance * luminance;
 
-                if (IsWhitespace(pixel))
+                if (pixels[index + 3] < 10 || luminance >= 0.92)
                 {
                     whitespaceCount++;
                 }
 
-                var gradient = Math.Abs(luminance - ToLuminance(nextX)) + Math.Abs(luminance - ToLuminance(diagonal));
+                var gradient = Math.Abs(luminance - Luminance(pixels, rightIndex)) + Math.Abs(luminance - Luminance(pixels, belowIndex));
                 if (gradient > 0.12)
                 {
                     edgeCount++;
                 }
 
-                colors.Add(ToPackedRgb(pixel));
+                var packed = (pixels[index] << 16) | (pixels[index + 1] << 8) | pixels[index + 2];
+                colorHistogram.TryGetValue(packed, out var seen);
+                colorHistogram[packed] = seen + 1;
+                samples++;
             }
         }
 
-        var uniqueColorRatio = colors.Count / Math.Min(colors.Count + 1.0, totalPixels);
-        var edgeDensity = edgeCount / Math.Max(1.0, (image.Width / (double)stepX) * (image.Height / (double)stepY));
-        var whitespaceRatio = whitespaceCount / Math.Max(1.0, (image.Width / (double)stepX) * (image.Height / (double)stepY));
+        if (samples == 0)
+        {
+            return new ImageContentProfile(ImageContentKind.Graphic, 0, 0, 0, 0, hasAlpha);
+        }
 
-        var meanLuminance = luminanceSum / Math.Max(1.0, (image.Width / (double)stepX) * (image.Height / (double)stepY));
-        var luminanceVariance = Math.Max(0, (luminanceSqSum / Math.Max(1.0, (image.Width / (double)stepX) * (image.Height / (double)stepY))) - (meanLuminance * meanLuminance));
+        var uniqueColorRatio = colorHistogram.Count / samples;
+        var topCoverage = TopColorCoverage(colorHistogram, samples);
+        var edgeDensity = edgeCount / samples;
+        var whitespaceRatio = whitespaceCount / samples;
+        var meanLuminance = luminanceSum / samples;
+        var luminanceVariance = Math.Max(0, luminanceSqSum / samples - meanLuminance * meanLuminance);
 
-        var kind = DetermineKind(edgeDensity, uniqueColorRatio, whitespaceRatio, luminanceVariance, hasAlpha);
+        var kind = DetermineKind(edgeDensity, uniqueColorRatio, topCoverage, whitespaceRatio, luminanceVariance, hasAlpha);
         return new ImageContentProfile(kind, edgeDensity, uniqueColorRatio, luminanceVariance, whitespaceRatio, hasAlpha);
     }
 
-    private static ImageContentKind DetermineKind(double edgeDensity, double uniqueColorRatio, double whitespaceRatio, double luminanceVariance, bool hasAlpha)
+    private static ImageContentKind DetermineKind(double edgeDensity, double uniqueColorRatio, double topCoverage, double whitespaceRatio, double luminanceVariance, bool hasAlpha)
     {
         if (whitespaceRatio >= DocumentWhitespaceThreshold && edgeDensity < 0.25)
         {
             return ImageContentKind.Document;
+        }
+
+        // Flat-colour artwork, UI screenshots and icons: a handful of colours cover nearly every pixel.
+        if (topCoverage >= GraphicTopColorCoverage)
+        {
+            return ImageContentKind.Graphic;
         }
 
         if (hasAlpha && uniqueColorRatio <= GraphicUniqueColorThreshold && edgeDensity <= GraphicEdgeThreshold)
@@ -108,22 +124,26 @@ internal static class ImageContentAnalyzer
         return ImageContentKind.Photograph;
     }
 
-    private static bool IsWhitespace(Rgba32 pixel)
+    private static double TopColorCoverage(Dictionary<int, int> histogram, double samples)
     {
-        if (pixel.A < 10)
+        if (histogram.Count <= TopColorCount)
         {
-            return true;
+            return 1.0;
         }
 
-        var luma = ToLuminance(pixel);
-        return luma >= 0.92;
+        var counts = new int[histogram.Count];
+        histogram.Values.CopyTo(counts, 0);
+        Array.Sort(counts);
+
+        double covered = 0;
+        for (var i = 0; i < TopColorCount; i++)
+        {
+            covered += counts[counts.Length - 1 - i];
+        }
+
+        return covered / samples;
     }
 
-    private static double ToLuminance(Rgba32 pixel)
-    {
-        const double scale = 1.0 / 255.0;
-        return (pixel.R * 0.2126 * scale) + (pixel.G * 0.7152 * scale) + (pixel.B * 0.0722 * scale);
-    }
-
-    private static int ToPackedRgb(Rgba32 pixel) => (pixel.R << 16) | (pixel.G << 8) | pixel.B;
+    private static double Luminance(byte[] pixels, int index)
+        => (pixels[index] * 0.2126 + pixels[index + 1] * 0.7152 + pixels[index + 2] * 0.0722) / 255.0;
 }
