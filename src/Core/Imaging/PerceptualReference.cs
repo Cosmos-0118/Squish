@@ -22,12 +22,18 @@ internal sealed class PerceptualReference
 
     private readonly RasterImage _reference;
 
+    // Reference side of each tile's SSIMULACRA2 comparison, built on first use: [tile, 0] = RGB, [tile, 1] = RGBA.
+    private readonly Ssimulacra2.PreparedReference?[,] _prepared;
+    private readonly bool?[] _tileTransparency;
+
     private PerceptualReference(RasterImage reference, IReadOnlyList<SampleTile> tiles, bool wholeImage)
     {
         _reference = reference;
         Tiles = tiles;
         IsWholeImage = wholeImage;
         HasAlpha = reference.HasVisibleAlpha();
+        _prepared = new Ssimulacra2.PreparedReference?[tiles.Count, 2];
+        _tileTransparency = new bool?[tiles.Count];
     }
 
     public IReadOnlyList<SampleTile> Tiles { get; }
@@ -68,7 +74,11 @@ internal sealed class PerceptualReference
         var scores = new double[Tiles.Count];
         for (var i = 0; i < Tiles.Count; i++)
         {
-            scores[i] = ScoreTile(Tiles[i], _reference, candidate, cancellationToken);
+            var tile = Tiles[i];
+            var crop = tile.Width == candidate.Width && tile.Height == candidate.Height
+                ? candidate
+                : candidate.Crop(tile.X, tile.Y, tile.Width, tile.Height);
+            scores[i] = ScoreTile(i, crop, cancellationToken);
         }
 
         return Aggregate(scores);
@@ -85,9 +95,8 @@ internal sealed class PerceptualReference
         for (var i = 0; i < Tiles.Count; i++)
         {
             var tile = Tiles[i];
-            var reference = _reference.Crop(tile.X, tile.Y, tile.Width, tile.Height);
             var candidate = decodedMosaic.Crop(0, offset, tile.Width, tile.Height);
-            scores[i] = ScorePair(reference, candidate, cancellationToken);
+            scores[i] = ScoreTile(i, candidate, cancellationToken);
             offset += tile.Height;
         }
 
@@ -141,15 +150,31 @@ internal sealed class PerceptualReference
         return sum / worst;
     }
 
-    private static double ScoreTile(SampleTile tile, RasterImage reference, RasterImage candidate, CancellationToken token)
+    /// <summary>Same result as <see cref="ScorePair"/> on tile <paramref name="index"/>, reusing its cached reference side.</summary>
+    private double ScoreTile(int index, RasterImage candidate, CancellationToken token)
     {
-        if (tile.Width == reference.Width && tile.Height == reference.Height)
+        var tile = Tiles[index];
+        var referenceAlpha = _tileTransparency[index] ??= HasTransparency(TileOf(tile).Pixels);
+        var alpha = referenceAlpha || HasTransparency(candidate.Pixels);
+        var slot = alpha ? 1 : 0;
+
+        var prepared = _prepared[index, slot];
+        if (prepared is null)
         {
-            return ScorePair(reference, candidate, token);
+            var reference = TileOf(tile);
+            prepared = alpha
+                ? Ssimulacra2.Prepare(reference.Pixels, reference.Width, reference.Height, 4, token)
+                : Ssimulacra2.Prepare(Rgb(reference), reference.Width, reference.Height, 3, token);
+            _prepared[index, slot] = prepared;
         }
 
-        return ScorePair(reference.Crop(tile.X, tile.Y, tile.Width, tile.Height), candidate.Crop(tile.X, tile.Y, tile.Width, tile.Height), token);
+        return alpha ? prepared.Compare(candidate.Pixels, token) : prepared.Compare(Rgb(candidate), token);
     }
+
+    private RasterImage TileOf(SampleTile tile)
+        => tile.Width == _reference.Width && tile.Height == _reference.Height
+            ? _reference
+            : _reference.Crop(tile.X, tile.Y, tile.Width, tile.Height);
 
     internal static double ScorePair(RasterImage reference, RasterImage candidate, CancellationToken token)
     {

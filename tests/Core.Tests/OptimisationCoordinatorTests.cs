@@ -26,6 +26,24 @@ public sealed class OptimisationCoordinatorTests
     }
 
     [Fact]
+    public async Task AcceptsLargeBatchesWithoutRejectingRequests()
+    {
+        var optimiser = new FakeOptimiser(ItemType.Image) { Delay = TimeSpan.FromMilliseconds(1) };
+        await using var coordinator = new OptimisationCoordinator(new[] { optimiser }, degreeOfParallelism: 1);
+
+        var tickets = new List<OptimisationTicket>();
+        for (var i = 0; i < 250; i++)
+        {
+            tickets.Add(coordinator.Enqueue(new OptimisationRequest(ItemType.Image, CreateTempFile())));
+        }
+
+        var results = await Task.WhenAll(tickets.ConvertAll(t => t.Completion)).WaitAsync(TimeSpan.FromSeconds(30));
+
+        Assert.All(results, r => Assert.Equal(OptimisationStatus.Succeeded, r.Status));
+        Assert.Equal(250, optimiser.ProcessedRequestIds.Count);
+    }
+
+    [Fact]
     public async Task RaisesProgressEvents()
     {
         var optimiser = new FakeOptimiser(ItemType.Image) { ReportProgress = true };

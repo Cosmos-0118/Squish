@@ -45,9 +45,7 @@ jobs:
       - name: Build solution
         run: dotnet build src/Squish.sln --configuration Release --no-restore
 
-      - name: Run tests
-        run: dotnet test src/Squish.sln --configuration Release --no-build
-
+      # Tools are staged before the tests so the [ToolFact] tests exercise the real encoders instead of skipping.
       - name: Cache third-party tools
         uses: actions/cache@v4
         with:
@@ -57,6 +55,11 @@ jobs:
       - name: Stage third-party tools
         shell: pwsh
         run: ./scripts/fetch-tools.ps1
+
+      - name: Run tests
+        env:
+          SQUISH_TOOLS_DIR: ${{ github.workspace }}\tools
+        run: dotnet test src/Squish.sln --configuration Release --no-build
 
       - name: Publish artifacts
         shell: pwsh

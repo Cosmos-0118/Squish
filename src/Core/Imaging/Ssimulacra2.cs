@@ -57,6 +57,14 @@ internal static class Ssimulacra2
     /// against a dark and a light backdrop and the worse result wins, as the reference tool does.
     /// </summary>
     public static double Compute(ReadOnlySpan<byte> reference, ReadOnlySpan<byte> distorted, int width, int height, int channels, CancellationToken cancellationToken = default)
+        => Prepare(reference, width, height, channels, cancellationToken).Compare(distorted, cancellationToken);
+
+    /// <summary>
+    /// Pre-computes everything that depends only on <paramref name="reference"/> (XYB pyramid, blurred mean and
+    /// second moment). Quality searches score many candidates against one reference, and this is roughly half of
+    /// the work of every comparison. Same input contract as <see cref="Compute"/>.
+    /// </summary>
+    public static PreparedReference Prepare(ReadOnlySpan<byte> reference, int width, int height, int channels, CancellationToken cancellationToken = default)
     {
         if (channels is not (3 or 4))
         {
@@ -64,28 +72,65 @@ internal static class Ssimulacra2
         }
 
         var expected = (long)width * height * channels;
-        if (width < MinDimension || height < MinDimension || reference.Length < expected || distorted.Length < expected)
+        if (width < MinDimension || height < MinDimension || reference.Length < expected)
         {
             throw new ArgumentException("Images must be at least 8x8 and match the declared dimensions.");
         }
 
-        if (channels == 3)
-        {
-            return ComputeBackdrop(reference, distorted, width, height, 3, 0f, cancellationToken);
-        }
+        var backdrops = channels == 3
+            ? new[] { PrepareBackdrop(reference, width, height, 3, 0f, cancellationToken) }
+            : new[] { PrepareBackdrop(reference, width, height, 4, 0.1f, cancellationToken), PrepareBackdrop(reference, width, height, 4, 0.9f, cancellationToken) };
 
-        var dark = ComputeBackdrop(reference, distorted, width, height, 4, 0.1f, cancellationToken);
-        var light = ComputeBackdrop(reference, distorted, width, height, 4, 0.9f, cancellationToken);
-        return Math.Min(dark, light);
+        return new PreparedReference(width, height, channels, backdrops);
     }
 
-    private static double ComputeBackdrop(ReadOnlySpan<byte> reference, ReadOnlySpan<byte> distorted, int width, int height, int channels, float backdrop, CancellationToken token)
+    /// <summary>A reference image ready to be compared with any number of candidates. Immutable, so thread-safe.</summary>
+    internal sealed class PreparedReference
     {
-        var lin1 = ToLinearPlanes(reference, width, height, channels, backdrop);
-        var lin2 = ToLinearPlanes(distorted, width, height, channels, backdrop);
+        private readonly Backdrop[] _backdrops;
 
-        var scales = new (double[] Ssim, double[] Edge)[NumScales];
-        var scaleCount = 0;
+        internal PreparedReference(int width, int height, int channels, Backdrop[] backdrops)
+        {
+            Width = width;
+            Height = height;
+            Channels = channels;
+            _backdrops = backdrops;
+        }
+
+        public int Width { get; }
+
+        public int Height { get; }
+
+        public int Channels { get; }
+
+        /// <summary>Scores <paramref name="distorted"/> (same size and channel layout as the reference).</summary>
+        public double Compare(ReadOnlySpan<byte> distorted, CancellationToken cancellationToken = default)
+        {
+            if (distorted.Length < (long)Width * Height * Channels)
+            {
+                throw new ArgumentException("Images must be at least 8x8 and match the declared dimensions.");
+            }
+
+            var score = double.MaxValue;
+            foreach (var backdrop in _backdrops)
+            {
+                score = Math.Min(score, CompareBackdrop(backdrop, distorted, Width, Height, Channels, cancellationToken));
+            }
+
+            return score;
+        }
+    }
+
+    /// <summary>Reference pyramid for one alpha backdrop.</summary>
+    internal sealed record Backdrop(float Value, ReferenceScale[] Scales);
+
+    /// <summary>One pyramid level of the reference: XYB planes plus their blurred mean and blurred square.</summary>
+    internal sealed record ReferenceScale(int Width, int Height, float[][] Xyb, float[][] Mu, float[][] Sigma);
+
+    private static Backdrop PrepareBackdrop(ReadOnlySpan<byte> reference, int width, int height, int channels, float backdrop, CancellationToken token)
+    {
+        var lin = ToLinearPlanes(reference, width, height, channels, backdrop);
+        var scales = new List<ReferenceScale>(NumScales);
         int w = width, h = height, gateW = width, gateH = height;
 
         for (var scale = 0; scale < NumScales; scale++)
@@ -96,47 +141,76 @@ internal static class Ssimulacra2
                 break;
             }
 
-            var next1 = Downsample(lin1, w, h, out var nextW, out var nextH);
-            var next2 = Downsample(lin2, w, h, out _, out _);
+            var next = Downsample(lin, w, h, out var nextW, out var nextH);
+            ToXyb(lin, w * h);
 
-            ToXyb(lin1, w * h);
-            ToXyb(lin2, w * h);
+            var pixels = w * h;
+            var mu = new float[3][];
+            var sigma = new float[3][];
+            var (cw, ch, xyb) = (w, h, lin);
+            Parallel.For(0, 3, new ParallelOptions { MaxDegreeOfParallelism = Math.Min(3, Environment.ProcessorCount), CancellationToken = token }, c =>
+            {
+                var tmp = new float[pixels];
+                mu[c] = new float[pixels];
+                sigma[c] = new float[pixels];
+                Blur(xyb[c], mu[c], tmp, cw, ch);
+                BlurProduct(xyb[c], xyb[c], sigma[c], tmp, cw, ch);
+            });
 
-            scales[scaleCount++] = ComputeScale(lin1, lin2, w, h, token);
+            scales.Add(new ReferenceScale(w, h, lin, mu, sigma));
 
-            lin1 = next1;
-            lin2 = next2;
+            lin = next;
             gateW = w;
             gateH = h;
             w = nextW;
             h = nextH;
         }
 
+        return new Backdrop(backdrop, scales.ToArray());
+    }
+
+    private static double CompareBackdrop(Backdrop reference, ReadOnlySpan<byte> distorted, int width, int height, int channels, CancellationToken token)
+    {
+        var lin2 = ToLinearPlanes(distorted, width, height, channels, reference.Value);
+        var scales = new (double[] Ssim, double[] Edge)[NumScales];
+        var scaleCount = 0;
+
+        foreach (var level in reference.Scales)
+        {
+            token.ThrowIfCancellationRequested();
+            var next2 = scaleCount + 1 < reference.Scales.Length ? Downsample(lin2, level.Width, level.Height, out _, out _) : null;
+            ToXyb(lin2, level.Width * level.Height);
+
+            scales[scaleCount++] = ComputeScale(level, lin2, token);
+
+            lin2 = next2!;
+        }
+
         return FinalScore(scales, scaleCount);
     }
 
-    private static (double[] Ssim, double[] Edge) ComputeScale(float[][] xyb1, float[][] xyb2, int w, int h, CancellationToken token)
+    private static (double[] Ssim, double[] Edge) ComputeScale(ReferenceScale reference, float[][] xyb2, CancellationToken token)
     {
         var ssim = new double[6];
         var edge = new double[12];
+        var w = reference.Width;
+        var h = reference.Height;
         var pixels = w * h;
         var perChannel = new (double S0, double S1, double[] Edge)[3];
 
         // The three XYB channels are independent from here on, which also keeps peak memory at one channel's worth.
         Parallel.For(0, 3, new ParallelOptions { MaxDegreeOfParallelism = Math.Min(3, Environment.ProcessorCount), CancellationToken = token }, c =>
         {
-            var a = xyb1[c];
+            var a = reference.Xyb[c];
             var b = xyb2[c];
+            var mu1 = reference.Mu[c];
+            var s11 = reference.Sigma[c];
             var tmp = new float[pixels];
-            var mu1 = new float[pixels];
             var mu2 = new float[pixels];
-            var s11 = new float[pixels];
             var s22 = new float[pixels];
             var s12 = new float[pixels];
 
-            Blur(a, mu1, tmp, w, h);
             Blur(b, mu2, tmp, w, h);
-            BlurProduct(a, a, s11, tmp, w, h);
             BlurProduct(b, b, s22, tmp, w, h);
             BlurProduct(a, b, s12, tmp, w, h);
 

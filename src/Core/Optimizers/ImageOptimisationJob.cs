@@ -675,6 +675,9 @@ internal sealed class ImageOptimisationJob : IDisposable
         var useMosaic = !perceptual.IsWholeImage;
         var probeImage = useMosaic ? perceptual.BuildMosaic() : reference;
 
+        // When the probe is the whole image, the lowest passing encode already is the final, verified candidate.
+        EncodedCandidate? passing = null;
+
         async Task<double?> Evaluate(int quality, CancellationToken token)
         {
             var file = await encode(probeImage, quality, token).ConfigureAwait(false);
@@ -683,21 +686,52 @@ internal sealed class ImageOptimisationJob : IDisposable
                 return null;
             }
 
+            var keep = false;
             try
             {
                 var decoded = ImageIO.DecodeToRaster(file.Value.Value);
-                return useMosaic ? perceptual.ScoreMosaic(decoded, token) : perceptual.Score(decoded, token);
+                var score = useMosaic ? perceptual.ScoreMosaic(decoded, token) : perceptual.Score(decoded, token);
+                if (!useMosaic && score >= _targetScore && (passing is null || quality < passing.Quality))
+                {
+                    if (passing is not null)
+                    {
+                        _temp.Release(passing.File);
+                    }
+
+                    passing = new EncodedCandidate(file.Value, quality, score);
+                    keep = true;
+                }
+
+                return score;
             }
             finally
             {
-                _temp.Release(file.Value);
+                if (!keep)
+                {
+                    _temp.Release(file.Value);
+                }
             }
         }
 
         var found = await LossySearch.FindLowestPassingAsync(lowest, highest, _targetScore, Evaluate, iterations, _token).ConfigureAwait(false);
         if (found is null)
         {
+            if (passing is not null)
+            {
+                _temp.Release(passing.File);
+            }
+
             return null;
+        }
+
+        if (passing is not null && passing.Quality == found.Value)
+        {
+            return passing;
+        }
+
+        if (passing is not null)
+        {
+            _temp.Release(passing.File);
         }
 
         var quality = found.Value;

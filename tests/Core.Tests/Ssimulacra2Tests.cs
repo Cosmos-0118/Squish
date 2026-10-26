@@ -35,6 +35,25 @@ public sealed class Ssimulacra2Tests
     }
 
     [Fact]
+    public void PreparedReferenceScoresMatchOneShotScoresOnEveryReuse()
+    {
+        var reference = Noise(Size, Size, 9);
+        var prepared = Ssimulacra2.Prepare(reference, Size, Size, 3);
+        var (_, blurred) = BuildPair("noise_vs_sharpen");
+        var shifted = (byte[])reference.Clone();
+        for (var i = 0; i < shifted.Length; i += 5)
+        {
+            shifted[i] = (byte)Math.Clamp(shifted[i] + 12, 0, 255);
+        }
+
+        // Interleave candidates so any state leaking between comparisons would show up.
+        foreach (var candidate in new[] { blurred, shifted, blurred, reference, shifted })
+        {
+            Assert.Equal(Ssimulacra2.Compute(reference, candidate, Size, Size, 3), prepared.Compare(candidate));
+        }
+    }
+
+    [Fact]
     public void ScoreDropsAsDistortionGrows()
     {
         var reference = Noise(Size, Size, 5);
