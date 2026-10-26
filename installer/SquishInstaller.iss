@@ -1,11 +1,11 @@
-; Clop for Windows installer definition
-#define MyAppName "Clop for Windows"
+; Squish installer definition
+#define MyAppName "Squish"
 #ifndef MyAppVersion
   #define MyAppVersion "0.0.0"
 #endif
 #define MyAppPublisher "Cosmos-0118"
-#define MyAppExeName "ClopWindows.exe"
-#define MyAppAumid "Cosmos0118.Clop"
+#define MyAppExeName "Squish.exe"
+#define MyAppAumid "Cosmos0118.Squish"
 #ifndef AppBuildOutput
   #define AppBuildOutput "..\\src\\App\\bin\\Release\\net10.0-windows10.0.19041.0\\win-x64\\publish"
 #endif
@@ -30,8 +30,8 @@ AppUpdatesURL="https://github.com/Cosmos-0118/Clop-For-Windows/releases"
 DefaultDirName={autopf64}\\{#MyAppName}
 DefaultGroupName={#MyAppName}
 OutputDir=Output
-OutputBaseFilename=Clop-Setup-{#MyAppVersion}
-SetupIconFile=assets\\Clop.ico
+OutputBaseFilename=Squish-Setup-{#MyAppVersion}
+SetupIconFile=assets\\Squish.ico
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -40,21 +40,21 @@ UninstallDisplayIcon={app}\\{#MyAppExeName}
 PrivilegesRequired=admin
 ArchitecturesAllowed=x64
 ArchitecturesInstallIn64BitMode=x64
-LicenseFile=CLOP_LICENSE.txt
+LicenseFile=SQUISH_LICENSE.txt
 UninstallDisplayName={#MyAppName}
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoProductName={#MyAppName}
 VersionInfoProductVersion={#MyAppVersion}
 VersionInfoVersion={#MyAppVersion}
-VersionInfoDescription="Clop for Windows installer"
+VersionInfoDescription="Squish installer"
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Shortcuts:"; Flags: unchecked
-Name: "runatstartup"; Description: "Start Clop when I sign in"; GroupDescription: "Automation:"; Flags: unchecked
-Name: "installcli"; Description: "Register the clop CLI"; GroupDescription: "Automation:"; Flags: checkedonce
+Name: "runatstartup"; Description: "Start Squish when I sign in"; GroupDescription: "Automation:"; Flags: unchecked
+Name: "installcli"; Description: "Register the squish CLI"; GroupDescription: "Automation:"; Flags: checkedonce
 Name: "registerexplorer"; Description: "Enable Explorer context menu"; GroupDescription: "Automation:"; Flags: checkedonce
 
 [Dirs]
@@ -64,31 +64,35 @@ Name: "{app}\\tools"; Flags: uninsalwaysuninstall
 
 [Files]
 Source: "{#AppBuildOutput}\\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
-Source: "{#CliBuildOutput}\\ClopWindows.CliBridge.exe"; DestDir: "{app}\\cli"; DestName: "clop.exe"; Flags: ignoreversion
-Source: "{#CliBuildOutput}\\*"; DestDir: "{app}\\cli"; Flags: recursesubdirs ignoreversion; Excludes: "ClopWindows.CliBridge.exe"
-Source: "{#ExplorerBuildOutput}\\ClopWindows.Integrations.Explorer.dll"; DestDir: "{app}\\integrations"; Flags: ignoreversion
-Source: "{#ExplorerBuildOutput}\\ClopWindows.Integrations.Explorer.comhost.dll"; DestDir: "{app}\\integrations"; Flags: ignoreversion
+Source: "{#CliBuildOutput}\\Squish.CliBridge.exe"; DestDir: "{app}\\cli"; DestName: "squish.exe"; Flags: ignoreversion
+Source: "{#CliBuildOutput}\\*"; DestDir: "{app}\\cli"; Flags: recursesubdirs ignoreversion; Excludes: "Squish.CliBridge.exe"
+Source: "{#ExplorerBuildOutput}\\Squish.Integrations.Explorer.dll"; DestDir: "{app}\\integrations"; Flags: ignoreversion
+Source: "{#ExplorerBuildOutput}\\Squish.Integrations.Explorer.comhost.dll"; DestDir: "{app}\\integrations"; Flags: ignoreversion
 Source: "{#ToolsRoot}\\*"; DestDir: "{app}\\tools"; Flags: recursesubdirs ignoreversion
 Source: "..\\docs\\windows-deps.md"; DestDir: "{app}\\docs"; Flags: ignoreversion
 Source: "..\\docs\\cli.md"; DestDir: "{app}\\docs"; Flags: ignoreversion
 Source: "..\\docs\\automation-samples.md"; DestDir: "{app}\\docs"; Flags: ignoreversion
-Source: "CLOP_LICENSE.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: "SQUISH_LICENSE.txt"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\\{#MyAppName}"; Filename: "{app}\\{#MyAppExeName}"; WorkingDir: "{app}"; AppUserModelID: "{#MyAppAumid}"
 Name: "{autodesktop}\\{#MyAppName}"; Filename: "{app}\\{#MyAppExeName}"; Tasks: desktopicon; WorkingDir: "{app}"; AppUserModelID: "{#MyAppAumid}"
 
 [Registry]
-Root: HKCU; Subkey: "Software\\Microsoft\\Windows\\CurrentVersion\\Run"; ValueType: string; ValueName: "Clop"; ValueData: """{app}\\{#MyAppExeName}"""; Tasks: runatstartup
-Root: HKCU; Subkey: "Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\clop.exe"; ValueType: string; ValueName: ""; ValueData: "{app}\\cli\\clop.exe"; Tasks: installcli
-Root: HKCU; Subkey: "Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\clop.exe"; ValueType: string; ValueName: "Path"; ValueData: "{app}\\cli"; Tasks: installcli
+; Entries written by releases published as "Clop for Windows".
+Root: HKCU; Subkey: "Software\\Microsoft\\Windows\\CurrentVersion\\Run"; ValueType: none; ValueName: "Clop"; Flags: deletevalue
+Root: HKCU; Subkey: "Software\\Microsoft\\Windows\\CurrentVersion\\Run"; ValueType: none; ValueName: "ClopWindows"; Flags: deletevalue
+Root: HKCU; Subkey: "Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\clop.exe"; ValueType: none; Flags: deletekey
+Root: HKCU; Subkey: "Software\\Microsoft\\Windows\\CurrentVersion\\Run"; ValueType: string; ValueName: "Squish"; ValueData: """{app}\\{#MyAppExeName}"""; Tasks: runatstartup
+Root: HKCU; Subkey: "Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\squish.exe"; ValueType: string; ValueName: ""; ValueData: "{app}\\cli\\squish.exe"; Tasks: installcli
+Root: HKCU; Subkey: "Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\squish.exe"; ValueType: string; ValueName: "Path"; ValueData: "{app}\\cli"; Tasks: installcli
 
 [Run]
-Filename: "{sys}\\regsvr32.exe"; Parameters: "/s ""{app}\\integrations\\ClopWindows.Integrations.Explorer.comhost.dll"""; Tasks: registerexplorer; Flags: runhidden
+Filename: "{sys}\\regsvr32.exe"; Parameters: "/s ""{app}\\integrations\\Squish.Integrations.Explorer.comhost.dll"""; Tasks: registerexplorer; Flags: runhidden
 Filename: "{app}\\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent unchecked
 
 [UninstallRun]
-Filename: "{sys}\\regsvr32.exe"; Parameters: "/u /s ""{app}\\integrations\\ClopWindows.Integrations.Explorer.comhost.dll"""; RunOnceId: "UnregisterExplorer"
+Filename: "{sys}\\regsvr32.exe"; Parameters: "/u /s ""{app}\\integrations\\Squish.Integrations.Explorer.comhost.dll"""; RunOnceId: "UnregisterExplorer"
 
 [Code]
 const
@@ -146,10 +150,12 @@ var
   SourceDir, TargetDir, Timestamp: string;
   ResultCode: Integer;
 begin
-  SourceDir := ExpandConstant('{userappdata}\\Clop');
+  SourceDir := ExpandConstant('{userappdata}\\Squish');
+  if not DirExists(SourceDir) then
+    SourceDir := ExpandConstant('{userappdata}\\Clop');
   if not DirExists(SourceDir) then Exit;
   Timestamp := BuildTimestamp;
-  TargetDir := ExpandConstant('{tmp}\\Clop_Backup_' + Timestamp);
+  TargetDir := ExpandConstant('{tmp}\\Squish_Backup_' + Timestamp);
   if not ForceDirectories(TargetDir) then Exit;
   if not Exec('robocopy', '"' + SourceDir + '" "' + TargetDir + '" /MIR /FFT /Z /NFL /NDL', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
     Exec(ExpandConstant('{cmd}'), '/C xcopy "' + SourceDir + '" "' + TargetDir + '" /E /I /Y /Q', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
@@ -162,7 +168,7 @@ begin
   Result := True;
   if TryGetPreviousUninstallString(UninstallString) then
   begin
-    if MsgBox('A previous Clop installation was detected. Remove it before continuing?', mbConfirmation, MB_YESNO) = IDYES then
+    if MsgBox('A previous installation of Squish (or Clop for Windows) was detected. Remove it before continuing?', mbConfirmation, MB_YESNO) = IDYES then
     begin
       if not RunUninstallerSilently(UninstallString) then
         if MsgBox('Automatic removal failed. Cancel setup?', mbConfirmation, MB_YESNO) = IDYES then
@@ -175,5 +181,5 @@ end;
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then
-    Log('Clop installation completed.');
+    Log('Squish installation completed.');
 end;

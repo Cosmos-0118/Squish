@@ -12,7 +12,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Core\ClopWindows.Core.csproj" />
+    <ProjectReference Include="..\..\src\Core\Squish.Core.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace ClopWindows.Core.Settings;
+namespace Squish.Core.Settings;
 
 /// <summary>
 /// Captures the current video encoder preset preference and pushes it into optimisation metadata.

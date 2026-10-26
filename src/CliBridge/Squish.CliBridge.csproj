@@ -7,7 +7,7 @@
 
   <ItemGroup>
     <PackageReference Include="System.CommandLine" />
-    <ProjectReference Include="..\Core\ClopWindows.Core.csproj" />
+    <ProjectReference Include="..\Core\Squish.Core.csproj" />
   </ItemGroup>
 
 </Project>

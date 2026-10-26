@@ -3,15 +3,15 @@ using System.ComponentModel;
 using System.Drawing;
 using System.Windows;
 using System.Windows.Resources;
-using ClopWindows.App.Localization;
-using ClopWindows.Core.Settings;
+using Squish.App.Localization;
+using Squish.Core.Settings;
 using Microsoft.Extensions.Logging;
 
-namespace ClopWindows.App.Services;
+namespace Squish.App.Services;
 
 public sealed class TrayIconService : IDisposable
 {
-    private const string TrayIconPackUri = "pack://application:,,,/ClopWindows;component/Assets/Brand/ClopMark.ico";
+    private const string TrayIconPackUri = "pack://application:,,,/Squish;component/Assets/Brand/Squish.ico";
 
     private readonly ILogger<TrayIconService> _logger;
     private readonly System.Windows.Forms.NotifyIcon _notifyIcon;
@@ -31,14 +31,14 @@ public sealed class TrayIconService : IDisposable
         _trayIcon = LoadTrayIconOrDefault();
         _notifyIcon = new System.Windows.Forms.NotifyIcon
         {
-            Text = ClopStringCatalog.Get("tray.tooltip"),
+            Text = SquishStringCatalog.Get("tray.tooltip"),
             Icon = _trayIcon,
             Visible = false,
             ContextMenuStrip = _contextMenu
         };
 
-        var openItem = new System.Windows.Forms.ToolStripMenuItem(ClopStringCatalog.Get("tray.open"), null, (_, _) => ShowMainWindow());
-        var exitItem = new System.Windows.Forms.ToolStripMenuItem(ClopStringCatalog.Get("tray.exit"), null, (_, _) => ExitApplication());
+        var openItem = new System.Windows.Forms.ToolStripMenuItem(SquishStringCatalog.Get("tray.open"), null, (_, _) => ShowMainWindow());
+        var exitItem = new System.Windows.Forms.ToolStripMenuItem(SquishStringCatalog.Get("tray.exit"), null, (_, _) => ExitApplication());
 
         _contextMenu.Items.Add(openItem);
         _contextMenu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
@@ -119,8 +119,8 @@ public sealed class TrayIconService : IDisposable
 
                 if (!_balloonShown)
                 {
-                    _notifyIcon.BalloonTipTitle = ClopStringCatalog.Get("tray.balloon.title");
-                    _notifyIcon.BalloonTipText = ClopStringCatalog.Get("tray.balloon.message");
+                    _notifyIcon.BalloonTipTitle = SquishStringCatalog.Get("tray.balloon.title");
+                    _notifyIcon.BalloonTipText = SquishStringCatalog.Get("tray.balloon.message");
                     _notifyIcon.ShowBalloonTip(2000);
                     _balloonShown = true;
                 }

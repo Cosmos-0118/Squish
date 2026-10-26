@@ -2,9 +2,9 @@ using System.Collections.Concurrent;
 using System.IO;
 using System.Text.Json.Nodes;
 using System.Threading;
-using ClopWindows.Core.Shared;
+using Squish.Core.Shared;
 
-namespace ClopWindows.Core.Settings;
+namespace Squish.Core.Settings;
 
 public sealed class SettingsStore : IDisposable
 {
@@ -19,7 +19,7 @@ public sealed class SettingsStore : IDisposable
 
     public SettingsStore(string? configDirectory = null)
     {
-        var baseDirectory = configDirectory ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Clop");
+        var baseDirectory = configDirectory ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Squish");
         Directory.CreateDirectory(baseDirectory);
         _configPath = Path.Combine(baseDirectory, "config.json");
         Load();

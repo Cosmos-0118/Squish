@@ -1,7 +1,7 @@
 using System.IO;
 using System.Windows.Forms;
 
-namespace ClopWindows.App.Infrastructure;
+namespace Squish.App.Infrastructure;
 
 public interface IFolderPicker
 {

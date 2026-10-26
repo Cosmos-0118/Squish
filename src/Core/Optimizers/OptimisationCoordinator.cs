@@ -4,9 +4,9 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
-using ClopWindows.Core.Shared;
+using Squish.Core.Shared;
 
-namespace ClopWindows.Core.Optimizers;
+namespace Squish.Core.Optimizers;
 
 public sealed class OptimisationCoordinator : IAsyncDisposable
 {
@@ -167,7 +167,7 @@ public sealed class OptimisationCoordinator : IAsyncDisposable
                 var target = result.OutputPath ?? request.SourcePath;
                 if (target.Exists)
                 {
-                    ClopOptimisationMarker.TryMark(target);
+                    SquishOptimisationMarker.TryMark(target);
                 }
 
                 RequestCompleted?.Invoke(this, new OptimisationCompletedEventArgs(result));

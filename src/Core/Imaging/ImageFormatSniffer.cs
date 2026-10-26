@@ -1,7 +1,7 @@
 using System;
 using System.IO;
 
-namespace ClopWindows.Core.Imaging;
+namespace Squish.Core.Imaging;
 
 internal enum SourceFormat
 {

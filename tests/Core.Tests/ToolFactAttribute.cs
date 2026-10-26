@@ -1,6 +1,6 @@
 using System;
-using ClopWindows.Core.Optimizers;
-using ClopWindows.Core.Shared;
+using Squish.Core.Optimizers;
+using Squish.Core.Shared;
 using Xunit;
 
 namespace Core.Tests;
@@ -8,25 +8,25 @@ namespace Core.Tests;
 /// <summary>Resolves the optional external encoders exactly like the product does.</summary>
 internal static class ToolAvailability
 {
-    public static string? Cjpeg => ExternalToolResolver.Resolve("cjpeg-static", "mozjpeg", "CLOP_CJPEG", null, "mozjpeg", "cjpeg");
+    public static string? Cjpeg => ExternalToolResolver.Resolve("cjpeg-static", "mozjpeg", "SQUISH_CJPEG", null, "mozjpeg", "cjpeg");
 
-    public static string? Jpegtran => ExternalToolResolver.Resolve("jpegtran-static", "mozjpeg", "CLOP_JPEGTRAN", null, "jpegtran");
+    public static string? Jpegtran => ExternalToolResolver.Resolve("jpegtran-static", "mozjpeg", "SQUISH_JPEGTRAN", null, "jpegtran");
 
-    public static string? Oxipng => ExternalToolResolver.Resolve("oxipng", "oxipng", "CLOP_OXIPNG");
+    public static string? Oxipng => ExternalToolResolver.Resolve("oxipng", "oxipng", "SQUISH_OXIPNG");
 
-    public static string? Pngquant => ExternalToolResolver.Resolve("pngquant", "pngquant", "CLOP_PNGQUANT");
+    public static string? Pngquant => ExternalToolResolver.Resolve("pngquant", "pngquant", "SQUISH_PNGQUANT");
 
-    public static string? Cwebp => ExternalToolResolver.Resolve("cwebp", "libwebp", "CLOP_CWEBP");
+    public static string? Cwebp => ExternalToolResolver.Resolve("cwebp", "libwebp", "SQUISH_CWEBP");
 
-    public static string? Avifenc => ExternalToolResolver.Resolve("avifenc", "libavif", "CLOP_AVIFENC");
+    public static string? Avifenc => ExternalToolResolver.Resolve("avifenc", "libavif", "SQUISH_AVIFENC");
 
-    public static string? Gifsicle => ExternalToolResolver.Resolve("gifsicle", "gifsicle", "CLOP_GIFSICLE");
+    public static string? Gifsicle => ExternalToolResolver.Resolve("gifsicle", "gifsicle", "SQUISH_GIFSICLE");
 
     public static string? Ffmpeg
     {
         get
         {
-            var fromEnv = Environment.GetEnvironmentVariable("CLOP_REAL_FFMPEG");
+            var fromEnv = Environment.GetEnvironmentVariable("SQUISH_REAL_FFMPEG");
             if (!string.IsNullOrWhiteSpace(fromEnv) && System.IO.File.Exists(fromEnv))
             {
                 return fromEnv;
@@ -40,7 +40,7 @@ internal static class ToolAvailability
     {
         get
         {
-            var fromEnv = Environment.GetEnvironmentVariable("CLOP_REAL_FFPROBE");
+            var fromEnv = Environment.GetEnvironmentVariable("SQUISH_REAL_FFPROBE");
             if (!string.IsNullOrWhiteSpace(fromEnv) && System.IO.File.Exists(fromEnv))
             {
                 return fromEnv;
@@ -74,7 +74,7 @@ public sealed class ToolFactAttribute : FactAttribute
         {
             if (ToolAvailability.Find(tool) is null)
             {
-                Skip = $"Requires external tool '{tool}' (set CLOP_TOOLS_DIR or the CLOP_* path variables).";
+                Skip = $"Requires external tool '{tool}' (set SQUISH_TOOLS_DIR or the SQUISH_* path variables).";
                 return;
             }
         }

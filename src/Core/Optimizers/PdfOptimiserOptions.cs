@@ -3,9 +3,9 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
-using ClopWindows.Core.Shared;
+using Squish.Core.Shared;
 
-namespace ClopWindows.Core.Optimizers;
+namespace Squish.Core.Optimizers;
 
 public sealed record PdfOptimiserOptions
 {
@@ -77,7 +77,7 @@ public sealed record PdfOptimiserOptions
     {
         try
         {
-            var env = Environment.GetEnvironmentVariable("CLOP_GS") ?? Environment.GetEnvironmentVariable("GS_EXECUTABLE");
+            var env = Environment.GetEnvironmentVariable("SQUISH_GS") ?? Environment.GetEnvironmentVariable("GS_EXECUTABLE");
             if (!string.IsNullOrWhiteSpace(env))
             {
                 return env!;
@@ -117,7 +117,7 @@ public sealed record PdfOptimiserOptions
     {
         try
         {
-            var env = Environment.GetEnvironmentVariable("CLOP_GS_LIB") ?? Environment.GetEnvironmentVariable("GS_LIB");
+            var env = Environment.GetEnvironmentVariable("SQUISH_GS_LIB") ?? Environment.GetEnvironmentVariable("GS_LIB");
             if (!string.IsNullOrWhiteSpace(env))
             {
                 return env!;
@@ -142,7 +142,7 @@ public sealed record PdfOptimiserOptions
 
     private static string ResolveFontSearchPath()
     {
-        var env = Environment.GetEnvironmentVariable("CLOP_FONT_PATH");
+        var env = Environment.GetEnvironmentVariable("SQUISH_FONT_PATH");
         if (!string.IsNullOrWhiteSpace(env))
         {
             return env!;
@@ -171,7 +171,7 @@ public sealed record PdfOptimiserOptions
     {
         try
         {
-            var env = Environment.GetEnvironmentVariable("CLOP_QPDF") ?? Environment.GetEnvironmentVariable("QPDF_EXECUTABLE");
+            var env = Environment.GetEnvironmentVariable("SQUISH_QPDF") ?? Environment.GetEnvironmentVariable("QPDF_EXECUTABLE");
             if (!string.IsNullOrWhiteSpace(env))
             {
                 return env!;

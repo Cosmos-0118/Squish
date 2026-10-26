@@ -1,7 +1,7 @@
 using System;
 using System.Windows.Markup;
 
-namespace ClopWindows.App.Localization;
+namespace Squish.App.Localization;
 
 [MarkupExtensionReturnType(typeof(string))]
 public sealed class LocExtension : MarkupExtension
@@ -16,6 +16,6 @@ public sealed class LocExtension : MarkupExtension
 
     public override object ProvideValue(IServiceProvider serviceProvider)
     {
-        return ClopStringCatalog.Get(Key);
+        return SquishStringCatalog.Get(Key);
     }
 }

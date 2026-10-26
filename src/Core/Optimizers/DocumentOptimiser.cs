@@ -2,10 +2,10 @@ using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
-using ClopWindows.Core.Settings;
-using ClopWindows.Core.Shared;
+using Squish.Core.Settings;
+using Squish.Core.Shared;
 
-namespace ClopWindows.Core.Optimizers;
+namespace Squish.Core.Optimizers;
 
 public sealed class DocumentOptimiser : IOptimiser
 {
@@ -118,7 +118,7 @@ public sealed class DocumentOptimiser : IOptimiser
 
     private static FilePath CreateWorkspace()
     {
-        var root = ClopPaths.Conversions.Append("documents");
+        var root = SquishPaths.Conversions.Append("documents");
         root.EnsurePathExists();
         var unique = root.Append($"{DateTimeOffset.UtcNow:yyyyMMddHHmmssfff}-{NanoId.New(6)}");
         Directory.CreateDirectory(unique.Value);

@@ -1,7 +1,7 @@
 using System.Windows;
-using ClopWindows.App.ViewModels;
+using Squish.App.ViewModels;
 
-namespace ClopWindows.App.Views.Compare;
+namespace Squish.App.Views.Compare;
 
 public partial class CompareView : System.Windows.Controls.UserControl
 {

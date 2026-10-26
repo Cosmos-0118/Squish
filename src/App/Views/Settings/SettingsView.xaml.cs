@@ -2,7 +2,7 @@ using System;
 using System.Windows.Input;
 using WpfUserControl = System.Windows.Controls.UserControl;
 
-namespace ClopWindows.App.Views.Settings;
+namespace Squish.App.Views.Settings;
 
 public partial class SettingsView : WpfUserControl
 {

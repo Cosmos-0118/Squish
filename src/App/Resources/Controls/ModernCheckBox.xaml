@@ -22,7 +22,7 @@
     <PathGeometry x:Key="Geometry.CheckMark" Figures="M 2 10 L 7 15 L 18 4" FillRule="Nonzero" />
     <PathGeometry x:Key="Geometry.CheckDash" Figures="M 4 10 L 16 10" FillRule="Nonzero" />
 
-    <Style x:Key="ClopCheckBoxStyle" TargetType="CheckBox">
+    <Style x:Key="SquishCheckBoxStyle" TargetType="CheckBox">
         <Setter Property="Foreground" Value="{DynamicResource Brush.PrimaryText}" />
         <Setter Property="FontSize" Value="13" />
         <Setter Property="FontFamily" Value="{DynamicResource Font.Body}" />
@@ -164,5 +164,5 @@
     </Style>
 
     <!-- Apply globally -->
-    <Style TargetType="CheckBox" BasedOn="{StaticResource ClopCheckBoxStyle}" />
+    <Style TargetType="CheckBox" BasedOn="{StaticResource SquishCheckBoxStyle}" />
 </ResourceDictionary>

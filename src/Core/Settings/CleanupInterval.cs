@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace ClopWindows.Core.Settings;
+namespace Squish.Core.Settings;
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum CleanupInterval

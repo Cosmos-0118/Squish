@@ -1,6 +1,10 @@
 # Third-Party Notices
 
-Clop for Windows is distributed under the GNU General Public License v3.0 (see `LICENSE`).
+Squish is distributed under the GNU General Public License v3.0 (see `LICENSE`).
+
+Squish is derived from [Clop for Mac](https://github.com/FuzzyIdeas/Clop) by The Low Tech Guys,
+which is also licensed under GPLv3. Squish is not affiliated with or endorsed by them, and does not
+use the Clop name, logo, or artwork.
 To comply with GPL/AGPL/LGPL requirements for bundled dependencies, the following components
 and licenses are shipped within the installer and portable packages.
 

@@ -3,7 +3,7 @@ using System.Windows;
 using System.Windows.Media;
 using System.Windows.Threading;
 
-namespace ClopWindows.App.Infrastructure;
+namespace Squish.App.Infrastructure;
 
 /// <summary>
 /// Provides simple helpers for the floating HUD layouts.

@@ -1,8 +1,8 @@
 using System.Threading;
 using System.Threading.Tasks;
-using ClopWindows.Core.Shared;
+using Squish.Core.Shared;
 
-namespace ClopWindows.Core.Optimizers;
+namespace Squish.Core.Optimizers;
 
 public interface IDocumentConverter
 {

@@ -2,10 +2,10 @@ using System;
 using System.IO;
 using System.IO.Pipes;
 using System.Threading.Tasks;
-using ClopWindows.Core.IPC;
-using ClopWindows.Core.Processes;
-using ClopWindows.Core.Security;
-using ClopWindows.Core.Shared;
+using Squish.Core.IPC;
+using Squish.Core.Processes;
+using Squish.Core.Security;
+using Squish.Core.Shared;
 using Xunit;
 
 namespace Core.Tests;
@@ -96,9 +96,9 @@ public sealed class SecurityTests
     [Fact]
     public async Task ProcessRunnerRefusesToResolveCommandsFromTheWorkingDirectory()
     {
-        var directory = Path.Combine(Path.GetTempPath(), "clop-cwd-" + Guid.NewGuid().ToString("N"));
+        var directory = Path.Combine(Path.GetTempPath(), "squish-cwd-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
-        var plantedName = "clop-planted-" + Guid.NewGuid().ToString("N");
+        var plantedName = "squish-planted-" + Guid.NewGuid().ToString("N");
         var planted = Path.Combine(directory, OperatingSystem.IsWindows() ? plantedName + ".exe" : plantedName);
         File.WriteAllText(planted, "#!/bin/sh\necho pwned\n");
         if (!OperatingSystem.IsWindows())
@@ -127,18 +127,18 @@ public sealed class SecurityTests
             return; // the probe command below is POSIX; Windows CI exercises ArgumentList through the encoder tests
         }
 
-        var result = await ProcessRunner.RunAsync("/bin/echo", new[] { "a; touch /tmp/clop-injected", "$(whoami)", "`id`" });
+        var result = await ProcessRunner.RunAsync("/bin/echo", new[] { "a; touch /tmp/squish-injected", "$(whoami)", "`id`" });
 
-        Assert.Equal("a; touch /tmp/clop-injected $(whoami) `id`", result.StandardOutput.Trim());
-        Assert.False(File.Exists("/tmp/clop-injected"));
+        Assert.Equal("a; touch /tmp/squish-injected $(whoami) `id`", result.StandardOutput.Trim());
+        Assert.False(File.Exists("/tmp/squish-injected"));
     }
 
     [Fact]
     public void ToolResolverIgnoresRelativeAndCurrentDirectoryPathEntries()
     {
-        var directory = Path.Combine(Path.GetTempPath(), "clop-path-" + Guid.NewGuid().ToString("N"));
+        var directory = Path.Combine(Path.GetTempPath(), "squish-path-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
-        var name = "clop-fake-tool-" + Guid.NewGuid().ToString("N");
+        var name = "squish-fake-tool-" + Guid.NewGuid().ToString("N");
         File.WriteAllText(Path.Combine(directory, ExternalToolResolver.FileName(name)), "x");
         var previousPath = Environment.GetEnvironmentVariable("PATH");
         var previousCwd = Environment.CurrentDirectory;
@@ -163,7 +163,7 @@ public sealed class SecurityTests
     [Fact]
     public async Task NamedPipeChannelRejectsOversizedLengthPrefixes()
     {
-        var pipeName = "clop-test-" + Guid.NewGuid().ToString("N");
+        var pipeName = "squish-test-" + Guid.NewGuid().ToString("N");
         await using var channel = new NamedPipeChannel(pipeName);
         var handled = new TaskCompletionSource<bool>();
         channel.StartListening(_ =>

@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 
-namespace ClopWindows.App.ViewModels;
+namespace Squish.App.ViewModels;
 
 public abstract class ObservableObject : INotifyPropertyChanged
 {

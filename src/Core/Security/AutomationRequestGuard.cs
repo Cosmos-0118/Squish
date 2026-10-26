@@ -2,7 +2,7 @@ using System;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace ClopWindows.Core.Security;
+namespace Squish.Core.Security;
 
 /// <summary>Outcome of vetting an inbound request to the local automation HTTP API.</summary>
 public enum AutomationRequestVerdict

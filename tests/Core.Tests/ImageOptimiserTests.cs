@@ -4,9 +4,9 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using ClopWindows.Core.Imaging;
-using ClopWindows.Core.Optimizers;
-using ClopWindows.Core.Shared;
+using Squish.Core.Imaging;
+using Squish.Core.Optimizers;
+using Squish.Core.Shared;
 using ImageMagick;
 using Xunit;
 
@@ -165,7 +165,7 @@ public sealed class ImageOptimiserTests
         var source = TestImages.SaveJpeg(pixels, Width, Height, quality: 97, image =>
         {
             var exif = new ExifProfile();
-            exif.SetValue(ExifTag.ImageDescription, "Clop Windows Test");
+            exif.SetValue(ExifTag.ImageDescription, "Squish Windows Test");
             exif.SetValue(ExifTag.GPSLatitudeRef, "N");
             exif.SetValue(ExifTag.GPSLatitude, new[] { new Rational(37, 1), new Rational(25, 1), new Rational(19, 1) });
             exif.SetValue(ExifTag.GPSLongitudeRef, "W");
@@ -183,7 +183,7 @@ public sealed class ImageOptimiserTests
             using var image = new MagickImage(output!.Value.Value);
             var profile = image.GetExifProfile();
             Assert.NotNull(profile);
-            Assert.Equal("Clop Windows Test", profile!.GetValue(ExifTag.ImageDescription)?.Value);
+            Assert.Equal("Squish Windows Test", profile!.GetValue(ExifTag.ImageDescription)?.Value);
             Assert.Null(profile.GetValue(ExifTag.GPSLatitude));
             Assert.Null(profile.GetValue(ExifTag.GPSLongitude));
         }
@@ -339,7 +339,7 @@ public sealed class ImageOptimiserTests
     {
         var pixels = TestImages.PhotoLikeRgba(Width, Height, seed: 15);
         var sourceA = TestImages.SaveJpeg(pixels, Width, Height, quality: 98);
-        var sourceB = FilePath.TempFile("clop-b", "jpg", addUniqueSuffix: true);
+        var sourceB = FilePath.TempFile("squish-b", "jpg", addUniqueSuffix: true);
         File.Copy(sourceA.Value, sourceB.Value);
         try
         {
@@ -387,7 +387,7 @@ public sealed class ImageOptimiserTests
     {
         var pixels = TestImages.GraphicRgba(Width, Height);
         var sourceA = TestImages.SavePng(pixels, Width, Height);
-        var sourceB = FilePath.TempFile("clop-b", "png", addUniqueSuffix: true);
+        var sourceB = FilePath.TempFile("squish-b", "png", addUniqueSuffix: true);
         File.Copy(sourceA.Value, sourceB.Value);
         try
         {
@@ -618,7 +618,7 @@ public sealed class ImageOptimiserTests
 
             Assert.Equal(OptimisationStatus.Succeeded, result.Status);
             Assert.Equal(source.Value, result.OutputPath?.Value);
-            Assert.False(File.Exists(source.Parent.Append($"{source.Stem}.clop.jpg").Value));
+            Assert.False(File.Exists(source.Parent.Append($"{source.Stem}.squish.jpg").Value));
         }
         finally
         {

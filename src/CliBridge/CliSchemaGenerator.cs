@@ -6,13 +6,13 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 
-namespace ClopWindows.CliBridge;
+namespace Squish.CliBridge;
 
 internal static class SchemaCommandBuilder
 {
     public static Command Create(RootCommand root)
     {
-        var command = new Command("schema", "Export a JSON schema describing the clop CLI surface.");
+        var command = new Command("schema", "Export a JSON schema describing the squish CLI surface.");
         var output = new Option<FileInfo?>("--output", "-o") { Description = "Write schema to this file instead of stdout." };
         var pretty = new Option<bool>("--pretty") { DefaultValueFactory = _ => true, Description = "Pretty-print the generated JSON." };
         command.Options.Add(output);
@@ -56,7 +56,7 @@ internal static class CliSchemaGenerator
     {
         ArgumentNullException.ThrowIfNull(root);
         var commands = root.Subcommands.Select(BuildCommand).OrderBy(c => c.Name, StringComparer.Ordinal).ToList();
-        return new CliSchema("clop", root.Description ?? string.Empty, commands);
+        return new CliSchema("squish", root.Description ?? string.Empty, commands);
     }
 
     private static CliSchemaCommand BuildCommand(Command command)

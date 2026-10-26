@@ -1,7 +1,7 @@
 using System.Collections.Immutable;
-using ClopWindows.Core.Shared;
+using Squish.Core.Shared;
 
-namespace ClopWindows.Core.Settings;
+namespace Squish.Core.Settings;
 
 public static class SettingsRegistry
 {
@@ -30,7 +30,7 @@ public static class SettingsRegistry
     public static readonly SettingKey<bool> ReplaceOptimisedFilesInPlace = Bool("replaceOptimisedFilesInPlace", false);
     public static readonly SettingKey<bool> DeleteOriginalAfterConversion = Bool("deleteOriginalAfterConversion", false);
 
-    public static readonly SettingKey<string> Workdir = new("workdir", ClopPaths.WorkRoot.Value);
+    public static readonly SettingKey<string> Workdir = new("workdir", SquishPaths.WorkRoot.Value);
     public static readonly SettingKey<CleanupInterval> WorkdirCleanupInterval = new("workdirCleanupInterval", CleanupInterval.Every3Days);
 
     public static readonly SettingKey<HashSet<string>> FormatsToConvertToJpeg = Set("formatsToConvertToJPEG", new[] { "webp", "avif", "heic", "bmp" });
@@ -106,7 +106,7 @@ public static class SettingsRegistry
     public static readonly SettingKey<int> AutoHideFloatingResultsAfter = Int("autoHideFloatingResultsAfter", 30);
     public static readonly SettingKey<int> AutoHideClipboardResultAfter = Int("autoHideClipboardResultAfter", 3);
     public static readonly SettingKey<int> AutoClearCompactResultsAfter = Int("autoClearAllCompactResultsAfter", 120);
-    public static readonly SettingKey<FloatingHudPlacement> FloatingHudPlacement = new("floatingHudPlacement", global::ClopWindows.Core.Settings.FloatingHudPlacement.TopRight);
+    public static readonly SettingKey<FloatingHudPlacement> FloatingHudPlacement = new("floatingHudPlacement", global::Squish.Core.Settings.FloatingHudPlacement.TopRight);
 
     public static readonly SettingKey<bool> AutoCopyToClipboard = Bool("autoCopyToClipboard", true);
     public static readonly SettingKey<bool> CliInstalled = Bool("cliInstalled", true);
@@ -130,8 +130,8 @@ public static class SettingsRegistry
     public static readonly SettingKey<List<CropSize>> SavedCropSizes = new("savedCropSizes", DefaultCropSizes);
     public static readonly SettingKey<bool> PauseAutomaticOptimisations = Bool("pauseAutomaticOptimisations", false);
     public static readonly SettingKey<bool> SyncSettingsCloud = Bool("syncSettingsCloud", true);
-    public static readonly SettingKey<bool> AllowClopToAppearInScreenshots = Bool("allowClopToAppearInScreenshots", false);
-    public static readonly SettingKey<AppThemeMode> AppThemeMode = new("appThemeMode", global::ClopWindows.Core.Settings.AppThemeMode.FollowSystem);
+    public static readonly SettingKey<bool> AllowSquishToAppearInScreenshots = Bool("allowSquishToAppearInScreenshots", false);
+    public static readonly SettingKey<AppThemeMode> AppThemeMode = new("appThemeMode", global::Squish.Core.Settings.AppThemeMode.FollowSystem);
 
     public static readonly ImmutableArray<ISettingKey> AllKeys = ImmutableArray.Create<ISettingKey>(
         FinishedOnboarding,
@@ -235,7 +235,7 @@ public static class SettingsRegistry
         SavedCropSizes,
         PauseAutomaticOptimisations,
         SyncSettingsCloud,
-        AllowClopToAppearInScreenshots,
+        AllowSquishToAppearInScreenshots,
         AppThemeMode,
         ShortcutToggleMetadataPreservation
     );

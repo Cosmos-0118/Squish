@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
-using ClopWindows.Core.Optimizers;
-using ClopWindows.Core.Shared;
+using Squish.Core.Optimizers;
+using Squish.Core.Shared;
 
-namespace ClopWindows.Core.Settings;
+namespace Squish.Core.Settings;
 
 public static class AggressiveOptimisationHelper
 {

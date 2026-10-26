@@ -1,7 +1,7 @@
 using System;
 using System.IO;
 
-namespace ClopWindows.Core.Imaging;
+namespace Squish.Core.Imaging;
 
 /// <summary>Cheap PNG chunk walk: dimensions, bit depth, animation and colour-profile flags without decoding pixels.</summary>
 internal sealed record PngInfo(int Width, int Height, int BitDepth, int ColorType, bool IsAnimated, bool HasIccProfile, bool HasTransparencyChunk)

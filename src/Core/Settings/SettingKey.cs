@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace ClopWindows.Core.Settings;
+namespace Squish.Core.Settings;
 
 public interface ISettingKey
 {

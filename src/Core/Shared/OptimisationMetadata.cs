@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace ClopWindows.Core.Shared;
+namespace Squish.Core.Shared;
 
 public static class OptimisationMetadata
 {

@@ -6,26 +6,26 @@ using IOFile = System.IO.File;
 using IOPath = System.IO.Path;
 using IODirectory = System.IO.Directory;
 
-namespace ClopWindows.Core.Shared;
+namespace Squish.Core.Shared;
 
 public readonly partial record struct FilePath
 {
     public static FilePath Workdir
     {
-        get => ClopPaths.WorkRoot;
-        set => ClopPaths.OverrideWorkRoot(value);
+        get => SquishPaths.WorkRoot;
+        set => SquishPaths.OverrideWorkRoot(value);
     }
 
-    public static FilePath ClopBackups => ClopPaths.Backups;
-    public static FilePath Videos => ClopPaths.Videos;
-    public static FilePath Images => ClopPaths.Images;
-    public static FilePath Pdfs => ClopPaths.Pdfs;
-    public static FilePath Conversions => ClopPaths.Conversions;
-    public static FilePath Downloads => ClopPaths.Downloads;
-    public static FilePath ForResize => ClopPaths.ForResize;
-    public static FilePath ForFilters => ClopPaths.ForFilters;
-    public static FilePath ProcessLogs => ClopPaths.ProcessLogs;
-    public static FilePath FinderQuickAction => ClopPaths.FinderQuickAction;
+    public static FilePath SquishBackups => SquishPaths.Backups;
+    public static FilePath Videos => SquishPaths.Videos;
+    public static FilePath Images => SquishPaths.Images;
+    public static FilePath Pdfs => SquishPaths.Pdfs;
+    public static FilePath Conversions => SquishPaths.Conversions;
+    public static FilePath Downloads => SquishPaths.Downloads;
+    public static FilePath ForResize => SquishPaths.ForResize;
+    public static FilePath ForFilters => SquishPaths.ForFilters;
+    public static FilePath ProcessLogs => SquishPaths.ProcessLogs;
+    public static FilePath FinderQuickAction => SquishPaths.FinderQuickAction;
 
     public bool IsDirectory
     {
@@ -57,7 +57,7 @@ public readonly partial record struct FilePath
         return new FilePath(stem);
     }
 
-    public FilePath ClopBackupPath => FilePath.ClopBackups.Append(NameWithHash);
+    public FilePath SquishBackupPath => FilePath.SquishBackups.Append(NameWithHash);
 
     public string NameWithHash
     {

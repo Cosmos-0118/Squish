@@ -1,22 +1,22 @@
-using ClopWindows.App.Localization;
+using Squish.App.Localization;
 using Xunit;
 
-namespace ClopWindows.App.Tests;
+namespace Squish.App.Tests;
 
-public sealed class ClopStringCatalogTests
+public sealed class SquishStringCatalogTests
 {
     [Fact]
     public void Get_ReturnsKnownString()
     {
-        var value = ClopStringCatalog.Get("app.name");
-        Assert.Equal("Clop", value);
+        var value = SquishStringCatalog.Get("app.name");
+        Assert.Equal("Squish", value);
     }
 
     [Fact]
     public void Get_ReturnsKeyWhenMissing()
     {
         const string missingKey = "missing.key";
-        var value = ClopStringCatalog.Get(missingKey);
+        var value = SquishStringCatalog.Get(missingKey);
         Assert.Equal(missingKey, value);
     }
 }

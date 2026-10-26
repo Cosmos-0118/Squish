@@ -4,14 +4,14 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Threading;
-using ClopWindows.App.Localization;
-using ClopWindows.App.ViewModels;
-using ClopWindows.App.Views.FloatingHud;
-using ClopWindows.Core.Optimizers;
-using ClopWindows.Core.Settings;
+using Squish.App.Localization;
+using Squish.App.ViewModels;
+using Squish.App.Views.FloatingHud;
+using Squish.Core.Optimizers;
+using Squish.Core.Settings;
 using Microsoft.Extensions.Logging;
 
-namespace ClopWindows.App.Services;
+namespace Squish.App.Services;
 
 public sealed class FloatingHudController : IDisposable
 {
@@ -333,11 +333,11 @@ public sealed class FloatingHudController : IDisposable
         if (string.Equals(e.Name, SettingsRegistry.StripMetadata.Name, StringComparison.Ordinal))
         {
             var stripMetadata = SettingsHost.Get(SettingsRegistry.StripMetadata);
-            var title = ClopStringCatalog.Get("hud.notification.metadata.title");
+            var title = SquishStringCatalog.Get("hud.notification.metadata.title");
             var messageKey = stripMetadata
                 ? "hud.notification.metadata.strip"
                 : "hud.notification.metadata.preserve";
-            var message = ClopStringCatalog.Get(messageKey);
+            var message = SquishStringCatalog.Get(messageKey);
             var style = stripMetadata ? FloatingHudNotificationStyle.Warning : FloatingHudNotificationStyle.Info;
             ShowNotification(title, message, style);
             return;

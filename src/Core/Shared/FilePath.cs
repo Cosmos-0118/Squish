@@ -4,7 +4,7 @@ using IOFile = System.IO.File;
 using IOPath = System.IO.Path;
 using IODirectory = System.IO.Directory;
 
-namespace ClopWindows.Core.Shared;
+namespace Squish.Core.Shared;
 
 /// <summary>
 /// Thin wrapper that keeps file system operations explicit and mirrors Swift's FilePath helpers.

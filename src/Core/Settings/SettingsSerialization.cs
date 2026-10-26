@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace ClopWindows.Core.Settings;
+namespace Squish.Core.Settings;
 
 internal static class SettingsSerialization
 {

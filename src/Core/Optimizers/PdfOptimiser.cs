@@ -10,9 +10,9 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
-using ClopWindows.Core.Shared;
+using Squish.Core.Shared;
 
-namespace ClopWindows.Core.Optimizers;
+namespace Squish.Core.Optimizers;
 
 /// <summary>
 /// Windows port of <c>PDF.swift</c>: shells out to Ghostscript with the exact argument stack used on macOS,
@@ -60,7 +60,7 @@ public sealed class PdfOptimiser : IOptimiser
         var plan = BuildPlan(request, _options);
         context.ReportProgress(2, plan.AggressiveCompression ? "Optimising PDF (aggressive)" : "Optimising PDF");
 
-        var tempOutput = FilePath.TempFile("clop-pdf", ".pdf", addUniqueSuffix: true);
+        var tempOutput = FilePath.TempFile("squish-pdf", ".pdf", addUniqueSuffix: true);
         tempOutput.EnsureParentDirectoryExists();
 
         try
@@ -165,9 +165,9 @@ public sealed class PdfOptimiser : IOptimiser
     internal static FilePath BuildCopyOutputPath(FilePath source, string extension)
     {
         var stem = source.Stem;
-        if (!stem.EndsWith(".clop", StringComparison.OrdinalIgnoreCase))
+        if (!stem.EndsWith(".squish", StringComparison.OrdinalIgnoreCase))
         {
-            stem += ".clop";
+            stem += ".squish";
         }
 
         var finalExtension = string.IsNullOrWhiteSpace(extension) ? "pdf" : extension;
@@ -437,7 +437,7 @@ internal sealed class ExternalPdfToolchain : IPdfToolchain
         var executable = options.GhostscriptPath;
         if (string.IsNullOrWhiteSpace(executable))
         {
-            return PdfToolchainResult.Failure("Ghostscript executable not found. Install Ghostscript 10.x or set the CLOP_GS environment variable to the gswin64c.exe path.");
+            return PdfToolchainResult.Failure("Ghostscript executable not found. Install Ghostscript 10.x or set the SQUISH_GS environment variable to the gswin64c.exe path.");
         }
 
         if (Path.IsPathRooted(executable) && !File.Exists(executable))
@@ -679,7 +679,7 @@ internal sealed class ExternalPdfToolchain : IPdfToolchain
             return null;
         }
 
-        var output = FilePath.TempFile("clop-qpdf", ".pdf", addUniqueSuffix: true);
+        var output = FilePath.TempFile("squish-qpdf", ".pdf", addUniqueSuffix: true);
         output.EnsureParentDirectoryExists();
 
         var startInfo = new ProcessStartInfo(qpdf)

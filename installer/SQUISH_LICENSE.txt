@@ -1,9 +1,9 @@
-Clop for Windows — License Summary
+Squish — License Summary
 ===================================
 
 Primary License
 ---------------
-Clop for Windows is free software distributed under the GNU General Public
+Squish is free software distributed under the GNU General Public
 License, version 3.0. The complete license text is included at the root of
 this package (`LICENSE`) and at https://www.gnu.org/licenses/gpl-3.0.txt.
 
@@ -18,7 +18,7 @@ including (but not limited to):
 
 Third-Party Tools
 -----------------
-The Clop installer bundles a number of command-line utilities required for
+The Squish installer bundles a number of command-line utilities required for
 image/video/PDF optimisation. These binaries remain under their respective
 licenses. Their original LICENSE/NOTICE files can be found inside the
 installation directory at `tools/<name>/`. A summary is provided below:

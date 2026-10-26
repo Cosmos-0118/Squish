@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
-    <UserSecretsId>dotnet-ClopWindows.BackgroundService-6ffa64f7-113a-4cf8-8e1e-686244547250</UserSecretsId>
+    <UserSecretsId>dotnet-Squish.BackgroundService-6ffa64f7-113a-4cf8-8e1e-686244547250</UserSecretsId>
     <UseWindowsForms>true</UseWindowsForms>
   </PropertyGroup>
 
@@ -12,6 +12,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Core\ClopWindows.Core.csproj" />
+    <ProjectReference Include="..\Core\Squish.Core.csproj" />
   </ItemGroup>
 </Project>

@@ -1,5 +1,5 @@
 using System;
-using ClopWindows.Core.Imaging;
+using Squish.Core.Imaging;
 using Xunit;
 
 namespace Core.Tests;

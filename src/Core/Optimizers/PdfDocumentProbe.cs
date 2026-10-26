@@ -3,9 +3,9 @@ using System.Buffers;
 using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
-using ClopWindows.Core.Shared;
+using Squish.Core.Shared;
 
-namespace ClopWindows.Core.Optimizers;
+namespace Squish.Core.Optimizers;
 
 internal static class PdfDocumentProbe
 {

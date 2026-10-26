@@ -7,15 +7,15 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Windows.Threading;
-using ClopWindows.App.Localization;
-using ClopWindows.App.Infrastructure;
-using ClopWindows.App.Services;
-using ClopWindows.Core.Optimizers;
-using ClopWindows.Core.Settings;
-using ClopWindows.Core.Shared;
+using Squish.App.Localization;
+using Squish.App.Infrastructure;
+using Squish.App.Services;
+using Squish.Core.Optimizers;
+using Squish.Core.Settings;
+using Squish.Core.Shared;
 using Microsoft.Extensions.Logging;
 
-namespace ClopWindows.App.ViewModels;
+namespace Squish.App.ViewModels;
 
 public sealed class CompareViewModel : ObservableObject, IDisposable
 {
@@ -74,14 +74,14 @@ public sealed class CompareViewModel : ObservableObject, IDisposable
     {
         try
         {
-            var supportedLabel = ClopStringCatalog.Get("compare.dialog.filterSupported");
-            var allFilesLabel = ClopStringCatalog.Get("compare.dialog.filterAll");
+            var supportedLabel = SquishStringCatalog.Get("compare.dialog.filterSupported");
+            var allFilesLabel = SquishStringCatalog.Get("compare.dialog.filterAll");
             var supportedPattern = BuildSupportedFilterPattern();
             var filter = string.Format(CultureInfo.InvariantCulture, "{0}|{2}|{1}|*.*", supportedLabel, allFilesLabel, supportedPattern);
 
             var dialog = new Microsoft.Win32.OpenFileDialog
             {
-                Title = ClopStringCatalog.Get("compare.dialog.title"),
+                Title = SquishStringCatalog.Get("compare.dialog.title"),
                 Multiselect = true,
                 Filter = filter
             };
@@ -182,8 +182,8 @@ public sealed class CompareViewModel : ObservableObject, IDisposable
         if (string.IsNullOrWhiteSpace(summary.SizeSummary))
         {
             var fallback = e.Result.Status == OptimisationStatus.Succeeded
-                ? ClopStringCatalog.Get("compare.recent.noChange")
-                : ClopStringCatalog.Get("compare.recent.completed");
+                ? SquishStringCatalog.Get("compare.recent.noChange")
+                : SquishStringCatalog.Get("compare.recent.completed");
             summary = summary with { SizeSummary = fallback };
         }
 

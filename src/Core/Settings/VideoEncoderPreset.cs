@@ -1,7 +1,7 @@
-namespace ClopWindows.Core.Settings;
+namespace Squish.Core.Settings;
 
 /// <summary>
-/// User-facing encoder choices exposed in the app settings so Clop knows whether to prefer CPU or GPU paths.
+/// User-facing encoder choices exposed in the app settings so Squish knows whether to prefer CPU or GPU paths.
 /// </summary>
 public enum VideoEncoderPreset
 {

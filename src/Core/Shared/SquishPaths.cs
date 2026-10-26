@@ -1,9 +1,9 @@
 using System;
 using System.IO;
 
-namespace ClopWindows.Core.Shared;
+namespace Squish.Core.Shared;
 
-public static class ClopPaths
+public static class SquishPaths
 {
     private static readonly object Gate = new();
     private static FilePath _workRoot = InitializeWorkRoot();
@@ -51,9 +51,9 @@ public static class ClopPaths
 
     private static FilePath InitializeWorkRoot()
     {
-        var custom = Environment.GetEnvironmentVariable("CLOP_WORKDIR");
+        var custom = Environment.GetEnvironmentVariable("SQUISH_WORKDIR");
         var basePath = string.IsNullOrWhiteSpace(custom)
-            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Clop")
+            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Squish")
             : custom!;
         var workPath = FilePath.From(basePath);
         workPath.EnsurePathExists();

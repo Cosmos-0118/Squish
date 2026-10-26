@@ -7,7 +7,7 @@ using System.Text;
 using System.Text.Json;
 using System.Linq;
 
-namespace ClopWindows.Integrations.Explorer;
+namespace Squish.Integrations.Explorer;
 
 /// <summary>
 /// Sends automation intents to the background service via the named pipe exposed by <see cref="ShortcutsBridge"/>.
@@ -15,7 +15,7 @@ namespace ClopWindows.Integrations.Explorer;
 [SupportedOSPlatform("windows")]
 internal static class AutomationClient
 {
-    private const string PipeName = "clop-automation";
+    private const string PipeName = "squish-automation";
     private const int ConnectTimeoutMs = 4000;
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
@@ -70,11 +70,11 @@ internal static class AutomationClient
         }
         catch (TimeoutException ex)
         {
-            throw new InvalidOperationException("Clop background service is not running.", ex);
+            throw new InvalidOperationException("Squish background service is not running.", ex);
         }
         catch (IOException ex)
         {
-            throw new InvalidOperationException("Unable to reach the Clop automation bridge.", ex);
+            throw new InvalidOperationException("Unable to reach the Squish automation bridge.", ex);
         }
 
         var payload = new AutomationOptimisePayload
@@ -133,7 +133,7 @@ internal static class AutomationClient
         var response = JsonSerializer.Deserialize<AutomationResponse>(json, SerializerOptions);
         if (response is null)
         {
-            throw new InvalidOperationException("The Clop automation bridge returned an empty response.");
+            throw new InvalidOperationException("The Squish automation bridge returned an empty response.");
         }
 
         return response;

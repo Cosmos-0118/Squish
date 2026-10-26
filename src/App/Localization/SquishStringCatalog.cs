@@ -6,9 +6,9 @@ using System.Linq;
 using System.Reflection;
 using System.Text.Json;
 
-namespace ClopWindows.App.Localization;
+namespace Squish.App.Localization;
 
-public static class ClopStringCatalog
+public static class SquishStringCatalog
 {
     private static readonly Lazy<IReadOnlyDictionary<string, string>> CachedStrings = new(() => LoadCatalog(CultureInfo.CurrentUICulture));
 
@@ -97,8 +97,8 @@ public static class ClopStringCatalog
         var assembly = Assembly.GetExecutingAssembly();
         var resourceNameCandidates = new[]
         {
-            $"ClopWindows.App.Resources.strings.{culture}.json",
-            $"ClopWindows.App.Resources.{culture}.json"
+            $"Squish.App.Resources.strings.{culture}.json",
+            $"Squish.App.Resources.{culture}.json"
         };
 
         foreach (var resourceName in resourceNameCandidates)

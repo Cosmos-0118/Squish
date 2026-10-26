@@ -1,9 +1,9 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using ClopWindows.Core.Settings;
+using Squish.Core.Settings;
 
-namespace ClopWindows.Core.Optimizers;
+namespace Squish.Core.Optimizers;
 
 /// <summary>
 /// Wraps the image optimiser so options refresh from settings on every request.

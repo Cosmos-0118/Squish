@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 
-namespace ClopWindows.Core.Imaging;
+namespace Squish.Core.Imaging;
 
 /// <summary>
 /// A memory-light perceptual reference for one video frame: only the tile crops chosen for scoring are kept, so

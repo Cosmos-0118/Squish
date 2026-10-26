@@ -7,12 +7,12 @@ using System.Runtime.Versioning;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
-using ClopWindows.Core.Optimizers;
-using ClopWindows.Core.Settings;
-using ClopWindows.Core.Shared;
+using Squish.Core.Optimizers;
+using Squish.Core.Settings;
+using Squish.Core.Shared;
 using Microsoft.Extensions.Logging;
 
-namespace ClopWindows.BackgroundService.Automation;
+namespace Squish.BackgroundService.Automation;
 
 [SupportedOSPlatform("windows")]
 public sealed class DirectoryOptimisationService : IAsyncDisposable
@@ -199,13 +199,13 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
             return;
         }
 
-        if (ClopFileGuards.IsClopGenerated(path))
+        if (SquishFileGuards.IsSquishGenerated(path))
         {
-            _logger.LogTrace("Skipping {Path}; detected Clop output file.", path.Value);
+            _logger.LogTrace("Skipping {Path}; detected Squish output file.", path.Value);
             return;
         }
 
-        if (ClopOptimisationMarker.HasValidMarker(path))
+        if (SquishOptimisationMarker.HasValidMarker(path))
         {
             _logger.LogTrace("Skipping {Path}; optimisation marker present.", path.Value);
             return;
@@ -322,7 +322,7 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
 
     private static bool IsWithinWorkRoot(FilePath path)
     {
-        var workRoot = ClopPaths.WorkRoot.Value;
+        var workRoot = SquishPaths.WorkRoot.Value;
         if (path.Value.Equals(workRoot, StringComparison.OrdinalIgnoreCase))
         {
             return true;

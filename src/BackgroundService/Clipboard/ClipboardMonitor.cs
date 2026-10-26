@@ -11,7 +11,7 @@ using Microsoft.Extensions.Logging;
 using WinFormsClipboard = System.Windows.Forms.Clipboard;
 using DataFormats = System.Windows.Forms.DataFormats;
 
-namespace ClopWindows.BackgroundService.Clipboard;
+namespace Squish.BackgroundService.Clipboard;
 
 /// <summary>
 /// Polls the Windows clipboard from an STA thread and raises lightweight snapshots when changes occur.
@@ -54,7 +54,7 @@ public sealed class ClipboardMonitor : IDisposable
             _thread = new Thread(() => Run(_cts, _workQueue))
             {
                 IsBackground = true,
-                Name = "ClopClipboardMonitor"
+                Name = "SquishClipboardMonitor"
             };
             _thread.SetApartmentState(ApartmentState.STA);
             _thread.Start();

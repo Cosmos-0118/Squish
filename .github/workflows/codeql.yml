@@ -23,5 +23,5 @@ jobs:
         with:
           languages: csharp
           queries: security-extended
-      - run: dotnet build src/ClopWindows.sln --configuration Release
+      - run: dotnet build src/Squish.sln --configuration Release
       - uses: github/codeql-action/analyze@v3

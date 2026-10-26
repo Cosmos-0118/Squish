@@ -5,7 +5,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Windows.Forms;
 
-namespace ClopWindows.Integrations.Explorer;
+namespace Squish.Integrations.Explorer;
 
 /// <summary>
 /// Windows Explorer context menu handler that forwards optimisations to the background automation bridge.
@@ -74,18 +74,18 @@ public sealed class ExplorerOptimiseCommand : IExplorerCommand
 
             if (!result.Success)
             {
-                ShowMessage("Clop optimisation failed", result.Message ?? "An unknown error occurred.");
+                ShowMessage("Squish optimisation failed", result.Message ?? "An unknown error occurred.");
             }
             else if (result.Partial)
             {
-                ShowMessage("Clop optimisation completed with warnings", result.Message ?? "Some files could not be optimised.");
+                ShowMessage("Squish optimisation completed with warnings", result.Message ?? "Some files could not be optimised.");
             }
 
             return HResult.S_OK;
         }
         catch (Exception ex)
         {
-            ShowMessage("Clop integration error", ex.Message);
+            ShowMessage("Squish integration error", ex.Message);
             return HResult.E_FAIL;
         }
     }

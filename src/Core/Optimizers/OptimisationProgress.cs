@@ -1,4 +1,4 @@
-namespace ClopWindows.Core.Optimizers;
+namespace Squish.Core.Optimizers;
 
 public sealed record OptimisationProgress(string RequestId, double Percentage, string? Message = null)
 {

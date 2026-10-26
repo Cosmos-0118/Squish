@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace ClopWindows.BackgroundService.Clipboard;
+namespace Squish.BackgroundService.Clipboard;
 
 /// <summary>
 /// Immutable representation of clipboard contents captured on the STA monitoring thread.

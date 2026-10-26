@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Windows.Input;
 
-namespace ClopWindows.App.Infrastructure;
+namespace Squish.App.Infrastructure;
 
 internal static class ShortcutParser
 {

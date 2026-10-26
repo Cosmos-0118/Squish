@@ -1,11 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using ClopWindows.Core.Optimizers;
-using ClopWindows.Core.Shared;
+using Squish.Core.Optimizers;
+using Squish.Core.Shared;
 using Microsoft.Extensions.Logging;
 
-namespace ClopWindows.BackgroundService.Automation;
+namespace Squish.BackgroundService.Automation;
 
 internal static class AutomationTargetResolver
 {
@@ -130,7 +130,7 @@ internal static class AutomationTargetResolver
 
     private static bool IsWithinWorkRoot(FilePath path)
     {
-        var workRoot = ClopPaths.WorkRoot.Value;
+        var workRoot = SquishPaths.WorkRoot.Value;
         if (path.Value.Equals(workRoot, StringComparison.OrdinalIgnoreCase))
         {
             return true;

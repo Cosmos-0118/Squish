@@ -5,37 +5,29 @@
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
     <EnableWindowsFormsImplicitUsings>false</EnableWindowsFormsImplicitUsings>
-    <RootNamespace>ClopWindows.App</RootNamespace>
+    <RootNamespace>Squish.App</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <AssemblyName>ClopWindows</AssemblyName>
+    <AssemblyName>Squish</AssemblyName>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
-    <ApplicationIcon>..\..\installer\assets\Clop.ico</ApplicationIcon>
+    <ApplicationIcon>..\..\installer\assets\Squish.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Core\ClopWindows.Core.csproj" />
-    <ProjectReference Include="..\BackgroundService\ClopWindows.BackgroundService.csproj" />
+    <ProjectReference Include="..\Core\Squish.Core.csproj" />
+    <ProjectReference Include="..\BackgroundService\Squish.BackgroundService.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <Resource Include="..\..\installer\assets\ClopMark.ico">
-      <Link>Assets\Brand\ClopMark.ico</Link>
+    <Resource Include="..\..\installer\assets\Squish.ico">
+      <Link>Assets\Brand\Squish.ico</Link>
     </Resource>
-    <Resource Include="..\..\installer\assets\Clop.ico">
-      <Link>Assets\Brand\Clop.ico</Link>
-    </Resource>
-    <Resource Include="..\..\installer\assets\logo.ico">
-      <Link>Assets\Brand\logo.ico</Link>
-    </Resource>
+    <Resource Include="Assets\Brand\squish-icon.png" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Hosting" />
     <PackageReference Include="Microsoft.Extensions.Logging" />
   </ItemGroup>
-    <ItemGroup>
-      <Resource Include="Assets\Brand\Assets.xcassets\**\*.png" />
-    </ItemGroup>
 
   <ItemGroup>
     <Manifest Include="$(ApplicationManifest)" />
@@ -46,7 +38,7 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <EmbeddedResource Include="Localization\en.json">
-      <LogicalName>ClopWindows.App.Resources.strings.en.json</LogicalName>
+      <LogicalName>Squish.App.Resources.strings.en.json</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
 </Project>

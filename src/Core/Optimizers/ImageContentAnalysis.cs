@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Generic;
-using ClopWindows.Core.Imaging;
+using Squish.Core.Imaging;
 
-namespace ClopWindows.Core.Optimizers;
+namespace Squish.Core.Optimizers;
 
 internal enum ImageContentKind
 {

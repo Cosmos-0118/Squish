@@ -3,26 +3,26 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Windows;
 using System.Windows.Interop;
-using ClopWindows.App.Infrastructure;
-using ClopWindows.App.Services;
-using ClopWindows.App.ViewModels;
-using ClopWindows.App.Views.FloatingHud;
-using ClopWindows.BackgroundService;
-using ClopWindows.BackgroundService.Automation;
-using ClopWindows.BackgroundService.Clipboard;
-using ClopWindows.Core.Optimizers;
-using ClopWindows.Core.Settings;
-using ClopWindows.Core.Shared;
-using ClopWindows.Core.Shared.Logging;
+using Squish.App.Infrastructure;
+using Squish.App.Services;
+using Squish.App.ViewModels;
+using Squish.App.Views.FloatingHud;
+using Squish.BackgroundService;
+using Squish.BackgroundService.Automation;
+using Squish.BackgroundService.Clipboard;
+using Squish.Core.Optimizers;
+using Squish.Core.Settings;
+using Squish.Core.Shared;
+using Squish.Core.Shared.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-namespace ClopWindows.App;
+namespace Squish.App;
 
 public partial class App : System.Windows.Application
 {
-    private const string SingleInstanceMutexName = "ClopWindows.App.SingleInstance";
+    private const string SingleInstanceMutexName = "Squish.App.SingleInstance";
     internal const string BackgroundLaunchArgument = "--background";
 
     private IHost? _host;
@@ -32,11 +32,12 @@ public partial class App : System.Windows.Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        LegacyDataMigration.EnsureMigrated();
         if (!TryAcquireSingleInstanceMutex())
         {
             System.Windows.MessageBox.Show(
-                "Clop is already running in the system tray.",
-                "Clop",
+                "Squish is already running in the system tray.",
+                "Squish",
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
 

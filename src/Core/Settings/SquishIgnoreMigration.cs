@@ -1,15 +1,15 @@
 using System.Text.Json.Nodes;
-using ClopWindows.Core.Shared;
+using Squish.Core.Shared;
 
-namespace ClopWindows.Core.Settings;
+namespace Squish.Core.Settings;
 
-internal sealed class ClopIgnoreMigration : ISettingsMigration
+internal sealed class SquishIgnoreMigration : ISettingsMigration
 {
     public int TargetVersion => 2;
 
     public void Apply(SettingsDocument document)
     {
-        foreach (var fileType in ClopFileType.All)
+        foreach (var fileType in SquishFileType.All)
         {
             var directories = ReadDirectoryList(document.GetValueNode(fileType.DirectoryKey.Name));
             foreach (var dir in directories)
@@ -29,23 +29,23 @@ internal sealed class ClopIgnoreMigration : ISettingsMigration
                     continue;
                 }
 
-                var clopIgnore = directoryPath.Append(".clopignore");
-                if (!File.Exists(clopIgnore.Value))
+                var squishIgnore = directoryPath.Append(".squishignore");
+                if (!File.Exists(squishIgnore.Value))
                 {
                     continue;
                 }
 
-                foreach (var other in ClopFileType.All.Where(t => t != fileType))
+                foreach (var other in SquishFileType.All.Where(t => t != fileType))
                 {
                     var otherDirs = ReadDirectoryList(document.GetValueNode(other.DirectoryKey.Name));
                     if (!otherDirs.Contains(dir, StringComparer.OrdinalIgnoreCase))
                     {
                         continue;
                     }
-                    var target = directoryPath.Append($".clopignore-{other.Name}");
+                    var target = directoryPath.Append($".squishignore-{other.Name}");
                     try
                     {
-                        File.Copy(clopIgnore.Value, target.Value, overwrite: true);
+                        File.Copy(squishIgnore.Value, target.Value, overwrite: true);
                     }
                     catch (IOException)
                     {
@@ -53,16 +53,16 @@ internal sealed class ClopIgnoreMigration : ISettingsMigration
                     }
                 }
 
-                var renamed = directoryPath.Append($".clopignore-{fileType.Name}");
+                var renamed = directoryPath.Append($".squishignore-{fileType.Name}");
                 try
                 {
                     if (File.Exists(renamed.Value))
                     {
-                        File.Delete(clopIgnore.Value);
+                        File.Delete(squishIgnore.Value);
                     }
                     else
                     {
-                        File.Move(clopIgnore.Value, renamed.Value);
+                        File.Move(squishIgnore.Value, renamed.Value);
                     }
                 }
                 catch (IOException)

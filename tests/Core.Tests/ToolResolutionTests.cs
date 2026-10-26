@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using ClopWindows.Core.Optimizers;
+using Squish.Core.Optimizers;
 using Xunit;
 
 namespace Core.Tests;
@@ -15,9 +15,9 @@ public sealed class ToolResolutionTests
     {
         using var tempExe = new TemporaryExecutable("ffmpeg-env");
         using var tempProbe = new TemporaryExecutable("ffprobe-env");
-        using var primaryEnv = new EnvironmentVariableScope("CLOP_FFMPEG", tempExe.Path);
+        using var primaryEnv = new EnvironmentVariableScope("SQUISH_FFMPEG", tempExe.Path);
         using var secondaryEnv = new EnvironmentVariableScope("FFMPEG_EXECUTABLE", null);
-        using var probePrimaryEnv = new EnvironmentVariableScope("CLOP_FFPROBE", tempProbe.Path);
+        using var probePrimaryEnv = new EnvironmentVariableScope("SQUISH_FFPROBE", tempProbe.Path);
         using var probeSecondaryEnv = new EnvironmentVariableScope("FFPROBE_EXECUTABLE", null);
 
         var options = new VideoOptimiserOptions();
@@ -29,9 +29,9 @@ public sealed class ToolResolutionTests
     [Fact]
     public void VideoOptimiserOptions_FindsBundledFfmpeg()
     {
-        using var primaryEnv = new EnvironmentVariableScope("CLOP_FFMPEG", null);
+        using var primaryEnv = new EnvironmentVariableScope("SQUISH_FFMPEG", null);
         using var secondaryEnv = new EnvironmentVariableScope("FFMPEG_EXECUTABLE", null);
-        using var probePrimaryEnv = new EnvironmentVariableScope("CLOP_FFPROBE", null);
+        using var probePrimaryEnv = new EnvironmentVariableScope("SQUISH_FFPROBE", null);
         using var probeSecondaryEnv = new EnvironmentVariableScope("FFPROBE_EXECUTABLE", null);
         using var sandbox = new ToolSandbox();
 
@@ -47,7 +47,7 @@ public sealed class ToolResolutionTests
     [Fact]
     public void PdfOptimiserOptions_FindsBundledGhostscriptExecutable()
     {
-        using var env1 = new EnvironmentVariableScope("CLOP_GS", null);
+        using var env1 = new EnvironmentVariableScope("SQUISH_GS", null);
         using var env2 = new EnvironmentVariableScope("GS_EXECUTABLE", null);
         using var sandbox = new ToolSandbox();
 
@@ -61,7 +61,7 @@ public sealed class ToolResolutionTests
     [Fact]
     public void PdfOptimiserOptions_FindsBundledGhostscriptResources()
     {
-        using var env1 = new EnvironmentVariableScope("CLOP_GS_LIB", null);
+        using var env1 = new EnvironmentVariableScope("SQUISH_GS_LIB", null);
         using var env2 = new EnvironmentVariableScope("GS_LIB", null);
         using var sandbox = new ToolSandbox();
 

@@ -3,16 +3,17 @@ using System.Globalization;
 using System.IO;
 using System.Text;
 
-namespace ClopWindows.Core.Shared;
+namespace Squish.Core.Shared;
 
 /// <summary>
 /// Persists lightweight optimisation markers alongside files (via NTFS alternate data streams) so we
 /// can skip re-processing content that has already been optimised, even when the file keeps its
 /// original name.
 /// </summary>
-public static class ClopOptimisationMarker
+public static class SquishOptimisationMarker
 {
-    private const string MarkerStreamName = "clop.optimised";
+    private const string MarkerStreamName = "squish.optimised";
+    private const string LegacyMarkerStreamName = "clop.optimised";
     private const string MarkerPrefix = "v1|";
 
     public static bool TryMark(FilePath path)
@@ -57,6 +58,11 @@ public static class ClopOptimisationMarker
             return false;
         }
 
+        return HasValidMarker(path, MarkerStreamName) || HasValidMarker(path, LegacyMarkerStreamName);
+    }
+
+    private static bool HasValidMarker(FilePath path, string streamName)
+    {
         try
         {
             var info = new FileInfo(path.Value);
@@ -65,7 +71,7 @@ public static class ClopOptimisationMarker
                 return false;
             }
 
-            using var stream = new FileStream(BuildStreamPath(path.Value), FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using var stream = new FileStream(BuildStreamPath(path.Value, streamName), FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
             using var reader = new StreamReader(stream, Encoding.UTF8);
             var payload = reader.ReadToEnd();
             if (!payload.StartsWith(MarkerPrefix, StringComparison.Ordinal))
@@ -93,7 +99,7 @@ public static class ClopOptimisationMarker
                 return true;
             }
 
-            TryClear(path);
+            TryClear(path, streamName);
         }
         catch (FileNotFoundException)
         {
@@ -118,9 +124,15 @@ public static class ClopOptimisationMarker
             return;
         }
 
+        TryClear(path, MarkerStreamName);
+        TryClear(path, LegacyMarkerStreamName);
+    }
+
+    private static void TryClear(FilePath path, string streamName)
+    {
         try
         {
-            File.Delete(BuildStreamPath(path.Value));
+            File.Delete(BuildStreamPath(path.Value, streamName));
         }
         catch
         {
@@ -130,5 +142,5 @@ public static class ClopOptimisationMarker
 
     private static bool SupportsMarkers => OperatingSystem.IsWindows();
 
-    private static string BuildStreamPath(string path) => string.Concat(path, ":", MarkerStreamName);
+    private static string BuildStreamPath(string path, string streamName = MarkerStreamName) => string.Concat(path, ":", streamName);
 }

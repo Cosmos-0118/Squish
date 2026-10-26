@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 
-namespace ClopWindows.Core.Imaging;
+namespace Squish.Core.Imaging;
 
 /// <summary>Metadata payloads that may be carried from a source file into an optimised output.</summary>
 internal sealed record MetadataBlobs(byte[]? Exif, byte[]? Icc, byte[]? Xmp, byte[]? Iptc)
@@ -23,15 +23,25 @@ internal static class JpegSegments
     private static readonly byte[] XmpHeader = System.Text.Encoding.ASCII.GetBytes("http://ns.adobe.com/xap/1.0/\0");
     private static readonly byte[] IccHeader = System.Text.Encoding.ASCII.GetBytes("ICC_PROFILE\0");
     private static readonly byte[] PhotoshopHeader = System.Text.Encoding.ASCII.GetBytes("Photoshop 3.0\0");
-    private static readonly byte[] ClopComment = System.Text.Encoding.ASCII.GetBytes("Optimised by Clop");
+    private static readonly byte[] SquishComment = System.Text.Encoding.ASCII.GetBytes("Optimised by Squish");
+    private static readonly byte[] LegacyComment = System.Text.Encoding.ASCII.GetBytes("Optimised by Clop");
     private const int MaxSegmentPayload = 65533;
 
-    /// <summary>True when the file carries the comment Clop adds after a lossy re-encode.</summary>
-    public static bool HasClopMarker(ReadOnlySpan<byte> jpeg)
+    /// <summary>
+    /// True when the file carries the comment Squish adds after a lossy re-encode (or the one it wrote
+    /// before the rename).
+    /// </summary>
+    public static bool HasSquishMarker(ReadOnlySpan<byte> jpeg)
     {
         foreach (var segment in Enumerate(jpeg))
         {
-            if (segment.Marker == 0xFE && StartsWith(jpeg.Slice(segment.PayloadStart, segment.PayloadLength), ClopComment))
+            if (segment.Marker != 0xFE)
+            {
+                continue;
+            }
+
+            var payload = jpeg.Slice(segment.PayloadStart, segment.PayloadLength);
+            if (StartsWith(payload, SquishComment) || StartsWith(payload, LegacyComment))
             {
                 return true;
             }
@@ -85,7 +95,7 @@ internal static class JpegSegments
     /// Returns a copy of <paramref name="jpeg"/> whose metadata segments (EXIF, XMP, ICC, Photoshop/IPTC, comments)
     /// are replaced by <paramref name="blobs"/>. APP0/JFIF and all other markers are preserved.
     /// </summary>
-    public static byte[] Rewrite(ReadOnlySpan<byte> jpeg, MetadataBlobs blobs, bool addClopMarker = false)
+    public static byte[] Rewrite(ReadOnlySpan<byte> jpeg, MetadataBlobs blobs, bool addSquishMarker = false)
     {
         if (jpeg.Length < 4 || jpeg[0] != 0xFF || jpeg[1] != 0xD8)
         {
@@ -125,7 +135,7 @@ internal static class JpegSegments
             // Metadata goes right after the JFIF APP0 so decoders that expect JFIF first stay happy.
             if (!inserted && segment.Marker == 0xE0)
             {
-                WriteMetadata(output, blobs, addClopMarker);
+                WriteMetadata(output, blobs, addSquishMarker);
                 inserted = true;
             }
         }
@@ -136,7 +146,7 @@ internal static class JpegSegments
             var rest = output.ToArray();
             using var rebuilt = new MemoryStream(rest.Length + 4096);
             rebuilt.Write(rest, 0, 2);
-            WriteMetadata(rebuilt, blobs, addClopMarker);
+            WriteMetadata(rebuilt, blobs, addSquishMarker);
             rebuilt.Write(rest, 2, rest.Length - 2);
             rebuilt.Write(jpeg[scanStart..]);
             return rebuilt.ToArray();
@@ -270,11 +280,11 @@ internal static class JpegSegments
         return segments;
     }
 
-    private static void WriteMetadata(Stream output, MetadataBlobs blobs, bool addClopMarker)
+    private static void WriteMetadata(Stream output, MetadataBlobs blobs, bool addSquishMarker)
     {
-        if (addClopMarker)
+        if (addSquishMarker)
         {
-            WriteSegment(output, 0xFE, ReadOnlySpan<byte>.Empty, ClopComment);
+            WriteSegment(output, 0xFE, ReadOnlySpan<byte>.Empty, SquishComment);
         }
 
         if (blobs.Exif is { Length: > 0 } exif)

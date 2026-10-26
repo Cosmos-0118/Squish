@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<Application x:Class="ClopWindows.App.App"
+<Application x:Class="Squish.App.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:vm="clr-namespace:ClopWindows.App.ViewModels"
-             xmlns:onboarding="clr-namespace:ClopWindows.App.Views.Onboarding"
-             xmlns:compare="clr-namespace:ClopWindows.App.Views.Compare"
-             xmlns:settings="clr-namespace:ClopWindows.App.Views.Settings">
+             xmlns:vm="clr-namespace:Squish.App.ViewModels"
+             xmlns:onboarding="clr-namespace:Squish.App.Views.Onboarding"
+             xmlns:compare="clr-namespace:Squish.App.Views.Compare"
+             xmlns:settings="clr-namespace:Squish.App.Views.Settings">
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>

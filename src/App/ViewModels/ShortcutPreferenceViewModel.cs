@@ -1,11 +1,11 @@
 using System.Globalization;
 using System.Windows;
 using System.Windows.Input;
-using ClopWindows.App.Infrastructure;
-using ClopWindows.App.Localization;
-using ClopWindows.App.Views.Dialogs;
+using Squish.App.Infrastructure;
+using Squish.App.Localization;
+using Squish.App.Views.Dialogs;
 
-namespace ClopWindows.App.ViewModels;
+namespace Squish.App.ViewModels;
 
 public sealed class ShortcutPreferenceViewModel : ObservableObject
 {
@@ -30,11 +30,11 @@ public sealed class ShortcutPreferenceViewModel : ObservableObject
 
     public string DefaultBinding { get; }
 
-    public string DefaultBindingLabel => string.Format(CultureInfo.CurrentCulture, ClopStringCatalog.Get("settings.shortcuts.defaultFormat"), DefaultBinding);
+    public string DefaultBindingLabel => string.Format(CultureInfo.CurrentCulture, SquishStringCatalog.Get("settings.shortcuts.defaultFormat"), DefaultBinding);
 
     public string ScopeLabel => _scope == ShortcutScope.Global
-        ? ClopStringCatalog.Get("settings.shortcuts.scope.global")
-        : ClopStringCatalog.Get("settings.shortcuts.scope.inApp");
+        ? SquishStringCatalog.Get("settings.shortcuts.scope.global")
+        : SquishStringCatalog.Get("settings.shortcuts.scope.inApp");
 
     public string CurrentBinding
     {
@@ -86,11 +86,11 @@ public sealed class ShortcutPreferenceViewModel : ObservableObject
         var conflict = ShortcutCatalog.FindConflict(_id, modifiers, key);
         if (conflict is not null)
         {
-            var message = string.Format(CultureInfo.CurrentCulture, ClopStringCatalog.Get("shortcuts.errors.conflict"), conflict.Description);
+            var message = string.Format(CultureInfo.CurrentCulture, SquishStringCatalog.Get("shortcuts.errors.conflict"), conflict.Description);
             System.Windows.MessageBox.Show(
                 System.Windows.Application.Current?.MainWindow,
                 message,
-                ClopStringCatalog.Get("shortcuts.errors.conflictTitle"),
+                SquishStringCatalog.Get("shortcuts.errors.conflictTitle"),
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);
             return;
@@ -106,8 +106,8 @@ public sealed class ShortcutPreferenceViewModel : ObservableObject
         {
             System.Windows.MessageBox.Show(
                 System.Windows.Application.Current?.MainWindow,
-                ClopStringCatalog.Get("shortcuts.errors.missingKey"),
-                ClopStringCatalog.Get("shortcuts.errors.invalidTitle"),
+                SquishStringCatalog.Get("shortcuts.errors.missingKey"),
+                SquishStringCatalog.Get("shortcuts.errors.invalidTitle"),
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);
             return false;
@@ -117,8 +117,8 @@ public sealed class ShortcutPreferenceViewModel : ObservableObject
         {
             System.Windows.MessageBox.Show(
                 System.Windows.Application.Current?.MainWindow,
-                ClopStringCatalog.Get("shortcuts.errors.globalNeedsModifier"),
-                ClopStringCatalog.Get("shortcuts.errors.invalidTitle"),
+                SquishStringCatalog.Get("shortcuts.errors.globalNeedsModifier"),
+                SquishStringCatalog.Get("shortcuts.errors.invalidTitle"),
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);
             return false;
@@ -128,8 +128,8 @@ public sealed class ShortcutPreferenceViewModel : ObservableObject
         {
             System.Windows.MessageBox.Show(
                 System.Windows.Application.Current?.MainWindow,
-                ClopStringCatalog.Get("shortcuts.errors.modifierRequired"),
-                ClopStringCatalog.Get("shortcuts.errors.invalidTitle"),
+                SquishStringCatalog.Get("shortcuts.errors.modifierRequired"),
+                SquishStringCatalog.Get("shortcuts.errors.invalidTitle"),
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);
             return false;

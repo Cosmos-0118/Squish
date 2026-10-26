@@ -2,9 +2,9 @@ using System;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Input;
-using ClopWindows.App.Localization;
+using Squish.App.Localization;
 
-namespace ClopWindows.App.Views.Dialogs;
+namespace Squish.App.Views.Dialogs;
 
 public partial class ShortcutCaptureDialog : Window
 {
@@ -31,9 +31,9 @@ public partial class ShortcutCaptureDialog : Window
         Loaded -= OnLoaded;
         ScopeText.Text = string.IsNullOrWhiteSpace(ScopeLabel)
             ? string.Empty
-            : string.Format(CultureInfo.CurrentCulture, ClopStringCatalog.Get("shortcuts.capture.scopeFormat"), ScopeLabel);
-        CurrentText.Text = string.Format(CultureInfo.CurrentCulture, ClopStringCatalog.Get("settings.shortcuts.currentFormat"), CurrentBinding);
-        DefaultText.Text = string.Format(CultureInfo.CurrentCulture, ClopStringCatalog.Get("settings.shortcuts.defaultFormat"), DefaultBinding);
+            : string.Format(CultureInfo.CurrentCulture, SquishStringCatalog.Get("shortcuts.capture.scopeFormat"), ScopeLabel);
+        CurrentText.Text = string.Format(CultureInfo.CurrentCulture, SquishStringCatalog.Get("settings.shortcuts.currentFormat"), CurrentBinding);
+        DefaultText.Text = string.Format(CultureInfo.CurrentCulture, SquishStringCatalog.Get("settings.shortcuts.defaultFormat"), DefaultBinding);
         FocusManager.SetFocusedElement(this, this);
         Keyboard.Focus(this);
     }

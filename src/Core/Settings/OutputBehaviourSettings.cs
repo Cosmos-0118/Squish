@@ -1,7 +1,7 @@
 using System.Collections.Generic;
-using ClopWindows.Core.Shared;
+using Squish.Core.Shared;
 
-namespace ClopWindows.Core.Settings;
+namespace Squish.Core.Settings;
 
 public static class OutputBehaviourSettings
 {

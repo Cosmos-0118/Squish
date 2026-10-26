@@ -4,11 +4,11 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
-namespace ClopWindows.Core.Shared;
+namespace Squish.Core.Shared;
 
 /// <summary>
 /// Finds helper executables (cjpeg, oxipng, cwebp, ffmpeg, ...). Lookup order is: explicit path, environment
-/// variable, the bundled <c>tools</c> folder next to the app, the per-user Clop bin folder, and finally rooted
+/// variable, the bundled <c>tools</c> folder next to the app, the per-user Squish bin folder, and finally rooted
 /// <c>PATH</c> entries. The current directory is never searched - that is how binaries get planted.
 /// </summary>
 internal static class ExternalToolResolver
@@ -20,7 +20,7 @@ internal static class ExternalToolResolver
 
     /// <param name="tool">Base file name without extension, e.g. <c>cjpeg-static</c>.</param>
     /// <param name="toolFolder">Folder under <c>tools/</c> that fetch-tools.ps1 unpacks the tool into.</param>
-    /// <param name="environmentVariable">Optional override variable, e.g. <c>CLOP_CJPEG</c>.</param>
+    /// <param name="environmentVariable">Optional override variable, e.g. <c>SQUISH_CJPEG</c>.</param>
     /// <param name="configuredPath">Explicit path from settings, if any.</param>
     /// <param name="alternateNames">Other base names the same tool ships under (e.g. <c>cjpeg</c>).</param>
     public static string? Resolve(string tool, string toolFolder, string? environmentVariable = null, string? configuredPath = null, params string[] alternateNames)
@@ -122,7 +122,7 @@ internal static class ExternalToolResolver
     private static IEnumerable<string> EnumerateBundledRoots(string toolFolder)
     {
         // Explicit tools root (CI, portable installs, developers staging tools outside the app folder).
-        var toolsRoot = Environment.GetEnvironmentVariable("CLOP_TOOLS_DIR");
+        var toolsRoot = Environment.GetEnvironmentVariable("SQUISH_TOOLS_DIR");
         if (!string.IsNullOrWhiteSpace(toolsRoot) && Path.IsPathRooted(toolsRoot))
         {
             var candidate = Path.Combine(toolsRoot.Trim().Trim('"'), toolFolder);
@@ -158,8 +158,8 @@ internal static class ExternalToolResolver
         var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         if (!string.IsNullOrWhiteSpace(local))
         {
-            yield return Path.Combine(local, "Clop", "bin");
-            yield return Path.Combine(local, "Clop", "bin", "x64");
+            yield return Path.Combine(local, "Squish", "bin");
+            yield return Path.Combine(local, "Squish", "bin", "x64");
         }
     }
 

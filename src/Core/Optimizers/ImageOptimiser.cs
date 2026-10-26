@@ -3,11 +3,11 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
-using ClopWindows.Core.Imaging;
-using ClopWindows.Core.Shared;
+using Squish.Core.Imaging;
+using Squish.Core.Shared;
 using ImageMagick;
 
-namespace ClopWindows.Core.Optimizers;
+namespace Squish.Core.Optimizers;
 
 /// <summary>
 /// Image optimiser. See <see cref="ImageOptimisationJob"/> for the strategy: lossless recompression first

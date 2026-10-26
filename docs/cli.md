@@ -1,6 +1,6 @@
 # Windows CLI Reference
 
-The `clop` executable mirrors the macOS CLI while tapping into the Windows optimisation pipeline. Commands are backed by `System.CommandLine` so they inherit standard help output and shell completion support.
+The `squish` executable mirrors the macOS CLI while tapping into the Windows optimisation pipeline. Commands are backed by `System.CommandLine` so they inherit standard help output and shell completion support.
 
 ## Global Notes
 
@@ -13,7 +13,7 @@ The `clop` executable mirrors the macOS CLI while tapping into the Windows optim
 Optimise files and directories on demand.
 
 ```powershell
-clop optimise <items...> [options]
+squish optimise <items...> [options]
 ```
 
 Key flags:
@@ -28,7 +28,7 @@ Key flags:
 Continuously watch directories and optimise new/changed files. Multiple roots are supported; defaults to the current working directory when none are provided.
 
 ```powershell
-clop watch [paths...] [options]
+squish watch [paths...] [options]
 ```
 
 Highlights:
@@ -43,7 +43,7 @@ Highlights:
 Generate a JSON schema describing the CLI surface for IDEs or shell completion tools.
 
 ```powershell
-clop schema [--output <file>] [--pretty]
+squish schema [--output <file>] [--pretty]
 ```
 
 When `--output` is omitted the schema prints to stdout, making it easy to pipe into `jq` or other tooling.

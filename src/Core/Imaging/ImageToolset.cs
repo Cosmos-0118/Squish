@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using ClopWindows.Core.Optimizers;
-using ClopWindows.Core.Shared;
+using Squish.Core.Optimizers;
+using Squish.Core.Shared;
 
-namespace ClopWindows.Core.Imaging;
+namespace Squish.Core.Imaging;
 
 /// <summary>Resolved external encoders. Every member is optional: missing tools simply disable the matching strategy.</summary>
 internal sealed class ImageToolset
@@ -30,25 +30,25 @@ internal sealed class ImageToolset
         return new ImageToolset
         {
             Cjpeg = preferences.EnableMozJpeg
-                ? ExternalToolResolver.Resolve("cjpeg-static", "mozjpeg", "CLOP_CJPEG", preferences.MozJpegPath, "mozjpeg", "cjpeg")
+                ? ExternalToolResolver.Resolve("cjpeg-static", "mozjpeg", "SQUISH_CJPEG", preferences.MozJpegPath, "mozjpeg", "cjpeg")
                 : null,
             Jpegtran = preferences.EnableMozJpeg
-                ? ExternalToolResolver.Resolve("jpegtran-static", "mozjpeg", "CLOP_JPEGTRAN", preferences.JpegtranPath, "jpegtran")
+                ? ExternalToolResolver.Resolve("jpegtran-static", "mozjpeg", "SQUISH_JPEGTRAN", preferences.JpegtranPath, "jpegtran")
                 : null,
             Oxipng = preferences.EnableOxipng
-                ? ExternalToolResolver.Resolve("oxipng", "oxipng", "CLOP_OXIPNG", preferences.OxipngPath)
+                ? ExternalToolResolver.Resolve("oxipng", "oxipng", "SQUISH_OXIPNG", preferences.OxipngPath)
                 : null,
             Pngquant = preferences.EnablePngquant
-                ? ExternalToolResolver.Resolve("pngquant", "pngquant", "CLOP_PNGQUANT", preferences.PngquantPath)
+                ? ExternalToolResolver.Resolve("pngquant", "pngquant", "SQUISH_PNGQUANT", preferences.PngquantPath)
                 : null,
             Cwebp = preferences.EnableWebp
-                ? ExternalToolResolver.Resolve("cwebp", "libwebp", "CLOP_CWEBP", preferences.CwebpPath)
+                ? ExternalToolResolver.Resolve("cwebp", "libwebp", "SQUISH_CWEBP", preferences.CwebpPath)
                 : null,
             Avifenc = preferences.EnableAvif
-                ? ExternalToolResolver.Resolve("avifenc", "libavif", "CLOP_AVIFENC", preferences.AvifEncPath)
+                ? ExternalToolResolver.Resolve("avifenc", "libavif", "SQUISH_AVIFENC", preferences.AvifEncPath)
                 : null,
             Gifsicle = preferences.EnableGifsicle
-                ? ExternalToolResolver.Resolve("gifsicle", "gifsicle", "CLOP_GIFSICLE", preferences.GifsiclePath)
+                ? ExternalToolResolver.Resolve("gifsicle", "gifsicle", "SQUISH_GIFSICLE", preferences.GifsiclePath)
                 : null
         };
     }

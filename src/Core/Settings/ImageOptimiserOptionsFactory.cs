@@ -1,6 +1,6 @@
-using ClopWindows.Core.Optimizers;
+using Squish.Core.Optimizers;
 
-namespace ClopWindows.Core.Settings;
+namespace Squish.Core.Settings;
 
 public static class ImageOptimiserOptionsFactory
 {

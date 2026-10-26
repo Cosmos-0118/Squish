@@ -1,7 +1,7 @@
 using System;
 using System.Windows.Input;
 
-namespace ClopWindows.App.Infrastructure;
+namespace Squish.App.Infrastructure;
 
 public sealed class RelayCommand : ICommand
 {

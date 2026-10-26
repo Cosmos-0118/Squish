@@ -1,6 +1,6 @@
-using ClopWindows.Core.Settings;
+using Squish.Core.Settings;
 
-namespace ClopWindows.App.ViewModels;
+namespace Squish.App.ViewModels;
 
 public sealed class VideoEncoderPresetOptionViewModel
 {

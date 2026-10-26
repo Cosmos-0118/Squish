@@ -1,9 +1,9 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using ClopWindows.Core.Shared;
+using Squish.Core.Shared;
 
-namespace ClopWindows.Core.Imaging;
+namespace Squish.Core.Imaging;
 
 /// <summary>An encoded candidate together with the quality setting and perceptual score that produced it.</summary>
 internal sealed record EncodedCandidate(FilePath File, int Quality, double Score);

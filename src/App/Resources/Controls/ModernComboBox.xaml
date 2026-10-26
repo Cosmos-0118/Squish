@@ -23,7 +23,7 @@
     <SolidColorBrush x:Key="Brush.Combo.PopupBackground" Color="#FFFFFFFF" />
     <SolidColorBrush x:Key="Brush.Combo.PopupBorder" Color="#FFE4E7EC" />
 
-    <Style x:Key="ClopComboBoxItemStyle" TargetType="ComboBoxItem">
+    <Style x:Key="SquishComboBoxItemStyle" TargetType="ComboBoxItem">
         <Setter Property="Foreground" Value="{DynamicResource Brush.Combo.Foreground}" />
         <Setter Property="Padding" Value="12,8" />
         <Setter Property="Background" Value="Transparent" />
@@ -55,7 +55,7 @@
         </Setter>
     </Style>
 
-    <Style x:Key="ClopComboBoxToggleButton" TargetType="ToggleButton">
+    <Style x:Key="SquishComboBoxToggleButton" TargetType="ToggleButton">
         <Setter Property="Foreground" Value="{DynamicResource Brush.Combo.Foreground}" />
         <Setter Property="Background" Value="{DynamicResource Brush.Combo.Background}" />
         <Setter Property="BorderBrush" Value="{DynamicResource Brush.Combo.Border}" />
@@ -148,7 +148,7 @@
         </Setter>
     </Style>
 
-    <Style x:Key="ClopComboBoxStyle" TargetType="ComboBox">
+    <Style x:Key="SquishComboBoxStyle" TargetType="ComboBox">
         <Setter Property="Foreground" Value="{DynamicResource Brush.Combo.Foreground}" />
         <Setter Property="Background" Value="{DynamicResource Brush.Combo.Background}" />
         <Setter Property="BorderBrush" Value="{DynamicResource Brush.Combo.Border}" />
@@ -174,13 +174,13 @@
                 </Style>
             </Setter.Value>
         </Setter>
-        <Setter Property="ItemContainerStyle" Value="{StaticResource ClopComboBoxItemStyle}" />
+        <Setter Property="ItemContainerStyle" Value="{StaticResource SquishComboBoxItemStyle}" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ComboBox">
                     <Grid>
                         <ToggleButton x:Name="ToggleButton"
-                                      Style="{StaticResource ClopComboBoxToggleButton}"
+                                      Style="{StaticResource SquishComboBoxToggleButton}"
                                       Background="{TemplateBinding Background}"
                                       BorderBrush="{TemplateBinding BorderBrush}"
                                       Foreground="{TemplateBinding Foreground}"
@@ -232,5 +232,5 @@
     </Style>
 
     <!-- Apply the modern combo style globally -->
-    <Style TargetType="ComboBox" BasedOn="{StaticResource ClopComboBoxStyle}" />
+    <Style TargetType="ComboBox" BasedOn="{StaticResource SquishComboBoxStyle}" />
 </ResourceDictionary>

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
-namespace ClopWindows.Core.Shared;
+namespace Squish.Core.Shared;
 
 internal static class ToolLocator
 {

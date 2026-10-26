@@ -1,10 +1,10 @@
 using System;
 using System.IO;
 using System.Linq;
-using ClopWindows.Core.Shared;
+using Squish.Core.Shared;
 using ImageMagick;
 
-namespace ClopWindows.Core.Imaging;
+namespace Squish.Core.Imaging;
 
 internal enum ImageColorKind
 {

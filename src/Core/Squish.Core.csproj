@@ -4,7 +4,7 @@
     <!-- Platform neutral: the optimisers shell out to external tools and use Magick.NET for
          in-process pixel work, so Core builds, runs and is tested on Linux as well as Windows. -->
     <TargetFramework>net10.0</TargetFramework>
-    <RootNamespace>ClopWindows.Core</RootNamespace>
+    <RootNamespace>Squish.Core</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>

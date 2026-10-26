@@ -1,6 +1,6 @@
 using System;
 using System.IO;
-using ClopWindows.Core.Shared;
+using Squish.Core.Shared;
 using ImageMagick;
 
 namespace Core.Tests;
@@ -85,7 +85,7 @@ internal static class TestImages
 
     public static FilePath Save(byte[] rgba, int width, int height, string extension, Action<MagickImage>? configure = null)
     {
-        var path = FilePath.TempFile("clop-test-image", extension, addUniqueSuffix: true);
+        var path = FilePath.TempFile("squish-test-image", extension, addUniqueSuffix: true);
         var settings = new PixelReadSettings((uint)width, (uint)height, StorageType.Char, PixelMapping.RGBA);
         using var image = new MagickImage();
         image.ReadPixels(rgba, settings);

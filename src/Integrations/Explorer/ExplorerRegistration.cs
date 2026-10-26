@@ -2,20 +2,25 @@ using Microsoft.Win32;
 using System;
 using System.Runtime.Versioning;
 
-namespace ClopWindows.Integrations.Explorer;
+namespace Squish.Integrations.Explorer;
 
 /// <summary>
-/// Sets up and removes the registry entries required to surface the Clop Explorer command.
+/// Sets up and removes the registry entries required to surface the Squish Explorer command.
 /// </summary>
 [SupportedOSPlatform("windows")]
 internal static class ExplorerRegistration
 {
-    private const string CommandStoreKey = "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\CommandStore\\shell\\" + ExplorerCommandIds.CommandName;
-    private const string FilesKey = "Software\\Classes\\*\\shell\\" + ExplorerCommandIds.CommandName;
-    private const string DirectoryKey = "Software\\Classes\\Directory\\shell\\" + ExplorerCommandIds.CommandName;
+    private const string CommandStoreRoot = "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\CommandStore\\shell\\";
+    private const string FilesRoot = "Software\\Classes\\*\\shell\\";
+    private const string DirectoryRoot = "Software\\Classes\\Directory\\shell\\";
+
+    private const string CommandStoreKey = CommandStoreRoot + ExplorerCommandIds.CommandName;
+    private const string FilesKey = FilesRoot + ExplorerCommandIds.CommandName;
+    private const string DirectoryKey = DirectoryRoot + ExplorerCommandIds.CommandName;
 
     public static void Register()
     {
+        UnregisterLegacy();
         var clsid = "{" + ExplorerCommandIds.ClassIdString + "}";
 
         using (var commandKey = Registry.CurrentUser.CreateSubKey(CommandStoreKey))
@@ -37,6 +42,15 @@ internal static class ExplorerRegistration
         TryDelete(CommandStoreKey);
         TryDelete(FilesKey);
         TryDelete(DirectoryKey);
+        UnregisterLegacy();
+    }
+
+    /// <summary>Removes the verb registered under the app's name before it was renamed to Squish.</summary>
+    private static void UnregisterLegacy()
+    {
+        TryDelete(CommandStoreRoot + ExplorerCommandIds.LegacyCommandName);
+        TryDelete(FilesRoot + ExplorerCommandIds.LegacyCommandName);
+        TryDelete(DirectoryRoot + ExplorerCommandIds.LegacyCommandName);
     }
 
     private static void RegisterAssociation(string keyPath)

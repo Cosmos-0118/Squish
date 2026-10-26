@@ -17,7 +17,7 @@
     <SolidColorBrush x:Key="Brush.Button.Primary.Foreground" Color="#FF050505" />
     <SolidColorBrush x:Key="Brush.Button.Primary.DisabledForeground" Color="#FF98A2B3" />
 
-    <Style x:Key="ClopPrimaryButton" TargetType="Button">
+    <Style x:Key="SquishPrimaryButton" TargetType="Button">
         <Setter Property="Background" Value="{DynamicResource Brush.Button.Primary.Background}" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Button.Primary.Foreground}" />
         <Setter Property="BorderBrush" Value="{DynamicResource Brush.Button.Primary.Border}" />
@@ -122,5 +122,5 @@
     </Style>
 
     <!-- Apply the modern style to all Buttons by default -->
-    <Style TargetType="Button" BasedOn="{StaticResource ClopPrimaryButton}" />
+    <Style TargetType="Button" BasedOn="{StaticResource SquishPrimaryButton}" />
 </ResourceDictionary>

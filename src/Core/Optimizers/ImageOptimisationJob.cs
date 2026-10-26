@@ -3,11 +3,11 @@ using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
-using ClopWindows.Core.Imaging;
-using ClopWindows.Core.Shared;
+using Squish.Core.Imaging;
+using Squish.Core.Shared;
 using ImageMagick;
 
-namespace ClopWindows.Core.Optimizers;
+namespace Squish.Core.Optimizers;
 
 /// <summary>An output the job is willing to ship, plus the story of how it was made.</summary>
 internal sealed record ImageCandidate(FilePath File, string Extension, string Description, long Size, bool Lossy, double? Score);
@@ -182,10 +182,10 @@ internal sealed class ImageOptimisationJob : IDisposable
         ImageCandidate? lossy = null;
         try
         {
-            if (JpegSegments.HasClopMarker(bytes))
+            if (JpegSegments.HasSquishMarker(bytes))
             {
                 // Already squeezed once: only the lossless pass may touch it, otherwise repeated runs keep eroding quality.
-                _notes.Add("Already optimised by Clop; lossless pass only");
+                _notes.Add("Already optimised by Squish; lossless pass only");
             }
             else
             {
@@ -215,7 +215,7 @@ internal sealed class ImageOptimisationJob : IDisposable
             resolved = resolved with { Exif = JpegSegments.BuildOrientationOnlyExif(orientation) };
         }
 
-        var data = JpegSegments.Rewrite(await File.ReadAllBytesAsync(recompressed.Value.Value, _token).ConfigureAwait(false), resolved, addClopMarker: JpegSegments.HasClopMarker(sourceBytes));
+        var data = JpegSegments.Rewrite(await File.ReadAllBytesAsync(recompressed.Value.Value, _token).ConfigureAwait(false), resolved, addSquishMarker: JpegSegments.HasSquishMarker(sourceBytes));
         await File.WriteAllBytesAsync(recompressed.Value.Value, data, _token).ConfigureAwait(false);
         return new ImageCandidate(recompressed.Value, "jpg", "Lossless JPEG recompression", data.LongLength, false, null);
     }
@@ -293,7 +293,7 @@ internal sealed class ImageOptimisationJob : IDisposable
     private async Task<ImageCandidate> WithJpegMetadataAsync(EncodedCandidate encoded, MetadataBlobs metadata, string description)
     {
         var data = await File.ReadAllBytesAsync(encoded.File.Value, _token).ConfigureAwait(false);
-        data = JpegSegments.Rewrite(data, metadata, addClopMarker: true);
+        data = JpegSegments.Rewrite(data, metadata, addSquishMarker: true);
         await File.WriteAllBytesAsync(encoded.File.Value, data, _token).ConfigureAwait(false);
 
         var detail = _encoders.HasMozJpeg ? $"{description} (mozjpeg q{encoded.Quality})" : $"{description} (q{encoded.Quality})";
@@ -405,7 +405,7 @@ internal sealed class ImageOptimisationJob : IDisposable
 
     private async Task<ImageCandidate?> LosslessPngFromRasterAsync(DecodedImage decoded, bool downscale, string strip, string description)
     {
-        var staging = _temp.New("clop-pngstage", "png");
+        var staging = _temp.New("squish-pngstage", "png");
         WriteDecodedAsPng(decoded, staging, downscale);
         return await LosslessPngAsync(staging, (long)decoded.Image.Width * decoded.Image.Height, strip, description).ConfigureAwait(false);
     }
@@ -519,7 +519,7 @@ internal sealed class ImageOptimisationJob : IDisposable
 
         if (candidates.Count == 0 && !keepModernFormat)
         {
-            var staging = _temp.New("clop-conv", "png");
+            var staging = _temp.New("squish-conv", "png");
             WriteDecodedAsPng(decoded, staging, downscale);
             var png = await LosslessPngAsync(staging, reference.PixelCount, PngStripMode(), $"Converted {probe.Format} to PNG").ConfigureAwait(false);
             if (png is not null)
@@ -843,12 +843,12 @@ internal sealed class ImageOptimisationJob : IDisposable
     private static FilePath BuildOutputPath(FilePath sourcePath, string extension)
     {
         var stem = sourcePath.Stem;
-        if (stem.EndsWith(".clop", StringComparison.OrdinalIgnoreCase))
+        if (stem.EndsWith(".squish", StringComparison.OrdinalIgnoreCase))
         {
             stem = stem[..^5];
         }
 
-        return sourcePath.Parent.Append($"{stem}.clop.{extension}");
+        return sourcePath.Parent.Append($"{stem}.squish.{extension}");
     }
 
     private static long SafeSize(FilePath path)

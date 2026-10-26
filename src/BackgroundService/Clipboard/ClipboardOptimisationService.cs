@@ -6,15 +6,15 @@ using System.Linq;
 using System.Runtime.Versioning;
 using System.Threading;
 using System.Threading.Tasks;
-using ClopWindows.BackgroundService.Automation;
-using ClopWindows.Core.Optimizers;
-using ClopWindows.Core.Settings;
-using ClopWindows.Core.Shared;
+using Squish.BackgroundService.Automation;
+using Squish.Core.Optimizers;
+using Squish.Core.Settings;
+using Squish.Core.Shared;
 using Microsoft.Extensions.Logging;
 using WinFormsClipboard = System.Windows.Forms.Clipboard;
 using DataFormats = System.Windows.Forms.DataFormats;
 
-namespace ClopWindows.BackgroundService.Clipboard;
+namespace Squish.BackgroundService.Clipboard;
 
 [SupportedOSPlatform("windows")]
 public sealed class ClipboardOptimisationService : IAsyncDisposable
@@ -223,7 +223,7 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
 
         if (snapshot.HasOptimisationMarker)
         {
-            _logger.LogTrace("Skipping clipboard entry tagged with Clop marker.");
+            _logger.LogTrace("Skipping clipboard entry tagged with Squish marker.");
             return;
         }
 
@@ -355,13 +355,13 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
 
     private bool ShouldSkipSourceFile(FilePath filePath)
     {
-        if (ClopFileGuards.IsClopGenerated(filePath))
+        if (SquishFileGuards.IsSquishGenerated(filePath))
         {
-            _logger.LogTrace("Skipping clipboard source {Path}; detected Clop output.", filePath.Value);
+            _logger.LogTrace("Skipping clipboard source {Path}; detected Squish output.", filePath.Value);
             return true;
         }
 
-        if (ClopOptimisationMarker.HasValidMarker(filePath))
+        if (SquishOptimisationMarker.HasValidMarker(filePath))
         {
             _logger.LogTrace("Skipping clipboard source {Path}; optimisation marker present.", filePath.Value);
             return true;
