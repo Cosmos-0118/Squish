@@ -20,10 +20,6 @@ public static class AggressiveOptimisationHelper
             case ItemType.Video:
                 ApplyFlag(metadata, OptimisationMetadata.VideoAggressive, overrideValue ?? SettingsHost.Get(SettingsRegistry.UseAggressiveOptimisationMp4));
                 break;
-            case ItemType.Pdf:
-            case ItemType.Document:
-                ApplyFlag(metadata, OptimisationMetadata.PdfAggressive, overrideValue ?? SettingsHost.Get(SettingsRegistry.UseAggressiveOptimisationPdf));
-                break;
         }
     }
 

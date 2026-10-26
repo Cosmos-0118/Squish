@@ -30,7 +30,6 @@ public static class SquishPaths
     public static FilePath Backups => EnsureDirectory("backups");
     public static FilePath Videos => EnsureDirectory("videos");
     public static FilePath Images => EnsureDirectory("images");
-    public static FilePath Pdfs => EnsureDirectory("pdfs");
     public static FilePath Conversions => EnsureDirectory("conversions");
     public static FilePath Downloads => EnsureDirectory("downloads");
     public static FilePath ForResize => EnsureDirectory("for-resize");

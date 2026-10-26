@@ -40,10 +40,10 @@ internal static class OptimiseCommandBuilder
 {
     public static Command Create()
     {
-        var command = new Command("optimise", "Optimise images, videos, and PDFs using the Windows pipeline.");
+        var command = new Command("optimise", "Optimise images and videos using the Windows pipeline.");
         var items = new Argument<List<string>>("items")
         {
-            Description = "Images, videos, PDFs, or folders to optimise",
+            Description = "Images, videos, or folders to optimise",
             Arity = ArgumentArity.OneOrMore
         };
         command.Arguments.Add(items);
@@ -177,17 +177,12 @@ internal sealed class OptimiseCommandHandler
             AggressiveQuality = _options.Aggressive,
             RemoveAudio = _options.RemoveAudio
         }).WithHardwareOverride();
-        var pdfOptions = PdfOptimiserOptions.Default with { AggressiveByDefault = _options.Aggressive };
-        var pdfOptimiser = new PdfOptimiser(pdfOptions);
-        var documentOptions = DocumentConversionOptions.Default;
 
         await using var coordinator = new OptimisationCoordinator(
             new IOptimiser[]
             {
                 new ImageOptimiser(imageOptions),
-                new VideoOptimiser(videoOptions),
-                pdfOptimiser,
-                new DocumentOptimiser(documentOptions, pdfOptimiser: pdfOptimiser)
+                new VideoOptimiser(videoOptions)
             },
             Math.Max(1, Environment.ProcessorCount / 2));
 
@@ -270,14 +265,6 @@ internal sealed class OptimiseCommandHandler
                 metadata["video.playbackSpeed"] = _options.PlaybackSpeedFactor.Value;
             }
             return metadata;
-        }
-
-        if (type == ItemType.Pdf || type == ItemType.Document)
-        {
-            return new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["pdf.aggressive"] = _options.Aggressive
-            };
         }
 
         if (type == ItemType.Image && _options.Aggressive)
@@ -413,16 +400,6 @@ internal sealed class TargetResolver
             return ItemType.Video;
         }
 
-        if (MediaFormats.IsPdf(extension))
-        {
-            return ItemType.Pdf;
-        }
-
-        if (ShouldConvertDocuments() && MediaFormats.IsDocument(extension))
-        {
-            return ItemType.Document;
-        }
-
         return null;
     }
 
@@ -442,7 +419,6 @@ internal sealed class TargetResolver
         return value;
     }
 
-    private static bool ShouldConvertDocuments() => SettingsHost.Get(SettingsRegistry.AutoConvertDocumentsToPdf);
 }
 
 internal sealed class TypeFilter
@@ -528,20 +504,6 @@ internal sealed class TypeFilter
             case "video":
             case "videos":
                 foreach (var ext in MediaFormats.VideoExtensionNames)
-                {
-                    yield return ext;
-                }
-                yield break;
-            case "pdf":
-            case "pdfs":
-                foreach (var ext in MediaFormats.PdfExtensionNames)
-                {
-                    yield return ext;
-                }
-                yield break;
-            case "document":
-            case "documents":
-                foreach (var ext in MediaFormats.DocumentExtensionNames)
                 {
                     yield return ext;
                 }

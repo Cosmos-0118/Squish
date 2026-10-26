@@ -22,7 +22,6 @@ public sealed class KeyboardShortcutService : IDisposable
         SettingsRegistry.UseAggressiveOptimisationJpeg,
         SettingsRegistry.UseAggressiveOptimisationPng,
         SettingsRegistry.UseAggressiveOptimisationGif,
-        SettingsRegistry.UseAggressiveOptimisationPdf
     };
 
     private readonly IServiceProvider _serviceProvider;

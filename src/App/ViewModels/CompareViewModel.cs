@@ -157,16 +157,6 @@ public sealed class CompareViewModel : ObservableObject, IDisposable
             return ItemType.Video;
         }
 
-        if (MediaFormats.IsPdf(path))
-        {
-            return ItemType.Pdf;
-        }
-
-        if (ShouldConvertDocuments() && MediaFormats.IsDocument(path))
-        {
-            return ItemType.Document;
-        }
-
         return null;
     }
 
@@ -215,16 +205,12 @@ public sealed class CompareViewModel : ObservableObject, IDisposable
         _dispatcher.Invoke(NotifyActiveRequestsChanged);
     }
 
-    private static bool ShouldConvertDocuments() => SettingsHost.Get(SettingsRegistry.AutoConvertDocumentsToPdf);
-
     private static string BuildSupportedFilterPattern()
     {
         static IEnumerable<string> ToPatterns(IEnumerable<string> extensions) => extensions.Select(ext => $"*.{ext}");
 
         var patterns = ToPatterns(MediaFormats.ImageExtensionNames)
             .Concat(ToPatterns(MediaFormats.VideoExtensionNames))
-            .Concat(ToPatterns(MediaFormats.PdfExtensionNames))
-            .Concat(ToPatterns(MediaFormats.DocumentExtensionNames))
             .Distinct(StringComparer.OrdinalIgnoreCase);
 
         return string.Join(';', patterns);

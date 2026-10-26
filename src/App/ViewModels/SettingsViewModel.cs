@@ -22,14 +22,11 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     private bool _copyImageFilePath;
     private bool _optimiseClipboardFileDrops;
     private bool _optimiseVideoClipboard;
-    private bool _optimisePdfClipboard;
     private bool _preserveDates;
     private bool _stripMetadata;
     private bool _preserveColorMetadata;
     private bool _enableAutomaticImageOptimisations;
     private bool _enableAutomaticVideoOptimisations;
-    private bool _enableAutomaticPdfOptimisations;
-    private bool _autoConvertDocumentsToPdf;
     private bool _replaceOptimisedFilesInPlace;
     private bool _deleteOriginalAfterConversion;
     private bool _forceFullImageOptimisations;
@@ -52,13 +49,10 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     public IReadOnlyList<FloatingHudPlacementOptionViewModel> FloatingHudPlacementOptions { get; }
     public ObservableCollection<string> ImageDirectories { get; }
     public ObservableCollection<string> VideoDirectories { get; }
-    public ObservableCollection<string> PdfDirectories { get; }
     public RelayCommand AddImageDirectoryCommand { get; }
     public RelayCommand AddVideoDirectoryCommand { get; }
-    public RelayCommand AddPdfDirectoryCommand { get; }
     public RelayCommand RemoveImageDirectoryCommand { get; }
     public RelayCommand RemoveVideoDirectoryCommand { get; }
-    public RelayCommand RemovePdfDirectoryCommand { get; }
     public IReadOnlyList<SettingsSectionItem> SettingsSections { get; }
 
     public SettingsViewModel(FloatingHudController hudController, IFolderPicker folderPicker)
@@ -88,13 +82,10 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         _selectedSettingsSectionItem = SettingsSections.FirstOrDefault();
         ImageDirectories = new ObservableCollection<string>();
         VideoDirectories = new ObservableCollection<string>();
-        PdfDirectories = new ObservableCollection<string>();
         AddImageDirectoryCommand = new RelayCommand(_ => AddDirectory(ImageDirectories, SettingsRegistry.ImageDirs));
         AddVideoDirectoryCommand = new RelayCommand(_ => AddDirectory(VideoDirectories, SettingsRegistry.VideoDirs));
-        AddPdfDirectoryCommand = new RelayCommand(_ => AddDirectory(PdfDirectories, SettingsRegistry.PdfDirs));
         RemoveImageDirectoryCommand = new RelayCommand(path => RemoveDirectory(ImageDirectories, SettingsRegistry.ImageDirs, path));
         RemoveVideoDirectoryCommand = new RelayCommand(path => RemoveDirectory(VideoDirectories, SettingsRegistry.VideoDirs, path));
-        RemovePdfDirectoryCommand = new RelayCommand(path => RemoveDirectory(PdfDirectories, SettingsRegistry.PdfDirs, path));
         Load();
         SettingsHost.SettingChanged += OnSettingChanged;
         ShortcutCatalog.ShortcutChanged += OnShortcutChanged;
@@ -283,18 +274,6 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         }
     }
 
-    public bool OptimisePdfClipboard
-    {
-        get => _optimisePdfClipboard;
-        set
-        {
-            if (SetProperty(ref _optimisePdfClipboard, value) && !_suppressStoreUpdates)
-            {
-                SettingsHost.Set(SettingsRegistry.OptimisePdfClipboard, value);
-            }
-        }
-    }
-
     public bool PreserveDates
     {
         get => _preserveDates;
@@ -385,30 +364,6 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         }
     }
 
-    public bool EnableAutomaticPdfOptimisations
-    {
-        get => _enableAutomaticPdfOptimisations;
-        set
-        {
-            if (SetProperty(ref _enableAutomaticPdfOptimisations, value) && !_suppressStoreUpdates)
-            {
-                SettingsHost.Set(SettingsRegistry.EnableAutomaticPdfOptimisations, value);
-            }
-        }
-    }
-
-    public bool AutoConvertDocumentsToPdf
-    {
-        get => _autoConvertDocumentsToPdf;
-        set
-        {
-            if (SetProperty(ref _autoConvertDocumentsToPdf, value) && !_suppressStoreUpdates)
-            {
-                SettingsHost.Set(SettingsRegistry.AutoConvertDocumentsToPdf, value);
-            }
-        }
-    }
-
     public bool ForceFullImageOptimisations
     {
         get => _forceFullImageOptimisations;
@@ -455,7 +410,6 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         CopyImageFilePath = SettingsHost.Get(SettingsRegistry.CopyImageFilePath);
         OptimiseVideoClipboard = SettingsHost.Get(SettingsRegistry.OptimiseVideoClipboard);
         OptimiseClipboardFileDrops = SettingsHost.Get(SettingsRegistry.OptimiseClipboardFileDrops);
-        OptimisePdfClipboard = SettingsHost.Get(SettingsRegistry.OptimisePdfClipboard);
         PreserveDates = SettingsHost.Get(SettingsRegistry.PreserveDates);
         StripMetadata = SettingsHost.Get(SettingsRegistry.StripMetadata);
         PreserveColorMetadata = SettingsHost.Get(SettingsRegistry.PreserveColorMetadata);
@@ -463,8 +417,6 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         DeleteOriginalAfterConversion = SettingsHost.Get(SettingsRegistry.DeleteOriginalAfterConversion);
         EnableAutomaticImageOptimisations = SettingsHost.Get(SettingsRegistry.EnableAutomaticImageOptimisations);
         EnableAutomaticVideoOptimisations = SettingsHost.Get(SettingsRegistry.EnableAutomaticVideoOptimisations);
-        EnableAutomaticPdfOptimisations = SettingsHost.Get(SettingsRegistry.EnableAutomaticPdfOptimisations);
-        AutoConvertDocumentsToPdf = SettingsHost.Get(SettingsRegistry.AutoConvertDocumentsToPdf);
         ForceFullImageOptimisations = SettingsHost.Get(SettingsRegistry.ForceFullImageOptimisations);
         RefreshDirectoryCollections();
         var themeMode = SettingsHost.Get(SettingsRegistry.AppThemeMode);
@@ -513,9 +465,6 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
             case var name when name == SettingsRegistry.OptimiseClipboardFileDrops.Name:
                 OptimiseClipboardFileDrops = SettingsHost.Get(SettingsRegistry.OptimiseClipboardFileDrops);
                 break;
-            case var name when name == SettingsRegistry.OptimisePdfClipboard.Name:
-                OptimisePdfClipboard = SettingsHost.Get(SettingsRegistry.OptimisePdfClipboard);
-                break;
             case var name when name == SettingsRegistry.PreserveDates.Name:
                 PreserveDates = SettingsHost.Get(SettingsRegistry.PreserveDates);
                 break;
@@ -537,18 +486,11 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
             case var name when name == SettingsRegistry.EnableAutomaticVideoOptimisations.Name:
                 EnableAutomaticVideoOptimisations = SettingsHost.Get(SettingsRegistry.EnableAutomaticVideoOptimisations);
                 break;
-            case var name when name == SettingsRegistry.EnableAutomaticPdfOptimisations.Name:
-                EnableAutomaticPdfOptimisations = SettingsHost.Get(SettingsRegistry.EnableAutomaticPdfOptimisations);
-                break;
-            case var name when name == SettingsRegistry.AutoConvertDocumentsToPdf.Name:
-                AutoConvertDocumentsToPdf = SettingsHost.Get(SettingsRegistry.AutoConvertDocumentsToPdf);
-                break;
             case var name when name == SettingsRegistry.ForceFullImageOptimisations.Name:
                 ForceFullImageOptimisations = SettingsHost.Get(SettingsRegistry.ForceFullImageOptimisations);
                 break;
             case var name when name == SettingsRegistry.ImageDirs.Name:
             case var name2 when name2 == SettingsRegistry.VideoDirs.Name:
-            case var name3 when name3 == SettingsRegistry.PdfDirs.Name:
                 RefreshDirectoryCollections();
                 break;
             case var name when name == SettingsRegistry.AppThemeMode.Name:
@@ -621,7 +563,6 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     {
         ReplaceCollection(ImageDirectories, SettingsHost.Get(SettingsRegistry.ImageDirs));
         ReplaceCollection(VideoDirectories, SettingsHost.Get(SettingsRegistry.VideoDirs));
-        ReplaceCollection(PdfDirectories, SettingsHost.Get(SettingsRegistry.PdfDirs));
     }
 
     private void ReplaceCollection(ObservableCollection<string> target, string[]? values)
