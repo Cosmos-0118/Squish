@@ -1,6 +1,6 @@
 using System.Windows.Controls;
 
-namespace ClopWindows.App.Views.Onboarding;
+namespace Squish.App.Views.Onboarding;
 
 public partial class OnboardingView : System.Windows.Controls.UserControl
 {

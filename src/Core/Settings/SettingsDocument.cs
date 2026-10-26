@@ -1,6 +1,6 @@
 using System.Text.Json.Nodes;
 
-namespace ClopWindows.Core.Settings;
+namespace Squish.Core.Settings;
 
 internal sealed class SettingsDocument
 {

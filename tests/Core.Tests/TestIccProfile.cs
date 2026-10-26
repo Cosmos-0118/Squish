@@ -8,7 +8,7 @@ namespace Core.Tests;
 /// <summary>Builds a tiny but valid matrix/TRC ICC v2 profile (AdobeRGB-like primaries, gamma 2.2) for colour-management tests.</summary>
 internal static class TestIccProfile
 {
-    public const string Description = "Clop Test Wide Gamut RGB";
+    public const string Description = "Squish Test Wide Gamut RGB";
 
     public static byte[] Create()
     {

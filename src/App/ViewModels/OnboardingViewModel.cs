@@ -2,11 +2,11 @@ using System;
 using System.Collections.ObjectModel;
 using System.Collections.Generic;
 using System.Linq;
-using ClopWindows.App.Infrastructure;
-using ClopWindows.App.Localization;
-using ClopWindows.Core.Settings;
+using Squish.App.Infrastructure;
+using Squish.App.Localization;
+using Squish.Core.Settings;
 
-namespace ClopWindows.App.ViewModels;
+namespace Squish.App.ViewModels;
 
 public sealed class OnboardingViewModel : ObservableObject
 {
@@ -20,17 +20,17 @@ public sealed class OnboardingViewModel : ObservableObject
         _steps = new ObservableCollection<OnboardingStepViewModel>
         {
             new(
-                ClopStringCatalog.Get("onboarding.step.1.title"),
-                ClopStringCatalog.Get("onboarding.step.1.description"),
+                SquishStringCatalog.Get("onboarding.step.1.title"),
+                SquishStringCatalog.Get("onboarding.step.1.description"),
                 new[]
                 {
                     "Use Browse files or drag and drop files directly into the window.",
                     "You can queue multiple images, videos, and PDFs in one action.",
-                    "Clop starts processing immediately and tracks each item live."
+                    "Squish starts processing immediately and tracks each item live."
                 }),
             new(
-                ClopStringCatalog.Get("onboarding.step.2.title"),
-                ClopStringCatalog.Get("onboarding.step.2.description"),
+                SquishStringCatalog.Get("onboarding.step.2.title"),
+                SquishStringCatalog.Get("onboarding.step.2.description"),
                 new[]
                 {
                     "Watch each result in Recent Results after optimization completes.",
@@ -38,8 +38,8 @@ public sealed class OnboardingViewModel : ObservableObject
                     "Hover any entry and open it directly in its folder."
                 }),
             new(
-                ClopStringCatalog.Get("onboarding.step.3.title"),
-                ClopStringCatalog.Get("onboarding.step.3.description"),
+                SquishStringCatalog.Get("onboarding.step.3.title"),
+                SquishStringCatalog.Get("onboarding.step.3.description"),
                 new[]
                 {
                     "Open output files from recent results for quick validation.",
@@ -47,8 +47,8 @@ public sealed class OnboardingViewModel : ObservableObject
                     "Keep quality while reducing upload and sync time."
                 }),
             new(
-                ClopStringCatalog.Get("onboarding.step.4.title"),
-                ClopStringCatalog.Get("onboarding.step.4.description"),
+                SquishStringCatalog.Get("onboarding.step.4.title"),
+                SquishStringCatalog.Get("onboarding.step.4.description"),
                 new[]
                 {
                     "Enable Clipboard and watched folders in Settings.",
@@ -66,9 +66,9 @@ public sealed class OnboardingViewModel : ObservableObject
 
     public event EventHandler? OnboardingCompleted;
 
-    public string Title => ClopStringCatalog.Get("onboarding.title");
+    public string Title => SquishStringCatalog.Get("onboarding.title");
 
-    public string Subtitle => ClopStringCatalog.Get("onboarding.subtitle");
+    public string Subtitle => SquishStringCatalog.Get("onboarding.subtitle");
 
     public ReadOnlyObservableCollection<OnboardingStepViewModel> Steps => _readonlySteps;
 

@@ -2,7 +2,7 @@ using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
-namespace ClopWindows.Core.Shared;
+namespace Squish.Core.Shared;
 
 public static class SharedLogger
 {

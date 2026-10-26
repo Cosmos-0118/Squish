@@ -1,7 +1,7 @@
 using System;
 using System.Globalization;
 
-namespace ClopWindows.Core.Shared;
+namespace Squish.Core.Shared;
 
 /// <summary>
 /// Numeric helpers that mirror the Swift extensions used throughout the optimisation pipeline.

@@ -1,8 +1,8 @@
-using ClopWindows.BackgroundService.Automation;
-using ClopWindows.BackgroundService.Clipboard;
+using Squish.BackgroundService.Automation;
+using Squish.BackgroundService.Clipboard;
 using Microsoft.Extensions.Logging;
 
-namespace ClopWindows.BackgroundService;
+namespace Squish.BackgroundService;
 
 public class Worker : Microsoft.Extensions.Hosting.BackgroundService
 {

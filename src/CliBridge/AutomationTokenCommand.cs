@@ -1,12 +1,12 @@
 using System;
 using System.CommandLine;
-using ClopWindows.Core.Security;
-using ClopWindows.Core.Settings;
+using Squish.Core.Security;
+using Squish.Core.Settings;
 
-namespace ClopWindows.CliBridge;
+namespace Squish.CliBridge;
 
 /// <summary>
-/// <c>clop automation-token</c> prints the bearer token required by the local HTTP automation API
+/// <c>squish automation-token</c> prints the bearer token required by the local HTTP automation API
 /// (<c>Authorization: Bearer &lt;token&gt;</c>). The token is created on first use and can be rotated.
 /// </summary>
 internal static class AutomationTokenCommandBuilder

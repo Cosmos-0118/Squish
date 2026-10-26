@@ -2,8 +2,8 @@ using System;
 using System.IO;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
-using ClopWindows.Core.Settings;
-using ClopWindows.Core.Shared;
+using Squish.Core.Settings;
+using Squish.Core.Shared;
 using Xunit;
 
 namespace Core.Tests;
@@ -36,11 +36,11 @@ public sealed class SettingsStoreTests : IDisposable
     }
 
     [Fact]
-    public void RunsClopIgnoreMigration()
+    public void RunsSquishIgnoreMigration()
     {
         using var temp = new TempDirectory();
         var watchDir = Directory.CreateDirectory(Path.Combine(temp.Path, "watched"));
-        var originalIgnore = Path.Combine(watchDir.FullName, ".clopignore");
+        var originalIgnore = Path.Combine(watchDir.FullName, ".squishignore");
         File.WriteAllText(originalIgnore, "ignored*");
 
         var root = new JsonObject
@@ -57,8 +57,27 @@ public sealed class SettingsStoreTests : IDisposable
         using var _ = new SettingsStore(temp.Path);
 
         Assert.False(File.Exists(originalIgnore));
-        Assert.True(File.Exists(Path.Combine(watchDir.FullName, ".clopignore-images")));
-        Assert.True(File.Exists(Path.Combine(watchDir.FullName, ".clopignore-videos")));
+        Assert.True(File.Exists(Path.Combine(watchDir.FullName, ".squishignore-images")));
+        Assert.True(File.Exists(Path.Combine(watchDir.FullName, ".squishignore-videos")));
+    }
+
+    [Fact]
+    public void CarriesOverSettingsStoredUnderLegacyKeys()
+    {
+        using var temp = new TempDirectory();
+        var root = new JsonObject
+        {
+            ["schemaVersion"] = 2,
+            ["values"] = new JsonObject
+            {
+                ["allowClopToAppearInScreenshots"] = true
+            }
+        };
+        File.WriteAllText(Path.Combine(temp.Path, "config.json"), root.ToJsonString());
+
+        using var store = new SettingsStore(temp.Path);
+
+        Assert.True(store.Get(SettingsRegistry.AllowSquishToAppearInScreenshots));
     }
 
     [Fact]
@@ -96,7 +115,7 @@ public sealed class SettingsStoreTests : IDisposable
     {
         public TempDirectory()
         {
-            Path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "clop-tests-" + Guid.NewGuid().ToString("N"));
+            Path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "squish-tests-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(Path);
         }
 

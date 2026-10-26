@@ -30,13 +30,13 @@ jobs:
             nuget-${{ runner.os }}-
 
       - name: Restore dependencies
-        run: dotnet restore src/ClopWindows.sln
+        run: dotnet restore src/Squish.sln
 
       - name: Build solution
-        run: dotnet build src/ClopWindows.sln --configuration Release --no-restore
+        run: dotnet build src/Squish.sln --configuration Release --no-restore
 
       - name: Run tests
-        run: dotnet test src/ClopWindows.sln --configuration Release --no-build
+        run: dotnet test src/Squish.sln --configuration Release --no-build
 
       - name: Stage third-party tools
         shell: pwsh
@@ -50,16 +50,16 @@ jobs:
           if (Test-Path $publishRoot) { Remove-Item $publishRoot -Recurse -Force }
           New-Item -ItemType Directory -Path $publishRoot | Out-Null
 
-          dotnet publish src/App/ClopWindows.App.csproj --configuration Release --runtime $rid --self-contained:$false --output "$publishRoot/app"
-          dotnet publish src/CliBridge/ClopWindows.CliBridge.csproj --configuration Release --runtime $rid --self-contained:$true --output "$publishRoot/cli"
-          dotnet publish src/Integrations/Explorer/ClopWindows.Integrations.Explorer.csproj --configuration Release --runtime $rid --self-contained:$false --output "$publishRoot/explorer"
+          dotnet publish src/App/Squish.App.csproj --configuration Release --runtime $rid --self-contained:$false --output "$publishRoot/app"
+          dotnet publish src/CliBridge/Squish.CliBridge.csproj --configuration Release --runtime $rid --self-contained:$true --output "$publishRoot/cli"
+          dotnet publish src/Integrations/Explorer/Squish.Integrations.Explorer.csproj --configuration Release --runtime $rid --self-contained:$false --output "$publishRoot/explorer"
 
           $docsTarget = Join-Path $publishRoot 'docs'
           New-Item -ItemType Directory -Path $docsTarget -Force | Out-Null
           Copy-Item docs/windows-deps.md $docsTarget -Force
           Copy-Item docs/cli.md $docsTarget -Force
           Copy-Item docs/automation-samples.md $docsTarget -Force
-          Copy-Item installer/CLOP_LICENSE.txt $publishRoot -Force
+          Copy-Item installer/SQUISH_LICENSE.txt $publishRoot -Force
           $toolsTarget = Join-Path $publishRoot 'tools'
           if (Test-Path $toolsTarget) { Remove-Item $toolsTarget -Recurse -Force }
           New-Item -ItemType Directory -Path $toolsTarget | Out-Null
@@ -82,7 +82,7 @@ jobs:
       - name: Create portable zip
         shell: pwsh
         run: |
-          $zipName = "Clop-$env:APP_VERSION-win-x64"
+          $zipName = "Squish-$env:APP_VERSION-win-x64"
           $portableSource = 'portable'
           $targetFolder = Join-Path 'artifacts' $zipName
           if (Test-Path $targetFolder) { Remove-Item $targetFolder -Recurse -Force }
@@ -108,13 +108,13 @@ jobs:
             "/DCliBuildOutput=$cliOut" `
             "/DExplorerBuildOutput=$explorerOut" `
             "/DToolsRoot=$(Resolve-Path out/publish/tools)" `
-            'installer/ClopInstaller.iss'
+            'installer/SquishInstaller.iss'
           Copy-Item installer/Output/*.exe artifacts -Force
 
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: clop-windows-release
+          name: squish-windows-release
           path: artifacts/*
 
       - name: Create GitHub Release

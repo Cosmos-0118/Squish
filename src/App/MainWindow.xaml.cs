@@ -4,16 +4,16 @@ using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media.Imaging;
 using System.Windows.Resources;
-using ClopWindows.App.Infrastructure;
-using ClopWindows.App.Services;
-using ClopWindows.App.ViewModels;
+using Squish.App.Infrastructure;
+using Squish.App.Services;
+using Squish.App.ViewModels;
 
-namespace ClopWindows.App;
+namespace Squish.App;
 
 public partial class MainWindow : Window
 {
     private readonly KeyboardShortcutService _shortcutService;
-    private static readonly Uri WindowIconUri = new("pack://application:,,,/ClopWindows;component/Assets/Brand/ClopMark.ico", UriKind.RelativeOrAbsolute);
+    private static readonly Uri WindowIconUri = new("pack://application:,,,/Squish;component/Assets/Brand/Squish.ico", UriKind.RelativeOrAbsolute);
 
     public MainWindow(MainWindowViewModel viewModel, KeyboardShortcutService shortcutService)
     {

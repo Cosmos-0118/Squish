@@ -8,17 +8,17 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using ClopWindows.Core.Optimizers;
-using ClopWindows.Core.Settings;
-using ClopWindows.Core.Shared;
+using Squish.Core.Optimizers;
+using Squish.Core.Settings;
+using Squish.Core.Shared;
 using Microsoft.Extensions.Logging;
 
-namespace ClopWindows.BackgroundService.Automation;
+namespace Squish.BackgroundService.Automation;
 
 [SupportedOSPlatform("windows")]
 public sealed class ShortcutsBridge : IAsyncDisposable
 {
-    private const string PipeName = "clop-automation";
+    private const string PipeName = "squish-automation";
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -365,11 +365,11 @@ public sealed class ShortcutsBridge : IAsyncDisposable
 
     private static IReadOnlyList<ShortcutDescriptor> BuildShortcutCatalogue() => new List<ShortcutDescriptor>
     {
-        new("clop.optimise-files", "Optimise Files", "Optimise images, videos, and PDFs with Clop's presets.", "Optimisation"),
-        new("clop.optimise-images", "Optimise Images", "Optimise image files while preserving metadata.", "Optimisation"),
-        new("clop.optimise-videos", "Optimise Videos", "Optimise video files with Clop's encoding presets.", "Optimisation"),
-        new("clop.pause-automation", "Pause Automation", "Temporarily pause clipboard and directory automation.", "Automation"),
-        new("clop.resume-automation", "Resume Automation", "Resume clipboard and directory automation.", "Automation")
+        new("squish.optimise-files", "Optimise Files", "Optimise images, videos, and PDFs with Squish's presets.", "Optimisation"),
+        new("squish.optimise-images", "Optimise Images", "Optimise image files while preserving metadata.", "Optimisation"),
+        new("squish.optimise-videos", "Optimise Videos", "Optimise video files with Squish's encoding presets.", "Optimisation"),
+        new("squish.pause-automation", "Pause Automation", "Temporarily pause clipboard and directory automation.", "Automation"),
+        new("squish.resume-automation", "Resume Automation", "Resume clipboard and directory automation.", "Automation")
     };
 
     private static async Task<string?> ReadMessageAsync(NamedPipeServerStream server, CancellationToken token)

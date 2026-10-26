@@ -6,11 +6,11 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using ClopWindows.Core.Imaging;
-using ClopWindows.Core.Processes;
-using ClopWindows.Core.Shared;
+using Squish.Core.Imaging;
+using Squish.Core.Processes;
+using Squish.Core.Shared;
 
-namespace ClopWindows.Core.Optimizers;
+namespace Squish.Core.Optimizers;
 
 /// <summary>Result of the sampled constant-quality search.</summary>
 internal sealed record VideoQualitySearchResult(int Crf, double Score, double PredictedBitrateKbps, bool TargetMet, double TargetScore);
@@ -59,7 +59,7 @@ internal sealed class FfmpegVideoQualitySearch : IVideoQualitySearch
             return null;
         }
 
-        var workDirectory = Path.Combine(Path.GetTempPath(), "clop-vq-" + Guid.NewGuid().ToString("N"));
+        var workDirectory = Path.Combine(Path.GetTempPath(), "squish-vq-" + Guid.NewGuid().ToString("N"));
         try
         {
             Directory.CreateDirectory(workDirectory);

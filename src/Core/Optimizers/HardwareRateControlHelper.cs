@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace ClopWindows.Core.Optimizers;
+namespace Squish.Core.Optimizers;
 
 /// <summary>
 /// Normalises hardware encoder quality values so NVENC/AMF/QSV stay roughly in line with

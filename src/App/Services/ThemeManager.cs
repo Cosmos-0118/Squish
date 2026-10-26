@@ -2,11 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
-using ClopWindows.Core.Settings;
+using Squish.Core.Settings;
 using Microsoft.Win32;
 using Application = System.Windows.Application;
 
-namespace ClopWindows.App.Services;
+namespace Squish.App.Services;
 
 public sealed class ThemeManager : IDisposable
 {
@@ -146,7 +146,7 @@ public sealed class ThemeManager : IDisposable
 
     private static ResourceDictionary LoadTheme(string resourcePath)
     {
-        var uri = new Uri($"pack://application:,,,/ClopWindows;component/{resourcePath}", UriKind.Absolute);
+        var uri = new Uri($"pack://application:,,,/Squish;component/{resourcePath}", UriKind.Absolute);
         return new ResourceDictionary { Source = uri };
     }
 

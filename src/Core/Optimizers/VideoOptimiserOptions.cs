@@ -2,10 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using ClopWindows.Core.Settings;
-using ClopWindows.Core.Shared;
+using Squish.Core.Settings;
+using Squish.Core.Shared;
 
-namespace ClopWindows.Core.Optimizers;
+namespace Squish.Core.Optimizers;
 
 /// <summary>
 /// Tunable switches for the video pipeline so callers can match macOS behaviour without
@@ -247,7 +247,7 @@ public sealed record VideoOptimiserOptions
     private static string ResolveFfmpegPath()
     {
         return ResolveTool(
-            new[] { "CLOP_FFMPEG", "FFMPEG_EXECUTABLE" },
+            new[] { "SQUISH_FFMPEG", "FFMPEG_EXECUTABLE" },
             new[]
             {
                 new[] { "tools", "ffmpeg", "bin", "ffmpeg.exe" },
@@ -260,7 +260,7 @@ public sealed record VideoOptimiserOptions
     private static string ResolveFfprobePath()
     {
         return ResolveTool(
-            new[] { "CLOP_FFPROBE", "FFPROBE_EXECUTABLE" },
+            new[] { "SQUISH_FFPROBE", "FFPROBE_EXECUTABLE" },
             new[]
             {
                 new[] { "tools", "ffmpeg", "bin", "ffprobe.exe" },
@@ -351,15 +351,15 @@ public sealed record VideoOptimiserOptions
         var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         if (!string.IsNullOrWhiteSpace(localAppData))
         {
-            yield return Path.Combine(localAppData!, "Clop", "bin");
-            yield return Path.Combine(localAppData!, "Clop", "bin", "x64");
+            yield return Path.Combine(localAppData!, "Squish", "bin");
+            yield return Path.Combine(localAppData!, "Squish", "bin", "x64");
         }
 
         var roamingAppData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
         if (!string.IsNullOrWhiteSpace(roamingAppData))
         {
-            yield return Path.Combine(roamingAppData!, "Clop", "bin");
-            yield return Path.Combine(roamingAppData!, "Clop", "bin", "x64");
+            yield return Path.Combine(roamingAppData!, "Squish", "bin");
+            yield return Path.Combine(roamingAppData!, "Squish", "bin", "x64");
         }
     }
 

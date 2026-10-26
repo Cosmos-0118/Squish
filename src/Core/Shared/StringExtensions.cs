@@ -2,7 +2,7 @@ using System;
 using System.IO;
 using System.Text.RegularExpressions;
 
-namespace ClopWindows.Core.Shared;
+namespace Squish.Core.Shared;
 
 public static class StringExtensions
 {

@@ -1,5 +1,5 @@
 using System;
-using ClopWindows.CliBridge;
+using Squish.CliBridge;
 using Xunit;
 
 namespace CliBridge.Tests;

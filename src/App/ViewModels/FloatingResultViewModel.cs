@@ -4,11 +4,11 @@ using System.Globalization;
 using System.IO;
 using System.Windows.Input;
 using System.Windows.Media;
-using ClopWindows.App.Infrastructure;
-using ClopWindows.Core.Optimizers;
-using ClopWindows.Core.Shared;
+using Squish.App.Infrastructure;
+using Squish.Core.Optimizers;
+using Squish.Core.Shared;
 
-namespace ClopWindows.App.ViewModels;
+namespace Squish.App.ViewModels;
 
 public sealed class FloatingResultViewModel : ObservableObject
 {

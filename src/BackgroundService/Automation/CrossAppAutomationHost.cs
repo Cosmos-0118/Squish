@@ -9,18 +9,18 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using ClopWindows.Core.Optimizers;
-using ClopWindows.Core.Security;
-using ClopWindows.Core.Settings;
-using ClopWindows.Core.Shared;
+using Squish.Core.Optimizers;
+using Squish.Core.Security;
+using Squish.Core.Settings;
+using Squish.Core.Shared;
 using Microsoft.Extensions.Logging;
 
-namespace ClopWindows.BackgroundService.Automation;
+namespace Squish.BackgroundService.Automation;
 
 [SupportedOSPlatform("windows")]
 public sealed class CrossAppAutomationHost : IAsyncDisposable
 {
-    private const string DefaultPrefixPath = "clop";
+    private const string DefaultPrefixPath = "squish";
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -94,7 +94,7 @@ public sealed class CrossAppAutomationHost : IAsyncDisposable
 
     /// <summary>
     /// The API is never open: when no token has been configured a random one is generated and stored.
-    /// Read it with <c>clop automation-token</c> or from the settings file.
+    /// Read it with <c>squish automation-token</c> or from the settings file.
     /// </summary>
     private string EnsureAccessToken()
     {
@@ -106,7 +106,7 @@ public sealed class CrossAppAutomationHost : IAsyncDisposable
 
         token = AutomationRequestGuard.GenerateToken();
         SettingsHost.Set(SettingsRegistry.AutomationAccessToken, token);
-        _logger.LogInformation("Generated a new automation access token (clop automation-token prints it).");
+        _logger.LogInformation("Generated a new automation access token (squish automation-token prints it).");
         return token;
     }
 
@@ -530,7 +530,7 @@ public sealed class CrossAppAutomationHost : IAsyncDisposable
     {
         public static object Create(TeamsCardRequest request, IReadOnlyCollection<AutomationOptimiseResultPayload> results, string? title)
         {
-            var cardTitle = string.IsNullOrWhiteSpace(title) ? "Clop Optimisation Summary" : title;
+            var cardTitle = string.IsNullOrWhiteSpace(title) ? "Squish Optimisation Summary" : title;
             var body = new List<object>
             {
                 new { type = "TextBlock", size = "Medium", weight = "Bolder", text = cardTitle },

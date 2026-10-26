@@ -8,10 +8,10 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media.Animation;
 using System.Windows.Media;
-using ClopWindows.App.ViewModels;
-using ClopWindows.Core.Settings;
+using Squish.App.ViewModels;
+using Squish.Core.Settings;
 
-namespace ClopWindows.App.Views.FloatingHud;
+namespace Squish.App.Views.FloatingHud;
 
 public partial class FloatingHudWindow : Window
 {

@@ -3,10 +3,10 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Windows.Input;
-using ClopWindows.App.ViewModels;
-using ClopWindows.Core.Settings;
+using Squish.App.ViewModels;
+using Squish.Core.Settings;
 
-namespace ClopWindows.App.Infrastructure;
+namespace Squish.App.Infrastructure;
 
 public static class ShortcutCatalog
 {
@@ -50,7 +50,7 @@ public static class ShortcutCatalog
         new ShortcutDefinition(
             ShortcutId.ShowMainWindow,
             ShortcutScope.Global,
-            "Show Clop",
+            "Show Squish",
             SettingsRegistry.ShortcutShowMainWindow,
             ModifierKeys.Control | ModifierKeys.Shift,
             Key.Space,

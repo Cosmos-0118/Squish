@@ -2,7 +2,7 @@ using System;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace ClopWindows.Core.Shared;
+namespace Squish.Core.Shared;
 
 public sealed class NanoId
 {

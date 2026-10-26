@@ -8,9 +8,9 @@ using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace ClopWindows.Core.Shared;
+namespace Squish.Core.Shared;
 
-public enum ClopErrorKind
+public enum SquishErrorKind
 {
     FileNotFound,
     FileNotImage,
@@ -39,65 +39,65 @@ public enum ClopErrorKind
     UnknownType
 }
 
-public readonly record struct ClopError(ClopErrorKind Kind, FilePath? Path = null, string? Message = null)
+public readonly record struct SquishError(SquishErrorKind Kind, FilePath? Path = null, string? Message = null)
 {
     public string Description => Kind switch
     {
-        ClopErrorKind.FileNotFound => $"File not found: {DescribePath(Path)}",
-        ClopErrorKind.FileNotImage => $"File is not an image: {DescribePath(Path)}",
-        ClopErrorKind.NoClipboardImage => DescribeClipboard(Path),
-        ClopErrorKind.NoProcess => $"Can't start process: {Message ?? string.Empty}",
-        ClopErrorKind.AlreadyOptimised => $"Image is already optimised: {DescribePath(Path)}",
-        ClopErrorKind.AlreadyResized => $"Image is already at the correct size or smaller: {DescribePath(Path)}",
-        ClopErrorKind.ImageSizeLarger => $"Optimised image size is larger: {DescribePath(Path)}",
-        ClopErrorKind.VideoSizeLarger => $"Optimised video size is larger: {DescribePath(Path)}",
-        ClopErrorKind.PdfSizeLarger => $"Optimised PDF size is larger: {DescribePath(Path)}",
-        ClopErrorKind.UnknownImageType => $"Unknown image type: {DescribePath(Path)}",
-        ClopErrorKind.VideoError => $"Error processing video: {Message ?? string.Empty}",
-        ClopErrorKind.PdfError => $"Error processing PDF: {Message ?? string.Empty}",
-        ClopErrorKind.DownloadError => $"Download failed: {Message ?? string.Empty}",
-        ClopErrorKind.SkippedType => $"Type is skipped: {Message ?? string.Empty}",
-        ClopErrorKind.OptimisationPaused => $"Optimisation paused: {DescribePath(Path)}",
-        ClopErrorKind.OptimisationFailed => $"Optimisation failed: {Message ?? string.Empty}",
-        ClopErrorKind.ConversionFailed => $"Conversion failed: {DescribePath(Path)}",
-        ClopErrorKind.ProError => $"Pro error: {Message ?? string.Empty}",
-        ClopErrorKind.DecompressingBinariesError => "Decompressing binaries",
-        ClopErrorKind.DownscaleFailed => $"Downscale failed: {DescribePath(Path)}",
-        ClopErrorKind.AppNotRunning => $"App is not running, integration failed: {DescribePath(Path)}",
-        ClopErrorKind.EncryptedPdf => $"PDF is encrypted: {DescribePath(Path)}",
-        ClopErrorKind.InvalidPdf => $"Can't parse PDF: {DescribePath(Path)}",
-        ClopErrorKind.CouldNotCreateOutputDirectory => $"Could not create output directory: {Message ?? string.Empty}",
-        ClopErrorKind.UnknownType => "Unknown type",
+        SquishErrorKind.FileNotFound => $"File not found: {DescribePath(Path)}",
+        SquishErrorKind.FileNotImage => $"File is not an image: {DescribePath(Path)}",
+        SquishErrorKind.NoClipboardImage => DescribeClipboard(Path),
+        SquishErrorKind.NoProcess => $"Can't start process: {Message ?? string.Empty}",
+        SquishErrorKind.AlreadyOptimised => $"Image is already optimised: {DescribePath(Path)}",
+        SquishErrorKind.AlreadyResized => $"Image is already at the correct size or smaller: {DescribePath(Path)}",
+        SquishErrorKind.ImageSizeLarger => $"Optimised image size is larger: {DescribePath(Path)}",
+        SquishErrorKind.VideoSizeLarger => $"Optimised video size is larger: {DescribePath(Path)}",
+        SquishErrorKind.PdfSizeLarger => $"Optimised PDF size is larger: {DescribePath(Path)}",
+        SquishErrorKind.UnknownImageType => $"Unknown image type: {DescribePath(Path)}",
+        SquishErrorKind.VideoError => $"Error processing video: {Message ?? string.Empty}",
+        SquishErrorKind.PdfError => $"Error processing PDF: {Message ?? string.Empty}",
+        SquishErrorKind.DownloadError => $"Download failed: {Message ?? string.Empty}",
+        SquishErrorKind.SkippedType => $"Type is skipped: {Message ?? string.Empty}",
+        SquishErrorKind.OptimisationPaused => $"Optimisation paused: {DescribePath(Path)}",
+        SquishErrorKind.OptimisationFailed => $"Optimisation failed: {Message ?? string.Empty}",
+        SquishErrorKind.ConversionFailed => $"Conversion failed: {DescribePath(Path)}",
+        SquishErrorKind.ProError => $"Pro error: {Message ?? string.Empty}",
+        SquishErrorKind.DecompressingBinariesError => "Decompressing binaries",
+        SquishErrorKind.DownscaleFailed => $"Downscale failed: {DescribePath(Path)}",
+        SquishErrorKind.AppNotRunning => $"App is not running, integration failed: {DescribePath(Path)}",
+        SquishErrorKind.EncryptedPdf => $"PDF is encrypted: {DescribePath(Path)}",
+        SquishErrorKind.InvalidPdf => $"Can't parse PDF: {DescribePath(Path)}",
+        SquishErrorKind.CouldNotCreateOutputDirectory => $"Could not create output directory: {Message ?? string.Empty}",
+        SquishErrorKind.UnknownType => "Unknown type",
         _ => Message ?? Kind.ToString()
     };
 
     public string HumanDescription => Kind switch
     {
-        ClopErrorKind.FileNotFound => "File not found",
-        ClopErrorKind.FileNotImage => "Not an image",
-        ClopErrorKind.NoClipboardImage => "No image in clipboard",
-        ClopErrorKind.NoProcess => "Can't start process",
-        ClopErrorKind.AlreadyOptimised => "Already optimised",
-        ClopErrorKind.AlreadyResized => "Image is already at the correct size or smaller",
-        ClopErrorKind.ImageSizeLarger => "Already optimised",
-        ClopErrorKind.VideoSizeLarger => "Already optimised",
-        ClopErrorKind.PdfSizeLarger => "Already optimised",
-        ClopErrorKind.UnknownImageType => "Unknown image type",
-        ClopErrorKind.VideoError => "Video error",
-        ClopErrorKind.PdfError => "PDF error",
-        ClopErrorKind.DownloadError => "Download failed",
-        ClopErrorKind.SkippedType => "Type is skipped",
-        ClopErrorKind.OptimisationPaused => "Optimisation paused",
-        ClopErrorKind.ConversionFailed => "Conversion failed",
-        ClopErrorKind.ProError => "Pro error",
-        ClopErrorKind.DownscaleFailed => "Downscale failed",
-        ClopErrorKind.OptimisationFailed => "Optimisation failed",
-        ClopErrorKind.AppNotRunning => "App integration not running",
-        ClopErrorKind.EncryptedPdf => "PDF is encrypted",
-        ClopErrorKind.InvalidPdf => "Can't parse PDF",
-        ClopErrorKind.CouldNotCreateOutputDirectory => "Could not create output directory",
-        ClopErrorKind.DecompressingBinariesError => "Decompressing binaries",
-        ClopErrorKind.UnknownType => "Unknown type",
+        SquishErrorKind.FileNotFound => "File not found",
+        SquishErrorKind.FileNotImage => "Not an image",
+        SquishErrorKind.NoClipboardImage => "No image in clipboard",
+        SquishErrorKind.NoProcess => "Can't start process",
+        SquishErrorKind.AlreadyOptimised => "Already optimised",
+        SquishErrorKind.AlreadyResized => "Image is already at the correct size or smaller",
+        SquishErrorKind.ImageSizeLarger => "Already optimised",
+        SquishErrorKind.VideoSizeLarger => "Already optimised",
+        SquishErrorKind.PdfSizeLarger => "Already optimised",
+        SquishErrorKind.UnknownImageType => "Unknown image type",
+        SquishErrorKind.VideoError => "Video error",
+        SquishErrorKind.PdfError => "PDF error",
+        SquishErrorKind.DownloadError => "Download failed",
+        SquishErrorKind.SkippedType => "Type is skipped",
+        SquishErrorKind.OptimisationPaused => "Optimisation paused",
+        SquishErrorKind.ConversionFailed => "Conversion failed",
+        SquishErrorKind.ProError => "Pro error",
+        SquishErrorKind.DownscaleFailed => "Downscale failed",
+        SquishErrorKind.OptimisationFailed => "Optimisation failed",
+        SquishErrorKind.AppNotRunning => "App integration not running",
+        SquishErrorKind.EncryptedPdf => "PDF is encrypted",
+        SquishErrorKind.InvalidPdf => "Can't parse PDF",
+        SquishErrorKind.CouldNotCreateOutputDirectory => "Could not create output directory",
+        SquishErrorKind.DecompressingBinariesError => "Decompressing binaries",
+        SquishErrorKind.UnknownType => "Unknown type",
         _ => Kind.ToString()
     };
 
@@ -124,10 +124,10 @@ public readonly record struct ClopError(ClopErrorKind Kind, FilePath? Path = nul
 
 public static class SharedConstants
 {
-    public const string OptimisationPortId = "com.lowtechguys.Clop.optimisationService";
-    public const string OptimisationStopPortId = "com.lowtechguys.Clop.optimisationServiceStop";
-    public const string OptimisationResponsePortId = "com.lowtechguys.Clop.optimisationServiceResponse";
-    public const string OptimisationCliResponsePortId = "com.lowtechguys.Clop.optimisationServiceResponseCLI";
+    public const string OptimisationPortId = "Squish.optimisationService";
+    public const string OptimisationStopPortId = "Squish.optimisationServiceStop";
+    public const string OptimisationResponsePortId = "Squish.optimisationServiceResponse";
+    public const string OptimisationCliResponsePortId = "Squish.optimisationServiceResponseCLI";
 }
 
 public static class MediaFormats

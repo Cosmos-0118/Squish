@@ -2,8 +2,8 @@ using System;
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
-using ClopWindows.Core.IPC;
-using ClopWindows.Core.Shared;
+using Squish.Core.IPC;
+using Squish.Core.Shared;
 using Xunit;
 
 namespace Core.Tests;
@@ -43,7 +43,7 @@ public class FilePathTests
     [Fact]
     public async Task NamedPipeChannel_RoundTripsPayload()
     {
-        var pipeName = "clop-test-" + Guid.NewGuid().ToString("N");
+        var pipeName = "squish-test-" + Guid.NewGuid().ToString("N");
         await using var channel = new NamedPipeChannel(pipeName);
         var completion = new TaskCompletionSource<byte[]>();
 
@@ -63,10 +63,23 @@ public class FilePathTests
         Assert.Equal(payload, received);
     }
 
-    [Fact]
-    public void ClopPaths_OverridesWorkdirAndCreatesFolders()
+    [Theory]
+    [InlineData("photo.squish.jpg", true)]
+    [InlineData("clip.squish", true)]
+    [InlineData("photo.clop.jpg", true)]
+    [InlineData("clip.clop", true)]
+    [InlineData("squished-photo.jpg", false)]
+    [InlineData("photo.jpg", false)]
+    public void SquishFileGuards_RecognisesCurrentAndLegacyOutputNames(string name, bool expected)
     {
-        var tempDir = FilePath.TempFile("clop-tests", "tmp", addUniqueSuffix: true).Parent;
+        var path = FilePath.From(Path.Combine(Path.GetTempPath(), name));
+        Assert.Equal(expected, SquishFileGuards.IsSquishGenerated(path));
+    }
+
+    [Fact]
+    public void SquishPaths_OverridesWorkdirAndCreatesFolders()
+    {
+        var tempDir = FilePath.TempFile("squish-tests", "tmp", addUniqueSuffix: true).Parent;
         FilePath.Workdir = tempDir;
 
         Assert.True(FilePath.Workdir.Exists);

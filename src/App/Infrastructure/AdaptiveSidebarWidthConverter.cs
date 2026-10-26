@@ -2,7 +2,7 @@ using System;
 using System.Globalization;
 using System.Windows.Data;
 
-namespace ClopWindows.App.Infrastructure;
+namespace Squish.App.Infrastructure;
 
 /// <summary>
 /// Calculates a responsive sidebar width while keeping it within a sensible range.

@@ -19,8 +19,8 @@ public sealed class VideoToolchainFixture : IDisposable
         _sandbox = new ToolSandbox();
         var ffmpegPath = _sandbox.CreateFile("ffmpeg", "bin", "ffmpeg.exe");
         var ffprobePath = _sandbox.CreateFile("ffmpeg", "bin", "ffprobe.exe");
-        _ffmpegEnv = new EnvironmentVariableScope("CLOP_FFMPEG", ffmpegPath);
-        _ffprobeEnv = new EnvironmentVariableScope("CLOP_FFPROBE", ffprobePath);
+        _ffmpegEnv = new EnvironmentVariableScope("SQUISH_FFMPEG", ffmpegPath);
+        _ffprobeEnv = new EnvironmentVariableScope("SQUISH_FFPROBE", ffprobePath);
     }
 
     public void Dispose()

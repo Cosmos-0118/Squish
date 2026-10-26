@@ -3,7 +3,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Runtime.InteropServices;
 
-namespace ClopWindows.Core.Optimizers;
+namespace Squish.Core.Optimizers;
 
 internal static class WindowsColorProfileHelper
 {

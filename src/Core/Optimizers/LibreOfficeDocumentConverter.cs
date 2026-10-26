@@ -3,10 +3,10 @@ using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
-using ClopWindows.Core.Processes;
-using ClopWindows.Core.Shared;
+using Squish.Core.Processes;
+using Squish.Core.Shared;
 
-namespace ClopWindows.Core.Optimizers;
+namespace Squish.Core.Optimizers;
 
 public sealed class LibreOfficeDocumentConverter : IDocumentConverter
 {

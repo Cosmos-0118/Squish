@@ -1,6 +1,6 @@
 using System;
 
-namespace ClopWindows.Core.Optimizers;
+namespace Squish.Core.Optimizers;
 
 /// <summary>
 /// Convenience helpers for wiring <see cref="VideoOptimiserOptions"/> from hosts/CLI layers.

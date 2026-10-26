@@ -3,7 +3,7 @@ using System.Numerics;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace ClopWindows.Core.Imaging;
+namespace Squish.Core.Imaging;
 
 /// <summary>
 /// Managed implementation of the SSIMULACRA2 perceptual image-quality metric (Cloudinary, BSD-3).

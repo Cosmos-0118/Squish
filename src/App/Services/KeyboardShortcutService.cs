@@ -5,14 +5,14 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
-using ClopWindows.App.Infrastructure;
-using ClopWindows.App.Localization;
-using ClopWindows.App.ViewModels;
-using ClopWindows.Core.Settings;
+using Squish.App.Infrastructure;
+using Squish.App.Localization;
+using Squish.App.ViewModels;
+using Squish.Core.Settings;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-namespace ClopWindows.App.Services;
+namespace Squish.App.Services;
 
 public sealed class KeyboardShortcutService : IDisposable
 {
@@ -231,11 +231,11 @@ public sealed class KeyboardShortcutService : IDisposable
             var newValue = !paused;
             SettingsHost.Set(SettingsRegistry.PauseAutomaticOptimisations, newValue);
 
-            var title = ClopStringCatalog.Get("hud.notification.automation.title");
+            var title = SquishStringCatalog.Get("hud.notification.automation.title");
             var messageKey = newValue
                 ? "hud.notification.automation.paused"
                 : "hud.notification.automation.resumed";
-            var message = ClopStringCatalog.Get(messageKey);
+            var message = SquishStringCatalog.Get(messageKey);
             var style = newValue ? FloatingHudNotificationStyle.Warning : FloatingHudNotificationStyle.Success;
             _hudController.ShowNotification(title, message, style);
         }
@@ -256,11 +256,11 @@ public sealed class KeyboardShortcutService : IDisposable
                 SettingsHost.Set(key, newValue);
             }
 
-            var title = ClopStringCatalog.Get("hud.notification.aggressive.title");
+            var title = SquishStringCatalog.Get("hud.notification.aggressive.title");
             var messageKey = newValue
                 ? "hud.notification.aggressive.enabled"
                 : "hud.notification.aggressive.disabled";
-            var message = ClopStringCatalog.Get(messageKey);
+            var message = SquishStringCatalog.Get(messageKey);
             var style = newValue ? FloatingHudNotificationStyle.Success : FloatingHudNotificationStyle.Info;
             _hudController.ShowNotification(title, message, style);
         }

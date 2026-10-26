@@ -2,7 +2,7 @@ using System;
 using System.IO;
 using System.Security.Cryptography;
 
-namespace ClopWindows.Core.Shared;
+namespace Squish.Core.Shared;
 
 public readonly record struct FileFingerprint(long Length, string Hash)
 {

@@ -3,7 +3,7 @@ using System.IO;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-namespace ClopWindows.Core.Shared.Logging;
+namespace Squish.Core.Shared.Logging;
 
 public static class SharedLogging
 {

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace ClopWindows.Core.Optimizers;
+namespace Squish.Core.Optimizers;
 
 /// <summary>Measured outcome of encoding the sample clips at one CRF.</summary>
 internal readonly record struct CrfProbe(int Crf, double Score, double BitrateKbps);

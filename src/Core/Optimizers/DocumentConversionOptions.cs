@@ -2,9 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using ClopWindows.Core.Shared;
+using Squish.Core.Shared;
 
-namespace ClopWindows.Core.Optimizers;
+namespace Squish.Core.Optimizers;
 
 public sealed record DocumentConversionOptions
 {
@@ -23,7 +23,7 @@ public sealed record DocumentConversionOptions
 
     private static string ResolveDefaultConverter()
     {
-        var env = Environment.GetEnvironmentVariable("CLOP_SOFFICE");
+        var env = Environment.GetEnvironmentVariable("SQUISH_SOFFICE");
         if (!string.IsNullOrWhiteSpace(env) && File.Exists(env))
         {
             return env;

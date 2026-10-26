@@ -1,6 +1,6 @@
 using System;
 
-namespace ClopWindows.Core.Imaging;
+namespace Squish.Core.Imaging;
 
 /// <summary>
 /// Decoded 8-bit sRGB pixels (non-premultiplied RGBA, tightly packed, row-major). This is the neutral

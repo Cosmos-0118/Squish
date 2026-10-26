@@ -9,10 +9,10 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
-using ClopWindows.Core.Settings;
-using ClopWindows.Core.Shared;
+using Squish.Core.Settings;
+using Squish.Core.Shared;
 
-namespace ClopWindows.Core.Optimizers;
+namespace Squish.Core.Optimizers;
 
 /// <summary>
 /// Windows port of <c>Video.swift</c>: orchestrates ffmpeg re-encodes, fps caps, optional GIF export,
@@ -87,7 +87,7 @@ public sealed class VideoOptimiser : IOptimiser
             }
         }
 
-        var tempOutput = FilePath.TempFile("clop-video", plan.OutputExtension, addUniqueSuffix: true);
+        var tempOutput = FilePath.TempFile("squish-video", plan.OutputExtension, addUniqueSuffix: true);
         tempOutput.EnsureParentDirectoryExists();
 
         var currentPlan = plan;
@@ -231,7 +231,7 @@ public sealed class VideoOptimiser : IOptimiser
     private async Task<OptimisationResult> RunRemuxOptimisationAsync(OptimisationRequest request, VideoOptimiserPlan plan, OptimiserExecutionContext context, CancellationToken cancellationToken)
     {
         context.ReportProgress(5, "Preparing remux");
-        var tempOutput = FilePath.TempFile("clop-remux", plan.OutputExtension, addUniqueSuffix: true);
+        var tempOutput = FilePath.TempFile("squish-remux", plan.OutputExtension, addUniqueSuffix: true);
         tempOutput.EnsureParentDirectoryExists();
 
         try
@@ -274,7 +274,7 @@ public sealed class VideoOptimiser : IOptimiser
             _ => "Preparing GIF export"
         });
 
-        var tempOutput = FilePath.TempFile("clop-anim", $".{plan.OutputExtension}", addUniqueSuffix: true);
+        var tempOutput = FilePath.TempFile("squish-anim", $".{plan.OutputExtension}", addUniqueSuffix: true);
         tempOutput.EnsureParentDirectoryExists();
 
         try
@@ -329,9 +329,9 @@ public sealed class VideoOptimiser : IOptimiser
     private static FilePath BuildCopyOutputPath(FilePath source, string extension)
     {
         var stem = source.Stem;
-        if (!stem.EndsWith(".clop", StringComparison.OrdinalIgnoreCase))
+        if (!stem.EndsWith(".squish", StringComparison.OrdinalIgnoreCase))
         {
-            stem += ".clop";
+            stem += ".squish";
         }
 
         var fileName = $"{stem}.{extension}";
@@ -1699,8 +1699,8 @@ internal sealed class ExternalVideoToolchain : IVideoToolchain
             var firstPassExtension = string.IsNullOrWhiteSpace(plan.OutputExtension)
                 ? null
                 : plan.OutputExtension;
-            var firstPassOutput = FilePath.TempFile("clop-pass", firstPassExtension, addUniqueSuffix: true);
-            var passLogBase = Path.Combine(Path.GetTempPath(), $"clop-pass-{Guid.NewGuid():N}");
+            var firstPassOutput = FilePath.TempFile("squish-pass", firstPassExtension, addUniqueSuffix: true);
+            var passLogBase = Path.Combine(Path.GetTempPath(), $"squish-pass-{Guid.NewGuid():N}");
 
             try
             {

@@ -1,8 +1,8 @@
-# Clop Third-Party Tool Drop Zone
+# Squish Third-Party Tool Drop Zone
 
 Populate the subdirectories below with the binaries referenced in `docs/windows-deps.md` before running the installer build. Each folder should contain:
 
-- The executable or library payload required by Clop.
+- The executable or library payload required by Squish.
 - A `LICENSE.txt` (or equivalent) mirroring the upstream license.
 - A `SHA256SUMS.txt` entry that records the checksum of every binary you place here.
 

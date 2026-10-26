@@ -5,28 +5,29 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
-using ClopWindows.Core.Optimizers;
-using ClopWindows.Core.Settings;
-using ClopWindows.Core.Shared;
-using ClopWindows.Core.Shared.Logging;
+using Squish.Core.Optimizers;
+using Squish.Core.Settings;
+using Squish.Core.Shared;
+using Squish.Core.Shared.Logging;
 
-namespace ClopWindows.CliBridge;
+namespace Squish.CliBridge;
 
 internal static class Program
 {
     public static async Task<int> Main(string[] args)
     {
+        LegacyDataMigration.EnsureMigrated();
         using var sharedLogging = SharedLogging.EnableSharedLogger("cli");
 
         if (!OperatingSystem.IsWindowsVersionAtLeast(6, 1))
         {
-            Console.Error.WriteLine("Clop CLI requires Windows 7 or later.");
+            Console.Error.WriteLine("Squish CLI requires Windows 7 or later.");
             return 1;
         }
 
         SettingsHost.EnsureInitialized();
 
-        var root = new RootCommand("Clop for Windows CLI");
+        var root = new RootCommand("Squish CLI");
         root.Subcommands.Add(OptimiseCommandBuilder.Create());
         root.Subcommands.Add(WatchCommandBuilder.Create());
         root.Subcommands.Add(AutomationTokenCommandBuilder.Create());
@@ -50,7 +51,7 @@ internal static class OptimiseCommandBuilder
         var recursive = new Option<bool>("--recursive", "-r") { Description = "Optimise files inside subfolders when passing directories." };
         var skipErrors = new Option<bool>("--skip-errors", "-s") { Description = "Skip files that are missing or unsupported." };
         var aggressive = new Option<bool>("--aggressive", "-a") { Description = "Use aggressive optimisation presets." };
-        var adaptive = new Option<bool>("--adaptive-optimisation") { Description = "Match macOS adaptive conversion heuristics (not yet available on Windows)." };
+        var adaptive = new Option<bool>("--adaptive-optimisation") { Description = "Use adaptive conversion heuristics (not yet available)." };
         var removeAudio = new Option<bool>("--remove-audio") { DefaultValueFactory = _ => false, Description = "Strip audio tracks from videos." };
         var json = new Option<bool>("--json", "-j") { Description = "Return optimisation results as JSON." };
         var noProgress = new Option<bool>("--no-progress", "-n") { Description = "Suppress in-flight progress output." };
@@ -151,7 +152,7 @@ internal sealed class OptimiseCommandHandler
     {
         if (!OperatingSystem.IsWindowsVersionAtLeast(6, 1))
         {
-            throw new PlatformNotSupportedException("Clop CLI requires Windows 7 or later.");
+            throw new PlatformNotSupportedException("Squish CLI requires Windows 7 or later.");
         }
 
         WarnUnsupportedFlags();

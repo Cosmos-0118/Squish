@@ -1,15 +1,17 @@
 using System;
 using System.Collections.Generic;
-using ClopWindows.BackgroundService;
-using ClopWindows.BackgroundService.Automation;
-using ClopWindows.BackgroundService.Clipboard;
-using ClopWindows.Core.Optimizers;
-using ClopWindows.Core.Settings;
+using Squish.BackgroundService;
+using Squish.BackgroundService.Automation;
+using Squish.BackgroundService.Clipboard;
+using Squish.Core.Optimizers;
+using Squish.Core.Settings;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using ClopWindows.Core.Shared.Logging;
+using Squish.Core.Shared;
+using Squish.Core.Shared.Logging;
 
+LegacyDataMigration.EnsureMigrated();
 using var sharedLogging = SharedLogging.EnableSharedLogger("background-service");
 
 var builder = Host.CreateApplicationBuilder(args);

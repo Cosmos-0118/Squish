@@ -2,11 +2,11 @@ using System;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Windows.Input;
-using ClopWindows.App.Infrastructure;
-using ClopWindows.App.Localization;
-using ClopWindows.Core.Settings;
+using Squish.App.Infrastructure;
+using Squish.App.Localization;
+using Squish.Core.Settings;
 
-namespace ClopWindows.App.ViewModels;
+namespace Squish.App.ViewModels;
 
 public sealed class MainWindowViewModel : ObservableObject, IDisposable
 {
@@ -33,16 +33,16 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         {
             new NavigationItemViewModel(
                 MainSection.Onboarding,
-                ClopStringCatalog.Get("navigation.onboarding.title"),
-                ClopStringCatalog.Get("navigation.onboarding.subtitle")),
+                SquishStringCatalog.Get("navigation.onboarding.title"),
+                SquishStringCatalog.Get("navigation.onboarding.subtitle")),
             new NavigationItemViewModel(
                 MainSection.Compare,
-                ClopStringCatalog.Get("navigation.compare.title"),
-                ClopStringCatalog.Get("navigation.compare.subtitle")),
+                SquishStringCatalog.Get("navigation.compare.title"),
+                SquishStringCatalog.Get("navigation.compare.subtitle")),
             new NavigationItemViewModel(
                 MainSection.Settings,
-                ClopStringCatalog.Get("navigation.settings.title"),
-                ClopStringCatalog.Get("navigation.settings.subtitle"))
+                SquishStringCatalog.Get("navigation.settings.title"),
+                SquishStringCatalog.Get("navigation.settings.subtitle"))
         };
 
         _onboardingItem = NavigationItems.First(item => item.Section == MainSection.Onboarding);

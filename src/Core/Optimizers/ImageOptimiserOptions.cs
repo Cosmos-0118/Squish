@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace ClopWindows.Core.Optimizers;
+namespace Squish.Core.Optimizers;
 
 public sealed record ImageOptimiserOptions
 {

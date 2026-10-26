@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 
-namespace ClopWindows.Core.Imaging;
+namespace Squish.Core.Imaging;
 
 /// <summary>A rectangular region of the reference image that is representative enough to judge quality on.</summary>
 internal readonly record struct SampleTile(int X, int Y, int Width, int Height);

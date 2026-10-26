@@ -9,11 +9,11 @@ using System.Threading.Channels;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Linq;
-using ClopWindows.Core.Optimizers;
-using ClopWindows.Core.Settings;
-using ClopWindows.Core.Shared;
+using Squish.Core.Optimizers;
+using Squish.Core.Settings;
+using Squish.Core.Shared;
 
-namespace ClopWindows.CliBridge;
+namespace Squish.CliBridge;
 
 internal static class WatchCommandBuilder
 {
@@ -130,7 +130,7 @@ internal sealed class WatchCommandHandler
     {
         if (!OperatingSystem.IsWindowsVersionAtLeast(6, 1))
         {
-            Console.Error.WriteLine("[error] clop watch requires Windows 7 or later.");
+            Console.Error.WriteLine("[error] squish watch requires Windows 7 or later.");
             return 1;
         }
 
@@ -557,7 +557,7 @@ internal sealed class WatchCommandHandler
 
     private static bool IsWithinWorkRoot(FilePath path)
     {
-        var workRoot = ClopPaths.WorkRoot.Value;
+        var workRoot = SquishPaths.WorkRoot.Value;
         if (!Path.EndsInDirectorySeparator(workRoot))
         {
             workRoot += Path.DirectorySeparatorChar;

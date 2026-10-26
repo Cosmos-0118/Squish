@@ -1,6 +1,6 @@
 using System;
 
-namespace ClopWindows.Core.Optimizers;
+namespace Squish.Core.Optimizers;
 
 internal static class OptimiserLog
 {

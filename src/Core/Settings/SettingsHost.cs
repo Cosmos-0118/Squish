@@ -1,6 +1,6 @@
 using System.Threading;
 
-namespace ClopWindows.Core.Settings;
+namespace Squish.Core.Settings;
 
 public static class SettingsHost
 {

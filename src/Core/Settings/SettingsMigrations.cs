@@ -1,4 +1,4 @@
-namespace ClopWindows.Core.Settings;
+namespace Squish.Core.Settings;
 
 internal interface ISettingsMigration
 {
@@ -11,7 +11,8 @@ internal static class SettingsMigrations
     private static readonly ISettingsMigration[] Migrations =
     {
         new SchemaVersionMigration(),
-        new ClopIgnoreMigration()
+        new SquishIgnoreMigration(),
+        new RenamedKeysMigration()
     };
 
     public static int LatestVersion => Migrations[^1].TargetVersion;
@@ -25,6 +26,36 @@ internal static class SettingsMigrations
                 migration.Apply(document);
                 document.SchemaVersion = migration.TargetVersion;
             }
+        }
+    }
+}
+
+/// <summary>Moves values stored under setting keys that carried the app's former name.</summary>
+internal sealed class RenamedKeysMigration : ISettingsMigration
+{
+    private static readonly (string Legacy, string Current)[] RenamedKeys =
+    {
+        ("allowClopToAppearInScreenshots", SettingsRegistry.AllowSquishToAppearInScreenshots.Name)
+    };
+
+    public int TargetVersion => 3;
+
+    public void Apply(SettingsDocument document)
+    {
+        foreach (var (legacy, current) in RenamedKeys)
+        {
+            var node = document.GetValueNode(legacy);
+            if (node is null)
+            {
+                continue;
+            }
+
+            if (document.GetValueNode(current) is null)
+            {
+                document.SetValueNode(current, node.DeepClone());
+            }
+
+            document.Values.Remove(legacy);
         }
     }
 }

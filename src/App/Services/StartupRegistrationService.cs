@@ -1,16 +1,17 @@
 using System;
 using System.Diagnostics;
 using System.IO;
-using ClopWindows.Core.Settings;
+using Squish.Core.Settings;
 using Microsoft.Extensions.Logging;
 using Microsoft.Win32;
 
-namespace ClopWindows.App.Services;
+namespace Squish.App.Services;
 
 public sealed class StartupRegistrationService : IDisposable
 {
     private const string RunKeyPath = @"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
-    private const string ValueName = "ClopWindows";
+    private const string ValueName = "Squish";
+    private const string LegacyValueName = "ClopWindows";
 
     private readonly ILogger<StartupRegistrationService> _logger;
     private readonly string _commandLine;
@@ -46,6 +47,7 @@ public sealed class StartupRegistrationService : IDisposable
                 return;
             }
 
+            key.DeleteValue(LegacyValueName, false);
             if (enable)
             {
                 key.SetValue(ValueName, _commandLine, RegistryValueKind.String);
@@ -70,9 +72,9 @@ public sealed class StartupRegistrationService : IDisposable
             executable = current.MainModule?.FileName;
         }
 
-        executable ??= Path.Combine(AppContext.BaseDirectory, "ClopWindows.App.exe");
+        executable ??= Path.Combine(AppContext.BaseDirectory, "Squish.exe");
         var executablePath = $"\"{Path.GetFullPath(executable)}\"";
-        var backgroundArg = global::ClopWindows.App.App.BackgroundLaunchArgument;
+        var backgroundArg = global::Squish.App.App.BackgroundLaunchArgument;
         return $"{executablePath} {backgroundArg}";
     }
 

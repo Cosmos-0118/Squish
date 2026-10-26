@@ -2,7 +2,7 @@ using System;
 using System.Globalization;
 using System.IO;
 
-namespace ClopWindows.Core.Shared.Logging;
+namespace Squish.Core.Shared.Logging;
 
 internal static class LogFileLocator
 {
@@ -38,7 +38,7 @@ internal static class LogFileLocator
             return repoLogs;
         }
 
-        var fallback = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Clop", "logs");
+        var fallback = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Squish", "logs");
         Directory.CreateDirectory(fallback);
         return fallback;
     }
@@ -65,7 +65,7 @@ internal static class LogFileLocator
         var current = start;
         while (current is not null)
         {
-            if (File.Exists(Path.Combine(current.FullName, "ClopWindows.sln")) || Directory.Exists(Path.Combine(current.FullName, ".git")))
+            if (File.Exists(Path.Combine(current.FullName, "Squish.sln")) || Directory.Exists(Path.Combine(current.FullName, ".git")))
             {
                 return current;
             }
@@ -80,7 +80,7 @@ internal static class LogFileLocator
     {
         if (string.IsNullOrWhiteSpace(componentName))
         {
-            return "clop";
+            return "squish";
         }
 
         var invalidCharacters = Path.GetInvalidFileNameChars();
@@ -110,10 +110,10 @@ internal static class LogFileLocator
 
         if (!hasValidChar)
         {
-            return "clop";
+            return "squish";
         }
 
         var candidate = new string(buffer).Trim('-');
-        return string.IsNullOrWhiteSpace(candidate) ? "clop" : candidate;
+        return string.IsNullOrWhiteSpace(candidate) ? "squish" : candidate;
     }
 }

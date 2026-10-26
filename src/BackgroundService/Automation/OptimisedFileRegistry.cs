@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Concurrent;
-using ClopWindows.Core.Shared;
+using Squish.Core.Shared;
 
-namespace ClopWindows.BackgroundService.Automation;
+namespace Squish.BackgroundService.Automation;
 
 /// <summary>
 /// Tracks recently optimised files using both their file paths and content fingerprints so

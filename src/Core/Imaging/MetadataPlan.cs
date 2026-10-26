@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using ClopWindows.Core.Optimizers;
+using Squish.Core.Optimizers;
 using ImageMagick;
 
-namespace ClopWindows.Core.Imaging;
+namespace Squish.Core.Imaging;
 
 /// <summary>
 /// Turns the user's metadata policy into the concrete blobs written to an output file. The default policy

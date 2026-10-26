@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using ClopWindows.CliBridge;
+using Squish.CliBridge;
 using Xunit;
 
 namespace CliBridge.Tests;

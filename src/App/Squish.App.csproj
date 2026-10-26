@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <EnableWindowsFormsImplicitUsings>false</EnableWindowsFormsImplicitUsings>
+    <RootNamespace>Squish.App</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AssemblyName>Squish</AssemblyName>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <ApplicationIcon>..\..\installer\assets\Squish.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Core\Squish.Core.csproj" />
+    <ProjectReference Include="..\BackgroundService\Squish.BackgroundService.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="..\..\installer\assets\Squish.ico">
+      <Link>Assets\Brand\Squish.ico</Link>
+    </Resource>
+    <Resource Include="Assets\Brand\squish-icon.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Microsoft.Extensions.Logging" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Manifest Include="$(ApplicationManifest)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Localization\*.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <EmbeddedResource Include="Localization\en.json">
+      <LogicalName>Squish.App.Resources.strings.en.json</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+</Project>

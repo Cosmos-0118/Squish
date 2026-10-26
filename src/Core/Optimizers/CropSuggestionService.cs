@@ -3,13 +3,13 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
-using ClopWindows.Core.Shared;
+using Squish.Core.Shared;
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
-using ClopWindows.Core.Imaging;
+using Squish.Core.Imaging;
 using ImageMagick;
 
-namespace ClopWindows.Core.Optimizers;
+namespace Squish.Core.Optimizers;
 
 internal sealed class CropSuggestionService
 {
@@ -36,7 +36,7 @@ internal sealed class CropSuggestionService
         }
 
         var cacheKey = BuildCacheKey(sourcePath);
-        var cacheDirectory = ClopPaths.SegmentationCache.Append(cacheKey);
+        var cacheDirectory = SquishPaths.SegmentationCache.Append(cacheKey);
         cacheDirectory.EnsurePathExists();
 
         var suggestionsPath = cacheDirectory.Append("suggestions.json");

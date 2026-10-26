@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Generic;
-using ClopWindows.Core.Shared;
+using Squish.Core.Shared;
 
-namespace ClopWindows.Core.Optimizers;
+namespace Squish.Core.Optimizers;
 
 internal static class OptimisedOutputPlanner
 {

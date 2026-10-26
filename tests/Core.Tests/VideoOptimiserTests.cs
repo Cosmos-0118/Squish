@@ -4,8 +4,8 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using ClopWindows.Core.Optimizers;
-using ClopWindows.Core.Shared;
+using Squish.Core.Optimizers;
+using Squish.Core.Shared;
 using Xunit;
 
 namespace Core.Tests;

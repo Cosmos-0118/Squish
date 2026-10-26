@@ -1,4 +1,4 @@
-namespace ClopWindows.Core.Settings;
+namespace Squish.Core.Settings;
 
 public enum FloatingHudPlacement
 {

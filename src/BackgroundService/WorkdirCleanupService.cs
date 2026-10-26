@@ -4,11 +4,11 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using ClopWindows.Core.Settings;
-using ClopWindows.Core.Shared;
+using Squish.Core.Settings;
+using Squish.Core.Shared;
 using Microsoft.Extensions.Logging;
 
-namespace ClopWindows.BackgroundService;
+namespace Squish.BackgroundService;
 
 public sealed class WorkdirCleanupService : IAsyncDisposable
 {
@@ -79,7 +79,7 @@ public sealed class WorkdirCleanupService : IAsyncDisposable
 
     private void CleanupStaleWorkdirArtifacts(CleanupInterval interval)
     {
-        var root = ClopPaths.WorkRoot;
+        var root = SquishPaths.WorkRoot;
         var cutoff = DateTimeOffset.UtcNow - TimeSpan.FromSeconds((int)interval);
 
         var folders = new[]

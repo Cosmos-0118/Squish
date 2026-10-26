@@ -4,8 +4,8 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using ClopWindows.Core.Optimizers;
-using ClopWindows.Core.Shared;
+using Squish.Core.Optimizers;
+using Squish.Core.Shared;
 using Xunit;
 
 namespace Core.Tests;
@@ -200,7 +200,7 @@ public sealed class VideoPlanTests
     [Fact]
     public void MissingFfmpegDoesNotCrashOptionInitialisation()
     {
-        using var ffmpeg = new EnvironmentVariableScope("CLOP_FFMPEG", null);
+        using var ffmpeg = new EnvironmentVariableScope("SQUISH_FFMPEG", null);
         using var legacy = new EnvironmentVariableScope("FFMPEG_EXECUTABLE", null);
         using var emptyPath = new EnvironmentVariableScope("PATH", string.Empty);
 
@@ -335,7 +335,7 @@ public sealed class CrfSearchTests
 /// <summary>End-to-end runs against a real ffmpeg (skipped when none is installed).</summary>
 public sealed class RealFfmpegVideoTests : IDisposable
 {
-    private readonly string _directory = Path.Combine(Path.GetTempPath(), "clop-video-e2e-" + Guid.NewGuid().ToString("N"));
+    private readonly string _directory = Path.Combine(Path.GetTempPath(), "squish-video-e2e-" + Guid.NewGuid().ToString("N"));
 
     public RealFfmpegVideoTests() => Directory.CreateDirectory(_directory);
 
@@ -361,8 +361,8 @@ public sealed class RealFfmpegVideoTests : IDisposable
             "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000",
             "-t", "3", "-c:v", "libx264", "-preset", "veryfast", "-crf", "12", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", source);
 
-        using var ffmpegEnv = new EnvironmentVariableScope("CLOP_FFMPEG", ffmpeg);
-        using var ffprobeEnv = new EnvironmentVariableScope("CLOP_FFPROBE", ToolAvailability.Ffprobe);
+        using var ffmpegEnv = new EnvironmentVariableScope("SQUISH_FFMPEG", ffmpeg);
+        using var ffprobeEnv = new EnvironmentVariableScope("SQUISH_FFPROBE", ToolAvailability.Ffprobe);
         var options = new VideoOptimiserOptions
         {
             FfmpegPath = ffmpeg,
@@ -437,7 +437,7 @@ public sealed class RealFfmpegVideoTests : IDisposable
 
     private static async Task<string> Run(string executable, params string[] arguments)
     {
-        var result = await ClopWindows.Core.Processes.ProcessRunner.RunAsync(executable, arguments);
+        var result = await Squish.Core.Processes.ProcessRunner.RunAsync(executable, arguments);
         return result.StandardOutput;
     }
 

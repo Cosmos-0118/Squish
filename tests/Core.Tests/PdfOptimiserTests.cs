@@ -4,8 +4,8 @@ using System.IO;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using ClopWindows.Core.Optimizers;
-using ClopWindows.Core.Shared;
+using Squish.Core.Optimizers;
+using Squish.Core.Shared;
 using Xunit;
 
 namespace Core.Tests;
@@ -29,7 +29,7 @@ public sealed class PdfOptimiserTests : IDisposable
         Assert.NotNull(result.OutputPath);
         var output = result.OutputPath!.Value;
         Track(output);
-        Assert.EndsWith(".clop.pdf", output.Value, StringComparison.OrdinalIgnoreCase);
+        Assert.EndsWith(".squish.pdf", output.Value, StringComparison.OrdinalIgnoreCase);
         Assert.Single(toolchain.Plans);
     }
 
@@ -126,7 +126,7 @@ public sealed class PdfOptimiserTests : IDisposable
                       "1 0 obj\n<</Type /Catalog /Pages 2 0 R>>\nendobj\n" +
                       "2 0 obj\n<</Type /Pages /Kids [3 0 R] /Count 1>>\nendobj\n" +
                       "3 0 obj\n<</Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R>>\nendobj\n" +
-                      "4 0 obj\n<</Length 44>>\nstream\nBT /F1 12 Tf 50 150 Td (Hello Clop) Tj ET\nendstream\nendobj\n" +
+                      "4 0 obj\n<</Length 44>>\nstream\nBT /F1 12 Tf 50 150 Td (Hello Squish) Tj ET\nendstream\nendobj\n" +
                       "trailer\n<</Root 1 0 R>>\n%%EOF";
         File.WriteAllText(path.Value, content);
         return path;
@@ -156,7 +156,7 @@ public sealed class PdfOptimiserTests : IDisposable
         builder.AppendLine("5 0 obj");
         builder.AppendLine("<</Length 44>>");
         builder.AppendLine("stream");
-        builder.AppendLine("BT /F1 12 Tf 50 500 Td (Hello Clop Image) Tj ET");
+        builder.AppendLine("BT /F1 12 Tf 50 500 Td (Hello Squish Image) Tj ET");
         builder.AppendLine("endstream");
         builder.AppendLine("endobj");
         builder.AppendLine("trailer");

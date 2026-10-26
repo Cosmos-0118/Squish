@@ -2,13 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
-using ClopWindows.App.Infrastructure;
-using ClopWindows.App.Localization;
-using ClopWindows.App.Services;
-using ClopWindows.Core.Optimizers;
-using ClopWindows.Core.Settings;
+using Squish.App.Infrastructure;
+using Squish.App.Localization;
+using Squish.App.Services;
+using Squish.Core.Optimizers;
+using Squish.Core.Settings;
 
-namespace ClopWindows.App.ViewModels;
+namespace Squish.App.ViewModels;
 
 public sealed class SettingsViewModel : ObservableObject, IDisposable
 {
@@ -75,15 +75,15 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         VideoPresetSubtitle = BuildVideoPresetSubtitle(_gpuLabel);
         SettingsSections = new ReadOnlyCollection<SettingsSectionItem>(new List<SettingsSectionItem>
         {
-            new(SettingsSection.Appearance, ClopStringCatalog.Get("settings.section.appearance")),
-            new(SettingsSection.System, ClopStringCatalog.Get("settings.section.system")),
-            new(SettingsSection.FloatingHud, ClopStringCatalog.Get("settings.section.floatingHud")),
-            new(SettingsSection.Clipboard, ClopStringCatalog.Get("settings.section.clipboard")),
-            new(SettingsSection.Automation, ClopStringCatalog.Get("settings.section.automation")),
-            new(SettingsSection.Optimisation, ClopStringCatalog.Get("settings.section.optimisation")),
-            new(SettingsSection.Output, ClopStringCatalog.Get("settings.section.output")),
-            new(SettingsSection.Preservation, ClopStringCatalog.Get("settings.section.preservation")),
-            new(SettingsSection.Shortcuts, ClopStringCatalog.Get("settings.section.shortcuts"))
+            new(SettingsSection.Appearance, SquishStringCatalog.Get("settings.section.appearance")),
+            new(SettingsSection.System, SquishStringCatalog.Get("settings.section.system")),
+            new(SettingsSection.FloatingHud, SquishStringCatalog.Get("settings.section.floatingHud")),
+            new(SettingsSection.Clipboard, SquishStringCatalog.Get("settings.section.clipboard")),
+            new(SettingsSection.Automation, SquishStringCatalog.Get("settings.section.automation")),
+            new(SettingsSection.Optimisation, SquishStringCatalog.Get("settings.section.optimisation")),
+            new(SettingsSection.Output, SquishStringCatalog.Get("settings.section.output")),
+            new(SettingsSection.Preservation, SquishStringCatalog.Get("settings.section.preservation")),
+            new(SettingsSection.Shortcuts, SquishStringCatalog.Get("settings.section.shortcuts"))
         });
         _selectedSettingsSectionItem = SettingsSections.FirstOrDefault();
         ImageDirectories = new ObservableCollection<string>();
@@ -160,7 +160,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
 
     public SettingsSection SelectedSettingsSection => SelectedSettingsSectionItem?.Section ?? SettingsSection.Appearance;
 
-    public string SelectedSettingsSectionTitle => SelectedSettingsSectionItem?.Title ?? ClopStringCatalog.Get("settings.section.appearance");
+    public string SelectedSettingsSectionTitle => SelectedSettingsSectionItem?.Title ?? SquishStringCatalog.Get("settings.section.appearance");
 
     public bool EnableFloatingResults
     {
@@ -438,7 +438,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         }
     }
 
-    public string FloatingHudPlacementStatus => ClopStringCatalog.Get(GetPlacementResourceKey("placementStatus", FloatingHudPlacement));
+    public string FloatingHudPlacementStatus => SquishStringCatalog.Get(GetPlacementResourceKey("placementStatus", FloatingHudPlacement));
 
     private void Load()
     {
@@ -585,7 +585,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     private void AddDirectory(ObservableCollection<string> target, SettingKey<string[]> key)
     {
         var initial = target.LastOrDefault();
-        var selected = _folderPicker.PickFolder(initial, ClopStringCatalog.Get("settings.automation.pickFolder"));
+        var selected = _folderPicker.PickFolder(initial, SquishStringCatalog.Get("settings.automation.pickFolder"));
         if (string.IsNullOrWhiteSpace(selected))
         {
             return;
@@ -656,17 +656,17 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         var label = string.IsNullOrWhiteSpace(gpuLabel) ? string.Empty : gpuLabel;
         return new List<VideoEncoderPresetOptionViewModel>
         {
-            new(VideoEncoderPreset.Auto, ClopStringCatalog.Get("settings.optimisation.videoPreset.auto.title"), ClopStringCatalog.Get("settings.optimisation.videoPreset.auto.description")),
-            new(VideoEncoderPreset.Cpu, ClopStringCatalog.Get("settings.optimisation.videoPreset.cpu.title"), ClopStringCatalog.Get("settings.optimisation.videoPreset.cpu.description")),
-            new(VideoEncoderPreset.GpuQuality, ReplaceGpuLabel(ClopStringCatalog.Get("settings.optimisation.videoPreset.gpuQuality.title"), label), ClopStringCatalog.Get("settings.optimisation.videoPreset.gpuQuality.description")),
-            new(VideoEncoderPreset.GpuSimple, ReplaceGpuLabel(ClopStringCatalog.Get("settings.optimisation.videoPreset.gpuSimple.title"), label), ClopStringCatalog.Get("settings.optimisation.videoPreset.gpuSimple.description")),
-            new(VideoEncoderPreset.GpuCqp, ReplaceGpuLabel(ClopStringCatalog.Get("settings.optimisation.videoPreset.gpuCqp.title"), label), ClopStringCatalog.Get("settings.optimisation.videoPreset.gpuCqp.description"))
+            new(VideoEncoderPreset.Auto, SquishStringCatalog.Get("settings.optimisation.videoPreset.auto.title"), SquishStringCatalog.Get("settings.optimisation.videoPreset.auto.description")),
+            new(VideoEncoderPreset.Cpu, SquishStringCatalog.Get("settings.optimisation.videoPreset.cpu.title"), SquishStringCatalog.Get("settings.optimisation.videoPreset.cpu.description")),
+            new(VideoEncoderPreset.GpuQuality, ReplaceGpuLabel(SquishStringCatalog.Get("settings.optimisation.videoPreset.gpuQuality.title"), label), SquishStringCatalog.Get("settings.optimisation.videoPreset.gpuQuality.description")),
+            new(VideoEncoderPreset.GpuSimple, ReplaceGpuLabel(SquishStringCatalog.Get("settings.optimisation.videoPreset.gpuSimple.title"), label), SquishStringCatalog.Get("settings.optimisation.videoPreset.gpuSimple.description")),
+            new(VideoEncoderPreset.GpuCqp, ReplaceGpuLabel(SquishStringCatalog.Get("settings.optimisation.videoPreset.gpuCqp.title"), label), SquishStringCatalog.Get("settings.optimisation.videoPreset.gpuCqp.description"))
         };
     }
 
     private static string BuildVideoPresetSubtitle(string gpuLabel)
     {
-        var subtitle = ClopStringCatalog.Get("settings.optimisation.videoPreset.subtitle");
+        var subtitle = SquishStringCatalog.Get("settings.optimisation.videoPreset.subtitle");
         return ReplaceGpuLabel(subtitle, gpuLabel);
     }
 
@@ -674,10 +674,10 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     {
         return new List<ThemeOptionViewModel>
         {
-            new(AppThemeMode.FollowSystem, ClopStringCatalog.Get("settings.theme.followSystem")),
-            new(AppThemeMode.Light, ClopStringCatalog.Get("settings.theme.light")),
-            new(AppThemeMode.Dark, ClopStringCatalog.Get("settings.theme.dark")),
-            new(AppThemeMode.HighSaturation, ClopStringCatalog.Get("settings.theme.highSaturation"))
+            new(AppThemeMode.FollowSystem, SquishStringCatalog.Get("settings.theme.followSystem")),
+            new(AppThemeMode.Light, SquishStringCatalog.Get("settings.theme.light")),
+            new(AppThemeMode.Dark, SquishStringCatalog.Get("settings.theme.dark")),
+            new(AppThemeMode.HighSaturation, SquishStringCatalog.Get("settings.theme.highSaturation"))
         };
     }
 
@@ -698,7 +698,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
 
     private static FloatingHudPlacementOptionViewModel CreatePlacementOption(FloatingHudPlacement placement)
     {
-        var displayName = ClopStringCatalog.Get(GetPlacementResourceKey("placementOption", placement));
+        var displayName = SquishStringCatalog.Get(GetPlacementResourceKey("placementOption", placement));
         return new FloatingHudPlacementOptionViewModel(placement, displayName);
     }
 

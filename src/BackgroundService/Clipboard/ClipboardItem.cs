@@ -1,7 +1,7 @@
-using ClopWindows.Core.Optimizers;
-using ClopWindows.Core.Shared;
+using Squish.Core.Optimizers;
+using Squish.Core.Shared;
 
-namespace ClopWindows.BackgroundService.Clipboard;
+namespace Squish.BackgroundService.Clipboard;
 
 internal enum ClipboardOrigin
 {

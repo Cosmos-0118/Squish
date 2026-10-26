@@ -4,7 +4,7 @@ using System.IO.Pipes;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace ClopWindows.Core.IPC;
+namespace Squish.Core.IPC;
 
 public sealed class NamedPipeChannel : IAsyncDisposable, IDisposable
 {

@@ -5,11 +5,11 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using ClopWindows.Core.Processes;
-using ClopWindows.Core.Shared;
+using Squish.Core.Processes;
+using Squish.Core.Shared;
 using ImageMagick;
 
-namespace ClopWindows.Core.Imaging;
+namespace Squish.Core.Imaging;
 
 internal enum ChromaSubsampling
 {
@@ -49,11 +49,11 @@ internal sealed class ImageEncoders
     public async Task<FilePath?> EncodeJpegAsync(RasterImage raster, int quality, ChromaSubsampling chroma, CancellationToken token)
     {
         quality = Math.Clamp(quality, 1, 100);
-        var output = _temp.New("clop-jpg", "jpg");
+        var output = _temp.New("squish-jpg", "jpg");
 
         if (_tools.Cjpeg is { } cjpeg)
         {
-            var staging = _temp.New("clop-stage", "ppm");
+            var staging = _temp.New("squish-stage", "ppm");
             WritePpm(raster, staging.Value);
 
             var args = new List<string>
@@ -95,7 +95,7 @@ internal sealed class ImageEncoders
             return null;
         }
 
-        var output = _temp.New("clop-jpgl", "jpg");
+        var output = _temp.New("squish-jpgl", "jpg");
         var args = new[] { "-optimize", "-progressive", "-copy", "none", "-outfile", output.Value, source.Value };
         var result = await ProcessRunner.RunAsync(jpegtran, args, Quiet, token).ConfigureAwait(false);
         return Succeeded(result, output) ? output : null;
@@ -112,7 +112,7 @@ internal sealed class ImageEncoders
     /// <param name="strip">oxipng --strip mode: none, safe or all.</param>
     public async Task<FilePath?> OptimisePngLosslessAsync(FilePath source, int level, bool zopfli, string strip, CancellationToken token)
     {
-        var output = _temp.New("clop-png", "png");
+        var output = _temp.New("squish-png", "png");
 
         if (_tools.Oxipng is { } oxipng)
         {
@@ -173,7 +173,7 @@ internal sealed class ImageEncoders
             return null;
         }
 
-        var output = _temp.New("clop-pq", "png");
+        var output = _temp.New("squish-pq", "png");
         var args = new[]
         {
             "--quality", $"{Math.Clamp(minQuality, 0, 100)}-{Math.Clamp(maxQuality, 0, 100)}",
@@ -189,7 +189,7 @@ internal sealed class ImageEncoders
 
     public FilePath WritePngStaging(RasterImage raster, bool fast = true)
     {
-        var path = _temp.New("clop-stage", "png");
+        var path = _temp.New("squish-stage", "png");
         ImageIO.WriteRasterAsPng(raster, path.Value, fast);
         return path;
     }
@@ -207,7 +207,7 @@ internal sealed class ImageEncoders
             return null;
         }
 
-        var output = _temp.New("clop-webp", "webp");
+        var output = _temp.New("squish-webp", "webp");
         var args = new List<string> { "-quiet", "-mt", "-m", "6", "-metadata", "none" };
         if (lossless)
         {
@@ -234,7 +234,7 @@ internal sealed class ImageEncoders
             return null;
         }
 
-        var output = _temp.New("clop-avif", "avif");
+        var output = _temp.New("squish-avif", "avif");
         var args = new List<string>
         {
             "--qcolor", Math.Clamp(quality, 0, 100).ToString(CultureInfo.InvariantCulture),
@@ -258,7 +258,7 @@ internal sealed class ImageEncoders
 
     public async Task<FilePath?> OptimiseGifAsync(FilePath source, int lossy, CancellationToken token)
     {
-        var output = _temp.New("clop-gif", "gif");
+        var output = _temp.New("squish-gif", "gif");
 
         if (_tools.Gifsicle is { } gifsicle)
         {

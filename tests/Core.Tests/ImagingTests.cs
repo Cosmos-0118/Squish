@@ -1,8 +1,8 @@
 using System;
 using System.IO;
 using System.Linq;
-using ClopWindows.Core.Imaging;
-using ClopWindows.Core.Optimizers;
+using Squish.Core.Imaging;
+using Squish.Core.Optimizers;
 using ImageMagick;
 using Xunit;
 
@@ -40,14 +40,14 @@ public sealed class ImagingTests
         var icc = TestIccProfile.Create();
         var blobs = new MetadataBlobs(exifBytes, icc, "<x:xmpmeta/>"u8.ToArray(), null);
 
-        var rewritten = JpegSegments.Rewrite(jpeg, blobs, addClopMarker: true);
+        var rewritten = JpegSegments.Rewrite(jpeg, blobs, addSquishMarker: true);
         var extracted = JpegSegments.Extract(rewritten);
 
         Assert.Equal(exifBytes, extracted.Exif);
         Assert.Equal(icc, extracted.Icc);
         Assert.Equal("<x:xmpmeta/>"u8.ToArray(), extracted.Xmp);
-        Assert.True(JpegSegments.HasClopMarker(rewritten));
-        Assert.False(JpegSegments.HasClopMarker(jpeg));
+        Assert.True(JpegSegments.HasSquishMarker(rewritten));
+        Assert.False(JpegSegments.HasSquishMarker(jpeg));
 
         // Pixel data must be untouched: decoding yields the same picture.
         Assert.Equal(TestImages.ReadRgba(WriteTemp(jpeg)), TestImages.ReadRgba(WriteTemp(rewritten)));
@@ -285,7 +285,7 @@ public sealed class ImagingTests
 
     private static string WriteTemp(byte[] data)
     {
-        var path = Path.Combine(Path.GetTempPath(), "clop-seg-" + Guid.NewGuid().ToString("N") + ".jpg");
+        var path = Path.Combine(Path.GetTempPath(), "squish-seg-" + Guid.NewGuid().ToString("N") + ".jpg");
         File.WriteAllBytes(path, data);
         return path;
     }

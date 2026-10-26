@@ -2,7 +2,7 @@ using System;
 using System.Windows;
 using System.Windows.Controls;
 
-namespace ClopWindows.App.Controls;
+namespace Squish.App.Controls;
 
 /// <summary>
 /// Responsive panel that lays out children in equal-width cards, automatically

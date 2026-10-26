@@ -6,10 +6,10 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
-using ClopWindows.Core.Processes;
-using ClopWindows.Core.Shared;
+using Squish.Core.Processes;
+using Squish.Core.Shared;
 
-namespace ClopWindows.Core.Optimizers;
+namespace Squish.Core.Optimizers;
 
 /// <summary>
 /// Represents the final encoder settings chosen for a video optimisation run.
