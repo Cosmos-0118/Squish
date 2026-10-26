@@ -123,7 +123,7 @@ internal sealed class PerceptualReference
     }
 
     // The worst region matters most for perceived quality, but a single outlier tile must not dominate.
-    private static double Aggregate(double[] scores)
+    internal static double Aggregate(double[] scores)
     {
         if (scores.Length == 1)
         {
@@ -151,7 +151,7 @@ internal sealed class PerceptualReference
         return ScorePair(reference.Crop(tile.X, tile.Y, tile.Width, tile.Height), candidate.Crop(tile.X, tile.Y, tile.Width, tile.Height), token);
     }
 
-    private static double ScorePair(RasterImage reference, RasterImage candidate, CancellationToken token)
+    internal static double ScorePair(RasterImage reference, RasterImage candidate, CancellationToken token)
     {
         var alpha = HasTransparency(reference.Pixels) || HasTransparency(candidate.Pixels);
         if (!alpha)
@@ -177,7 +177,7 @@ internal sealed class PerceptualReference
         return false;
     }
 
-    private static List<SampleTile> ChooseTiles(RasterImage image, int tileSize, int maxTiles)
+    internal static List<SampleTile> ChooseTiles(RasterImage image, int tileSize, int maxTiles)
     {
         // Grid of non-overlapping, 16-aligned tiles so JPEG/AVIF block grids line up when tiles are re-assembled.
         var size = tileSize / 16 * 16;

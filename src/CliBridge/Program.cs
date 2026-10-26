@@ -29,6 +29,7 @@ internal static class Program
         var root = new RootCommand("Clop for Windows CLI");
         root.Subcommands.Add(OptimiseCommandBuilder.Create());
         root.Subcommands.Add(WatchCommandBuilder.Create());
+        root.Subcommands.Add(AutomationTokenCommandBuilder.Create());
         root.Subcommands.Add(SchemaCommandBuilder.Create(root));
         return await root.Parse(args).InvokeAsync().ConfigureAwait(false);
     }

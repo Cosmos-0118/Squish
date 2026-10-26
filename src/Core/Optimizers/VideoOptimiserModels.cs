@@ -299,7 +299,8 @@ public static class VideoHardwareDetector
 
         try
         {
-            if (NativeLibrary.TryLoad(libraryName, out var handle))
+            // System32 only: the default search order would also probe the app and current directories (DLL planting).
+            if (NativeLibrary.TryLoad(libraryName, typeof(VideoHardwareDetector).Assembly, DllImportSearchPath.System32, out var handle))
             {
                 NativeLibrary.Free(handle);
                 return true;

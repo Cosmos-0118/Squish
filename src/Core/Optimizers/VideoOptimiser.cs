@@ -23,12 +23,19 @@ public sealed class VideoOptimiser : IOptimiser
     private readonly VideoOptimiserOptions _options;
     private readonly IVideoToolchain _toolchain;
     private readonly IVideoMetadataProbe _metadataProbe;
+    private readonly IVideoQualitySearch _qualitySearch;
 
     public VideoOptimiser(VideoOptimiserOptions? options = null, IVideoToolchain? toolchain = null, IVideoMetadataProbe? metadataProbe = null)
+        : this(options, toolchain, metadataProbe, null)
+    {
+    }
+
+    internal VideoOptimiser(VideoOptimiserOptions? options, IVideoToolchain? toolchain, IVideoMetadataProbe? metadataProbe, IVideoQualitySearch? qualitySearch)
     {
         _options = options ?? VideoOptimiserOptions.Default;
         _toolchain = toolchain ?? new ExternalVideoToolchain(_options);
         _metadataProbe = metadataProbe ?? new FfprobeMetadataProbe(_options);
+        _qualitySearch = qualitySearch ?? (toolchain is null ? new FfmpegVideoQualitySearch(_options) : NullVideoQualitySearch.Instance);
     }
 
     public ItemType ItemType => ItemType.Video;
@@ -68,6 +75,18 @@ public sealed class VideoOptimiser : IOptimiser
         }
 
         context.ReportProgress(5, "Preparing encoder");
+
+        var search = await _qualitySearch.SearchAsync(plan, context, cancellationToken).ConfigureAwait(false);
+        if (search is not null)
+        {
+            plan = ApplyQualitySearch(plan, search);
+            if (ShouldSkipEfficientSource(plan, search))
+            {
+                context.ReportProgress(100, "Already efficiently encoded");
+                return new OptimisationResult(request.RequestId, OptimisationStatus.Succeeded, plan.SourcePath, "Original already optimal (efficient encode)");
+            }
+        }
+
         var tempOutput = FilePath.TempFile("clop-video", plan.OutputExtension, addUniqueSuffix: true);
         tempOutput.EnsureParentDirectoryExists();
 
@@ -146,7 +165,11 @@ public sealed class VideoOptimiser : IOptimiser
             var finalOutput = outputPlan.Destination;
             finalOutput.EnsureParentDirectoryExists();
 
-            var requireSizeCheck = plan.RequireSizeReduction && !plan.ForceMp4;
+            // A container change (e.g. MKV -> MP4) is a legitimate reason to ship a file that is not smaller; a re-encode
+            // inside the same container must beat the original or the original stays.
+            var sourceExtension = plan.SourcePath.Extension?.TrimStart('.');
+            var containerChanged = !string.Equals(sourceExtension, plan.OutputExtension, StringComparison.OrdinalIgnoreCase);
+            var requireSizeCheck = plan.RequireSizeReduction && !containerChanged;
             if (requireSizeCheck && optimisedSize >= originalSize)
             {
                 context.ReportProgress(100, "Original already optimal");
@@ -178,6 +201,31 @@ public sealed class VideoOptimiser : IOptimiser
         {
             TryDelete(tempOutput);
         }
+    }
+
+    private VideoOptimiserPlan ApplyQualitySearch(VideoOptimiserPlan plan, VideoQualitySearchResult search)
+    {
+        var encoder = plan.Encoder with { Quality = search.Crf };
+        var arguments = BuildVideoCodecArguments(_options, encoder, plan.AggressiveQuality, plan.LookaheadFrames, plan.SourceProbe);
+        return plan with { Encoder = encoder, VideoCodecArguments = arguments };
+    }
+
+    /// <summary>True when the sampled encode would not be meaningfully smaller than the source's own video stream.</summary>
+    private bool ShouldSkipEfficientSource(VideoOptimiserPlan plan, VideoQualitySearchResult search)
+    {
+        if (!plan.RequireSizeReduction || plan.RequiresFilters || plan.PlaybackSpeedFactor.HasValue)
+        {
+            return false;
+        }
+
+        var sourceExtension = plan.SourcePath.Extension?.TrimStart('.');
+        if (!string.Equals(sourceExtension, plan.OutputExtension, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var sourceKbps = EstimateSourceBitrateKbps(plan.SourceProbe);
+        return sourceKbps is int source && source > 0 && search.PredictedBitrateKbps >= source * _options.QualitySearchSkipRatio;
     }
 
     private async Task<OptimisationResult> RunRemuxOptimisationAsync(OptimisationRequest request, VideoOptimiserPlan plan, OptimiserExecutionContext context, CancellationToken cancellationToken)
@@ -412,7 +460,7 @@ public sealed class VideoOptimiser : IOptimiser
 
         var animatedFormat = DetermineAnimatedFormat(mode, metadata, options);
         var hardware = options.HardwareOverride ?? VideoHardwareDetector.Detect(options.FfmpegPath, options.ProbeHardwareCapabilities);
-        var encoderSelection = SelectEncoder(options, hardware, aggressive, forceMp4, requestedExtension, codecOverride, encoderPreset);
+        var encoderSelection = SelectEncoder(options, hardware, aggressive, forceMp4, requestedExtension, codecOverride, encoderPreset, probeInfo);
         encoderSelection = ApplyHardwareBitrateTarget(options, encoderSelection, probeInfo);
 
         var outputExtension = mode == VideoOptimiserMode.Gif
@@ -420,14 +468,18 @@ public sealed class VideoOptimiser : IOptimiser
             : ResolveVideoExtension(encoderSelection, requestedExtension, forceMp4);
 
         var frameDecimation = BuildFrameDecimationPlan(options, ReadBool(metadata, "video.frameDecimation"), mode);
-        var filters = BuildFilters(maxWidth, maxHeight, playbackSpeed, options.EnforceEvenDimensions, capFps, targetFps, frameDecimation);
+        // Capping must never *raise* the frame rate: `fps=60` on a 30 fps clip duplicates every frame, doubling encode
+        // time and bitrate. Only cap when the probe proves the source is faster than the cap.
+        var sourceFps = probeInfo?.Video?.FrameRate;
+        var effectiveCapFps = capFps && sourceFps is double measured && measured > targetFps + 0.5;
+        var filters = BuildFilters(maxWidth, maxHeight, playbackSpeed, options.EnforceEvenDimensions, effectiveCapFps, targetFps, frameDecimation);
 
         var lookahead = DetermineLookahead(options, encoderSelection);
         var useTwoPass = ShouldUseTwoPass(options, encoderSelection, aggressive, probeInfo);
 
-        var audioPlan = BuildAudioPlan(metadata, options, removeAudio, outputExtension, encoderSelection);
+        var audioPlan = BuildAudioPlan(metadata, options, removeAudio, outputExtension, encoderSelection, probeInfo);
         var softwareFallback = encoderSelection.UseHardwareEncoder
-            ? CreateSoftwareSelection(options, encoderSelection.Codec, aggressive, forceMp4, requestedExtension)
+            ? CreateSoftwareSelection(options, encoderSelection.Codec, aggressive, forceMp4, requestedExtension, probeInfo)
             : null;
 
         var videoCodecArgs = BuildVideoCodecArguments(options, encoderSelection, aggressive, lookahead, probeInfo);
@@ -438,7 +490,7 @@ public sealed class VideoOptimiser : IOptimiser
             outputExtension,
             forceMp4,
             audioPlan.RemoveAudio,
-            capFps,
+            effectiveCapFps,
             targetFps,
             playbackSpeed,
             maxWidth,
@@ -744,12 +796,14 @@ public sealed class VideoOptimiser : IOptimiser
 
     private static bool ShouldUseTwoPass(VideoOptimiserOptions options, VideoEncoderSelection selection, bool aggressive, VideoProbeInfo? probeInfo)
     {
-        if (!options.EnableTwoPassEncoding)
+        if (!options.EnableTwoPassEncoding || selection.UseHardwareEncoder || !selection.SupportsTwoPass)
         {
             return false;
         }
 
-        if (selection.UseHardwareEncoder || !selection.SupportsTwoPass)
+        // x264/x265/SVT-AV1 in CRF mode gain nothing from a first pass (it just doubles the encode time); only
+        // libvpx-vp9 uses the pass-1 statistics to allocate bits better in constant-quality mode.
+        if (selection.Codec != VideoCodec.Vp9)
         {
             return false;
         }
@@ -773,7 +827,7 @@ public sealed class VideoOptimiser : IOptimiser
         return VideoOptimiserMode.Video;
     }
 
-    private static AudioPlan BuildAudioPlan(IReadOnlyDictionary<string, object?> metadata, VideoOptimiserOptions options, bool removeAudio, string outputExtension, VideoEncoderSelection encoder)
+    private static AudioPlan BuildAudioPlan(IReadOnlyDictionary<string, object?> metadata, VideoOptimiserOptions options, bool removeAudio, string outputExtension, VideoEncoderSelection encoder, VideoProbeInfo? probe)
     {
         if (removeAudio)
         {
@@ -793,18 +847,39 @@ public sealed class VideoOptimiser : IOptimiser
         var targetEncoder = DetermineAudioEncoder(outputExtension, codecOverride, options);
         var loudness = new LoudnessProfile(options.LoudnessTargetIntegrated, options.LoudnessTargetTruePeak, options.LoudnessTargetLra);
 
-        var reencodeRequested = normalize
-            || codecOverride is not null
-            || !outputExtension.Equals("mp4", StringComparison.OrdinalIgnoreCase)
-            || encoder.Codec == VideoCodec.Av1
-            || encoder.Codec == VideoCodec.Vp9;
-
-        if (!reencodeRequested)
+        // Copying is lossless and instant. Re-encoding AAC to AAC (the common phone/screen-recorder case) only adds
+        // generation loss and rarely saves anything, so streams that already fit the container are passed through.
+        var copyable = codecOverride is null && !normalize && CanCopyAudio(probe, outputExtension, options);
+        if (copyable)
         {
             return AudioPlan.Copy;
         }
 
-        return new AudioPlan(false, false, targetEncoder, bitrate, channels, normalize, loudness);
+        // Surround stays surround unless the source is huge; only mono/stereo-incompatible layouts are folded down.
+        var effectiveChannels = probe?.Audio?.Channels is int sourceChannels && sourceChannels <= channels ? (int?)null : channels;
+        return new AudioPlan(false, false, targetEncoder, bitrate, effectiveChannels, normalize, loudness);
+    }
+
+    private static bool CanCopyAudio(VideoProbeInfo? probe, string outputExtension, VideoOptimiserOptions options)
+    {
+        if (probe?.Audio is null)
+        {
+            // No probe: stay on the conservative side (MP4 + AAC is what we write by default).
+            return probe is null && outputExtension.Equals("mp4", StringComparison.OrdinalIgnoreCase);
+        }
+
+        var codec = probe.NormalizedAudioCodec;
+        var bitrateKbps = probe.Audio.Bitrate is long bits ? bits / 1000 : 0;
+        var channels = probe.Audio.Channels ?? 2;
+        var affordable = bitrateKbps <= options.AudioCopyMaxBitrateKbps && channels <= Math.Max(2, options.AudioDownmixChannels);
+
+        return outputExtension.ToLowerInvariant() switch
+        {
+            "mp4" or "m4v" or "mov" => affordable && codec is "aac" or "mp3" or "opus" or "ac3" or "eac3",
+            "webm" => affordable && codec is "opus" or "vorbis",
+            "mkv" => affordable,
+            _ => false
+        };
     }
 
     private static string DetermineAudioEncoder(string extension, string? overrideValue, VideoOptimiserOptions options)
@@ -897,19 +972,32 @@ public sealed class VideoOptimiser : IOptimiser
                 }
             }
 
-            args.Add("-preset");
-            args.Add(GetSoftwarePreset(options, selection.Codec, aggressive));
-
-            if (lookahead.HasValue && lookahead.Value > 0)
+            var speed = GetSoftwarePreset(options, selection.Codec, aggressive);
+            switch (selection.Codec)
             {
-                args.Add("-rc-lookahead");
-                args.Add(lookahead.Value.ToInvariantString());
+                case VideoCodec.Vp9:
+                    // libvpx has no -preset; "good" quality with cpu-used 1-2 is the sweet spot (cpu-used 0 is ~3x slower for ~1% gain).
+                    args.AddRange(new[] { "-deadline", "good", "-cpu-used", speed });
+                    break;
+                default:
+                    args.AddRange(new[] { "-preset", speed });
+                    break;
             }
 
-            if (options.EnableSceneCutAwareBitrate && selection.SceneCutAware)
+            // Look-ahead and scene-cut tuning are x264 concepts; x265 and SVT-AV1 manage both internally and ignore these flags.
+            if (selection.Codec == VideoCodec.H264)
             {
-                args.Add("-sc_threshold");
-                args.Add(options.SceneCutThreshold.ToInvariantString());
+                if (lookahead.HasValue && lookahead.Value > 0)
+                {
+                    args.Add("-rc-lookahead");
+                    args.Add(lookahead.Value.ToInvariantString());
+                }
+
+                if (options.EnableSceneCutAwareBitrate && selection.SceneCutAware)
+                {
+                    args.Add("-sc_threshold");
+                    args.Add(options.SceneCutThreshold.ToInvariantString());
+                }
             }
         }
 
@@ -1005,7 +1093,7 @@ public sealed class VideoOptimiser : IOptimiser
         _ => aggressive ? options.SoftwarePresetAggressive : options.SoftwarePresetGentle
     };
 
-    private static VideoEncoderSelection SelectEncoder(VideoOptimiserOptions options, VideoHardwareCapabilities hardware, bool aggressive, bool forceMp4, string requestedExtension, VideoCodec? overrideCodec, VideoEncoderPreset preset)
+    private static VideoEncoderSelection SelectEncoder(VideoOptimiserOptions options, VideoHardwareCapabilities hardware, bool aggressive, bool forceMp4, string requestedExtension, VideoCodec? overrideCodec, VideoEncoderPreset preset, VideoProbeInfo? probe)
     {
         var candidates = BuildCodecPriorityList(options, aggressive, requestedExtension, overrideCodec);
         foreach (var codec in candidates)
@@ -1016,14 +1104,14 @@ public sealed class VideoOptimiser : IOptimiser
                 return hardwareSelection;
             }
 
-            var softwareSelection = CreateSoftwareSelection(options, codec, aggressive, forceMp4, requestedExtension);
+            var softwareSelection = CreateSoftwareSelection(options, codec, aggressive, forceMp4, requestedExtension, probe);
             if (softwareSelection is not null)
             {
                 return softwareSelection;
             }
         }
 
-        return CreateSoftwareSelection(options, VideoCodec.H264, aggressive, forceMp4, requestedExtension)
+        return CreateSoftwareSelection(options, VideoCodec.H264, aggressive, forceMp4, requestedExtension, probe)
             ?? VideoEncoderSelection.Software(VideoCodec.H264, options.SoftwareEncoder, ResolveContainerForCodec(VideoCodec.H264, requestedExtension, forceMp4), "yuv420p", AdjustSoftwareCrf(options.SoftwareCrf, aggressive), Array.Empty<string>(), true, true, options.SoftwareLookaheadFrames, true);
     }
 
@@ -1381,17 +1469,39 @@ public sealed class VideoOptimiser : IOptimiser
         return IsCodecCompatibleWithExtension(codec, requestedExtension) ? requestedExtension : defaultContainer;
     }
 
-    private static VideoEncoderSelection? CreateSoftwareSelection(VideoOptimiserOptions options, VideoCodec codec, bool aggressive, bool forceMp4, string requestedExtension)
+    private static VideoEncoderSelection? CreateSoftwareSelection(VideoOptimiserOptions options, VideoCodec codec, bool aggressive, bool forceMp4, string requestedExtension, VideoProbeInfo? probe)
     {
         var container = ResolveContainerForCodec(codec, requestedExtension, forceMp4);
+        var wide = SourceUsesHighBitDepth(probe);
+        var appleFriendly = container.Equals("mp4", StringComparison.OrdinalIgnoreCase)
+            || container.Equals("mov", StringComparison.OrdinalIgnoreCase)
+            || container.Equals("m4v", StringComparison.OrdinalIgnoreCase);
+
         return codec switch
         {
-            VideoCodec.H264 => VideoEncoderSelection.Software(VideoCodec.H264, options.SoftwareEncoder, container, "yuv420p", AdjustSoftwareCrf(options.SoftwareCrf, aggressive), additionalArgs: Array.Empty<string>(), supportsTwoPass: true, suggestTwoPass: true, suggestedLookahead: options.SoftwareLookaheadFrames, sceneCutAware: true),
-            VideoCodec.Hevc => VideoEncoderSelection.Software(VideoCodec.Hevc, options.SoftwareEncoderHevc, container, "yuv420p10le", AdjustSoftwareCrf(options.SoftwareCrfHevc, aggressive, 3), additionalArgs: Array.Empty<string>(), supportsTwoPass: true, suggestTwoPass: true, suggestedLookahead: options.SoftwareLookaheadFrames, sceneCutAware: true),
-            VideoCodec.Av1 => VideoEncoderSelection.Software(VideoCodec.Av1, options.SoftwareEncoderAv1, container, "yuv420p10le", AdjustSoftwareCrf(options.SoftwareCrfAv1, aggressive, 6), additionalArgs: Array.Empty<string>(), supportsTwoPass: true, suggestTwoPass: aggressive, suggestedLookahead: options.SoftwareLookaheadFrames, sceneCutAware: true),
-            VideoCodec.Vp9 => VideoEncoderSelection.Software(VideoCodec.Vp9, options.SoftwareEncoderVp9, container, "yuv420p", AdjustSoftwareCrf(options.SoftwareCrfVp9, aggressive, 5), additionalArgs: new[] { "-b:v", "0", "-row-mt", "1" }, supportsTwoPass: true, suggestTwoPass: true, suggestedLookahead: options.SoftwareLookaheadFrames, sceneCutAware: false),
+            VideoCodec.H264 => VideoEncoderSelection.Software(VideoCodec.H264, options.SoftwareEncoder, container, wide ? "yuv420p10le" : "yuv420p", AdjustSoftwareCrf(options.SoftwareCrf, aggressive), additionalArgs: Array.Empty<string>(), supportsTwoPass: false, suggestTwoPass: false, suggestedLookahead: options.SoftwareLookaheadFrames, sceneCutAware: true),
+
+            // 8-bit HEVC from 8-bit sources keeps playback universal; the hvc1 tag is what QuickTime, iOS, macOS and the
+            // Windows shell need to recognise HEVC in MP4/MOV (ffmpeg's default hev1 tag is rejected by them).
+            VideoCodec.Hevc => VideoEncoderSelection.Software(VideoCodec.Hevc, options.SoftwareEncoderHevc, container, wide ? "yuv420p10le" : "yuv420p", AdjustSoftwareCrf(options.SoftwareCrfHevc, aggressive, 3), additionalArgs: appleFriendly ? new[] { "-tag:v", "hvc1" } : Array.Empty<string>(), supportsTwoPass: false, suggestTwoPass: false, suggestedLookahead: options.SoftwareLookaheadFrames, sceneCutAware: true),
+
+            // SVT-AV1 gains ~25% from 10-bit even for 8-bit sources (less banding, better prediction) and every AV1 decoder supports it.
+            VideoCodec.Av1 => VideoEncoderSelection.Software(VideoCodec.Av1, options.SoftwareEncoderAv1, container, "yuv420p10le", AdjustSoftwareCrf(options.SoftwareCrfAv1, aggressive, 6), additionalArgs: Array.Empty<string>(), supportsTwoPass: false, suggestTwoPass: false, suggestedLookahead: options.SoftwareLookaheadFrames, sceneCutAware: false),
+
+            // libvpx-vp9 needs -b:v 0 for constant quality, row-mt/tile columns for multi-core speed, and its own
+            // speed knobs (-deadline/-cpu-used); x264-style -preset is silently ignored by it. Two-pass is the one
+            // place two-pass pays off with CRF, so VP9 keeps it.
+            VideoCodec.Vp9 => VideoEncoderSelection.Software(VideoCodec.Vp9, options.SoftwareEncoderVp9, container, wide ? "yuv420p10le" : "yuv420p", AdjustSoftwareCrf(options.SoftwareCrfVp9, aggressive, 5), additionalArgs: new[] { "-b:v", "0", "-row-mt", "1", "-tile-columns", "2", "-auto-alt-ref", "1", "-lag-in-frames", "25" }, supportsTwoPass: true, suggestTwoPass: true, suggestedLookahead: 0, sceneCutAware: false),
             _ => null
         };
+    }
+
+    private static bool SourceUsesHighBitDepth(VideoProbeInfo? probe)
+    {
+        var pixelFormat = probe?.Video?.PixelFormat;
+        return probe?.Video?.IsHdr == true
+            || (!string.IsNullOrEmpty(pixelFormat)
+                && (pixelFormat.Contains("10", StringComparison.Ordinal) || pixelFormat.Contains("12", StringComparison.Ordinal) || pixelFormat.StartsWith("p01", StringComparison.Ordinal)));
     }
 
     private static int AdjustSoftwareCrf(int baseline, bool aggressive, int offset = 4)
@@ -1742,7 +1852,8 @@ internal sealed class ExternalVideoToolchain : IVideoToolchain
 
         args.AddRange(encoderScoped);
 
-        args.AddRange(new[] { "-map", "0:v" });
+        // First video stream only: attached cover art (a second "video" stream) must not be re-encoded as a movie track.
+        args.AddRange(new[] { "-map", "0:v:0" });
 
         if (includeAudio)
         {
@@ -1753,9 +1864,24 @@ internal sealed class ExternalVideoToolchain : IVideoToolchain
             args.Add("-an");
         }
 
-        args.AddRange(new[] { "-movflags", "+faststart", "-progress", "pipe:2", "-nostats", "-hide_banner", "-stats_period", "0.2", output.Value });
+        if (plan.StripMetadata)
+        {
+            args.AddRange(new[] { "-map_metadata", "-1", "-map_chapters", "-1" });
+        }
+
+        if (SupportsFastStart(plan.OutputExtension))
+        {
+            args.AddRange(new[] { "-movflags", "+faststart" });
+        }
+
+        args.AddRange(new[] { "-progress", "pipe:2", "-nostats", "-hide_banner", "-stats_period", "0.2", output.Value });
         return args;
     }
+
+    private static bool SupportsFastStart(string extension)
+        => extension.Equals("mp4", StringComparison.OrdinalIgnoreCase)
+            || extension.Equals("m4v", StringComparison.OrdinalIgnoreCase)
+            || extension.Equals("mov", StringComparison.OrdinalIgnoreCase);
 
     private static (List<string> InputScoped, List<string> EncoderScoped) PartitionCodecArguments(IReadOnlyList<string> arguments)
     {
@@ -1933,6 +2059,13 @@ internal sealed class ExternalVideoToolchain : IVideoToolchain
 
     private static async Task<ToolchainResult> RunProcessAsync(string executable, IReadOnlyList<string> arguments, OptimiserExecutionContext context, CancellationToken cancellationToken, Action<string>? progressCallback)
     {
+        var resolved = ToolLocator.ResolveOnPath(executable);
+        if (resolved is null)
+        {
+            return ToolchainResult.Failure($"Unable to locate '{executable}'. Run scripts/fetch-tools.ps1 or install it on PATH.");
+        }
+
+        executable = resolved;
         var startInfo = new ProcessStartInfo(executable)
         {
             UseShellExecute = false,

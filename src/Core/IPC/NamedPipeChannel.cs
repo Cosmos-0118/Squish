@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.IO.Pipes;
 using System.Threading;
 using System.Threading.Tasks;
@@ -7,6 +8,8 @@ namespace ClopWindows.Core.IPC;
 
 public sealed class NamedPipeChannel : IAsyncDisposable, IDisposable
 {
+    private const int MaxMessageBytes = 8 * 1024 * 1024;
+
     private readonly string _pipeName;
     private CancellationTokenSource? _cts;
     private Task? _listenerTask;
@@ -26,7 +29,7 @@ public sealed class NamedPipeChannel : IAsyncDisposable, IDisposable
     {
         while (!token.IsCancellationRequested)
         {
-            await using var server = new NamedPipeServerStream(_pipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+            await using var server = new NamedPipeServerStream(_pipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
             try
             {
                 await server.WaitForConnectionAsync(token).ConfigureAwait(false);
@@ -50,7 +53,7 @@ public sealed class NamedPipeChannel : IAsyncDisposable, IDisposable
 
     public async Task<byte[]?> SendAndWaitAsync(byte[]? payload, TimeSpan? connectTimeout = null, TimeSpan? responseTimeout = null, CancellationToken cancellationToken = default)
     {
-        using var client = new NamedPipeClientStream(".", _pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+        using var client = new NamedPipeClientStream(".", _pipeName, PipeDirection.InOut, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
         var timeout = connectTimeout ?? TimeSpan.FromSeconds(5);
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutCts.CancelAfter(timeout);
@@ -84,6 +87,13 @@ public sealed class NamedPipeChannel : IAsyncDisposable, IDisposable
         {
             return Array.Empty<byte>();
         }
+
+        if (length > MaxMessageBytes)
+        {
+            // An attacker-controlled length prefix must never translate into a multi-gigabyte allocation.
+            throw new InvalidDataException($"IPC message of {length} bytes exceeds the {MaxMessageBytes} byte limit.");
+        }
+
         var payload = new byte[length];
         await ReadExactAsync(stream, payload, token).ConfigureAwait(false);
         return payload;
@@ -92,10 +102,10 @@ public sealed class NamedPipeChannel : IAsyncDisposable, IDisposable
     private static async Task WriteMessageAsync(PipeStream stream, byte[] payload, CancellationToken token)
     {
         var lengthBuffer = BitConverter.GetBytes(payload.Length);
-        await stream.WriteAsync(lengthBuffer, 0, lengthBuffer.Length, token).ConfigureAwait(false);
+        await stream.WriteAsync(lengthBuffer.AsMemory(), token).ConfigureAwait(false);
         if (payload.Length > 0)
         {
-            await stream.WriteAsync(payload, 0, payload.Length, token).ConfigureAwait(false);
+            await stream.WriteAsync(payload.AsMemory(), token).ConfigureAwait(false);
         }
         await stream.FlushAsync(token).ConfigureAwait(false);
     }
@@ -105,7 +115,7 @@ public sealed class NamedPipeChannel : IAsyncDisposable, IDisposable
         var offset = 0;
         while (offset < buffer.Length)
         {
-            var read = await stream.ReadAsync(buffer, offset, buffer.Length - offset, token).ConfigureAwait(false);
+            var read = await stream.ReadAsync(buffer.AsMemory(offset), token).ConfigureAwait(false);
             if (read == 0)
             {
                 throw new InvalidOperationException("Pipe closed before message could be read.");

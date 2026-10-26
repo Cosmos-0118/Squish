@@ -63,7 +63,7 @@ internal static class AutomationClient
             return AutomationClientResult.NoOp("No supported files were selected.");
         }
 
-        using var client = new NamedPipeClientStream(".", PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+        using var client = new NamedPipeClientStream(".", PipeName, PipeDirection.InOut, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
         try
         {
             client.Connect(ConnectTimeoutMs);

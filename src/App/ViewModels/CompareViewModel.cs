@@ -301,7 +301,7 @@ public sealed class CompareViewModel : ObservableObject, IDisposable
             var escaped = outputPath.Replace("\"", "\"\"");
             var startInfo = new ProcessStartInfo
             {
-                FileName = "explorer.exe",
+                FileName = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe"),
                 Arguments = $"/select,\"{escaped}\"",
                 UseShellExecute = true
             };
