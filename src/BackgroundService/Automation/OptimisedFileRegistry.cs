@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Threading;
 using Squish.Core.Shared;
 
 namespace Squish.BackgroundService.Automation;
@@ -10,16 +11,27 @@ namespace Squish.BackgroundService.Automation;
 /// </summary>
 public sealed class OptimisedFileRegistry
 {
+    private static readonly TimeSpan CleanupThrottle = TimeSpan.FromSeconds(5);
+    private const int ForceCleanupThreshold = 4096;
+
     private readonly ConcurrentDictionary<string, DateTimeOffset> _paths = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, DateTimeOffset> _fingerprints = new(StringComparer.Ordinal);
+    // Lengths of registered fingerprints. Hashing a file is a full read, so callers can rule out a match from the
+    // length alone before paying for it.
+    private readonly ConcurrentDictionary<long, DateTimeOffset> _fingerprintLengths = new();
     private readonly TimeSpan _window;
+    private readonly TimeProvider _time;
+    private long _lastCleanupTicks;
 
-    public OptimisedFileRegistry(TimeSpan? window = null)
+    public OptimisedFileRegistry(TimeSpan? window = null, TimeProvider? timeProvider = null)
     {
         _window = window ?? TimeSpan.FromMinutes(2);
+        _time = timeProvider ?? TimeProvider.System;
     }
 
     public bool HasFingerprintCandidates => !_fingerprints.IsEmpty;
+
+    public int TrackedPathCount => _paths.Count;
 
     public void RegisterPath(FilePath path)
     {
@@ -28,7 +40,11 @@ public sealed class OptimisedFileRegistry
             return;
         }
 
-        _paths[path.Value] = DateTimeOffset.UtcNow;
+        _paths[path.Value] = _time.GetUtcNow();
+        if (_paths.Count > ForceCleanupThreshold)
+        {
+            Cleanup(force: true);
+        }
     }
 
     public void RegisterFingerprint(FileFingerprint fingerprint)
@@ -44,7 +60,9 @@ public sealed class OptimisedFileRegistry
             return;
         }
 
-        _fingerprints[key] = DateTimeOffset.UtcNow;
+        var now = _time.GetUtcNow();
+        _fingerprints[key] = now;
+        _fingerprintLengths[fingerprint.Length] = now;
     }
 
     public bool TryRegisterFingerprint(FilePath path)
@@ -68,40 +86,66 @@ public sealed class OptimisedFileRegistry
         return !fingerprint.IsEmpty && CheckRecent(_fingerprints, fingerprint.Key);
     }
 
-    public void Cleanup()
+    /// <summary>
+    /// True when a recent fingerprint with exactly this length exists, i.e. hashing the file could possibly match.
+    /// </summary>
+    public bool MayMatchFingerprintLength(long length)
     {
-        CleanupStore(_paths);
-        CleanupStore(_fingerprints);
+        return !_fingerprintLengths.IsEmpty && CheckRecent(_fingerprintLengths, length);
     }
 
-    private bool CheckRecent(ConcurrentDictionary<string, DateTimeOffset> store, string key)
+    public void Cleanup() => Cleanup(force: false);
+
+    private void Cleanup(bool force)
+    {
+        var nowTicks = _time.GetUtcNow().UtcTicks;
+        var last = Interlocked.Read(ref _lastCleanupTicks);
+        if (!force && nowTicks - last < CleanupThrottle.Ticks)
+        {
+            return;
+        }
+
+        if (Interlocked.CompareExchange(ref _lastCleanupTicks, nowTicks, last) != last)
+        {
+            return;
+        }
+
+        CleanupStore(_paths);
+        CleanupStore(_fingerprints);
+        CleanupStore(_fingerprintLengths);
+    }
+
+    private bool CheckRecent<TKey>(ConcurrentDictionary<TKey, DateTimeOffset> store, TKey key)
+        where TKey : notnull
     {
         if (store.TryGetValue(key, out var timestamp))
         {
-            if (DateTimeOffset.UtcNow - timestamp <= _window)
+            if (_time.GetUtcNow() - timestamp <= _window)
             {
                 return true;
             }
 
-            store.TryRemove(key, out _);
+            store.TryRemove(new System.Collections.Generic.KeyValuePair<TKey, DateTimeOffset>(key, timestamp));
         }
 
         return false;
     }
 
-    private void CleanupStore(ConcurrentDictionary<string, DateTimeOffset> store)
+    private void CleanupStore<TKey>(ConcurrentDictionary<TKey, DateTimeOffset> store)
+        where TKey : notnull
     {
         if (store.IsEmpty)
         {
             return;
         }
 
-        var cutoff = DateTimeOffset.UtcNow - _window;
+        var cutoff = _time.GetUtcNow() - _window;
         foreach (var entry in store)
         {
             if (entry.Value < cutoff)
             {
-                store.TryRemove(entry.Key, out _);
+                // Compare-and-remove: do not discard an entry that was just refreshed by another thread.
+                store.TryRemove(entry);
             }
         }
     }

@@ -15,7 +15,8 @@ internal sealed record ClipboardItem(
     ItemType ItemType,
     ClipboardOrigin Origin,
     bool IsTemporary,
-    bool ShouldCopyToClipboard)
+    bool ShouldCopyToClipboard,
+    uint OriginSequence)
 {
     public bool IsImage => ItemType == ItemType.Image;
 

@@ -15,6 +15,7 @@ public sealed class WorkdirCleanupService : IAsyncDisposable
     private readonly ILogger<WorkdirCleanupService> _logger;
 
     private readonly object _settingsGate = new();
+    private readonly SemaphoreSlim _intervalChanged = new(0, 1);
     private CleanupInterval _interval;
 
     public WorkdirCleanupService(ILogger<WorkdirCleanupService> logger)
@@ -30,23 +31,40 @@ public sealed class WorkdirCleanupService : IAsyncDisposable
         while (!cancellationToken.IsCancellationRequested)
         {
             var interval = GetInterval();
+            TimeSpan wait;
 
             if (interval == CleanupInterval.Never)
             {
-                await Task.Delay(TimeSpan.FromMinutes(5), cancellationToken).ConfigureAwait(false);
-                continue;
+                wait = TimeSpan.FromMinutes(5);
+            }
+            else
+            {
+                try
+                {
+                    // Directory walking is blocking I/O: keep it off the caller's thread.
+                    await Task.Run(() => CleanupStaleWorkdirArtifacts(interval), cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Workdir cleanup cycle failed.");
+                }
+
+                wait = TimeSpan.FromSeconds((int)interval);
             }
 
             try
             {
-                CleanupStaleWorkdirArtifacts(interval);
+                // Wakes early when the interval setting changes, so switching from "monthly" to "hourly" takes effect now.
+                await _intervalChanged.WaitAsync(wait, cancellationToken).ConfigureAwait(false);
             }
-            catch (Exception ex)
+            catch (OperationCanceledException)
             {
-                _logger.LogWarning(ex, "Workdir cleanup cycle failed.");
+                return;
             }
-
-            await Task.Delay(TimeSpan.FromSeconds((int)interval), cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -66,6 +84,15 @@ public sealed class WorkdirCleanupService : IAsyncDisposable
         lock (_settingsGate)
         {
             _interval = SettingsHost.Get(SettingsRegistry.WorkdirCleanupInterval);
+        }
+
+        try
+        {
+            _intervalChanged.Release();
+        }
+        catch (SemaphoreFullException)
+        {
+            // a wake-up is already pending
         }
     }
 
