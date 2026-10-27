@@ -378,28 +378,33 @@ foreach ($tool in $tools) {
             }
         }
         else {
-            $downloadPath = Join-Path -Path $tempDir -ChildPath (Split-Path -Path $downloadUrls[0] -Leaf)
-            $selectedSourceUrl = Invoke-FileDownload -Urls $downloadUrls -OutFile $downloadPath
-
-            $computedSha = Get-Checksum -Path $downloadPath
-            Write-Host "    SHA256: $computedSha"
-
             $expectedSha = $null
             if (-not $SkipChecksum) {
-                try {
-                    $expectedSha = Resolve-ExpectedChecksum($tool)
-                }
-                catch {
-                    throw $_
-                }
+                $expectedSha = Resolve-ExpectedChecksum($tool)
             }
 
-            if (-not $SkipChecksum -and $expectedSha) {
-                if ($computedSha -ne $expectedSha) {
+            # A pinned mirror listed after an unversioned upstream link only helps if a changed upstream file falls
+            # through to it, so a checksum mismatch moves on to the next URL instead of failing straight away.
+            $downloadPath = Join-Path -Path $tempDir -ChildPath (Split-Path -Path $downloadUrls[0] -Leaf)
+            $remainingUrls = $downloadUrls
+            while ($true) {
+                $selectedSourceUrl = Invoke-FileDownload -Urls $remainingUrls -OutFile $downloadPath
+                $computedSha = Get-Checksum -Path $downloadPath
+                Write-Host "    SHA256: $computedSha"
+                if (-not $expectedSha -or $computedSha -eq $expectedSha) {
+                    break
+                }
+
+                $remainingUrls = @($remainingUrls | Select-Object -Skip ([array]::IndexOf($remainingUrls, $selectedSourceUrl) + 1))
+                if ($remainingUrls.Count -eq 0) {
                     throw "Checksum mismatch for $($tool.name). Expected $expectedSha"
                 }
+
+                Write-Warning "    Checksum mismatch from $selectedSourceUrl. Trying the next URL."
+                Remove-Item -LiteralPath $downloadPath -Force
             }
-            elseif (-not $SkipChecksum -and -not $expectedSha) {
+
+            if (-not $SkipChecksum -and -not $expectedSha) {
                 # Fail closed: an unverified binary must never be staged silently.
                 if (-not $WriteMissingChecksums) {
                     throw "Manifest entry '$($tool.name)' has no SHA256 (computed: $computedSha). Refusing to install an unverified binary. Verify the download out-of-band, then pin the hash or re-run with -WriteMissingChecksums."
