@@ -11,6 +11,7 @@ namespace Squish.App.ViewModels;
 public sealed class MainWindowViewModel : ObservableObject, IDisposable
 {
     private const double CompactLayoutBreakpoint = 860;
+    private const double WideLayoutBreakpoint = 1400;
 
     private readonly OnboardingViewModel _onboardingViewModel;
     private readonly CompareViewModel _compareViewModel;
@@ -22,6 +23,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
     private ObservableObject? _currentView;
     private bool _isSidebarCollapsed;
     private bool _isCompactLayout;
+    private bool _isWideLayout;
 
     public MainWindowViewModel(
         OnboardingViewModel onboardingViewModel,
@@ -111,12 +113,20 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>True when the window is wide enough for the pages to use a wider content column.</summary>
+    public bool IsWideLayout
+    {
+        get => _isWideLayout;
+        private set => SetProperty(ref _isWideLayout, value);
+    }
+
     /// <summary>True when the sidebar shows icons only, either by choice or because the window is narrow.</summary>
     public bool IsSidebarRail => IsSidebarCollapsed || IsCompactLayout;
 
     public void UpdateLayoutWidth(double windowWidth)
     {
         IsCompactLayout = windowWidth < CompactLayoutBreakpoint;
+        IsWideLayout = windowWidth >= WideLayoutBreakpoint;
     }
 
     public NavigationItemViewModel? SelectedItem

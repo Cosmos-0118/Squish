@@ -29,6 +29,7 @@
     <sys:Double x:Key="Layout.SidebarWidth">232</sys:Double>
     <sys:Double x:Key="Layout.SidebarRailWidth">60</sys:Double>
     <sys:Double x:Key="Layout.ContentMaxWidth">760</sys:Double>
+    <sys:Double x:Key="Layout.ContentMaxWidthWide">920</sys:Double>
     <sys:Double x:Key="Layout.ControlHeight">32</sys:Double>
     <Thickness x:Key="Spacing.CardPadding">20</Thickness>
     <Thickness x:Key="Spacing.Panel">0,16,0,0</Thickness>
@@ -40,5 +41,6 @@
     <CornerRadius x:Key="Radius.Control">6</CornerRadius>
     <CornerRadius x:Key="Radius.Card">10</CornerRadius>
     <CornerRadius x:Key="Radius.Hud">16</CornerRadius>
-    <CornerRadius x:Key="Radius.Pill">999</CornerRadius>
+    <!-- Half the height of an 11-12px badge. WPF draws elliptical corners when a radius exceeds half the element's height, so never use 999 here. -->
+    <CornerRadius x:Key="Radius.Pill">9</CornerRadius>
 </ResourceDictionary>

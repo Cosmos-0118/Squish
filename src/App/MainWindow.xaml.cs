@@ -20,6 +20,7 @@ public partial class MainWindow : Window
     public MainWindow(MainWindowViewModel viewModel, KeyboardShortcutService shortcutService)
     {
         InitializeComponent();
+        FitToWorkArea();
         ApplyWindowIcon();
         DataContext = viewModel;
         _viewModel = viewModel;
@@ -39,6 +40,20 @@ public partial class MainWindow : Window
     }
 
     private void OnThemeApplied(object? sender, EventArgs e) => ApplyTitleBarTheme();
+
+    /// <summary>
+    /// Opens at a share of the screen instead of a fixed size: roomy on large monitors, never larger than a small
+    /// laptop screen, and centred on the primary work area.
+    /// </summary>
+    private void FitToWorkArea()
+    {
+        var workArea = SystemParameters.WorkArea;
+        Width = Math.Min(workArea.Width, Math.Clamp(Math.Round(workArea.Width * 0.72), MinWidth, 1440));
+        Height = Math.Min(workArea.Height, Math.Clamp(Math.Round(workArea.Height * 0.8), MinHeight, 960));
+        WindowStartupLocation = WindowStartupLocation.Manual;
+        Left = workArea.Left + (workArea.Width - Width) / 2;
+        Top = workArea.Top + (workArea.Height - Height) / 2;
+    }
 
     /// <summary>Uses the dark Windows title bar whenever the active theme has a dark window background.</summary>
     private void ApplyTitleBarTheme()

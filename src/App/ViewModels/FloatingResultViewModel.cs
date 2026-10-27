@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Windows.Input;
-using System.Windows.Media;
 using Squish.App.Infrastructure;
 using Squish.Core.Optimizers;
 using Squish.Core.Shared;
@@ -14,9 +13,17 @@ public sealed class FloatingResultViewModel : ObservableObject
 {
     private readonly Action<FloatingResultViewModel> _dismiss;
     private readonly Action<string>? _cancelRequest;
-    private static readonly SolidColorBrush SuccessBrush = CreateBrush(122, 145, 255);
-    private static readonly SolidColorBrush FailureBrush = CreateBrush(240, 120, 120);
-    private static readonly SolidColorBrush RunningBrush = CreateBrush(120, 180, 255);
+    private static readonly HashSet<string> VideoExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".mp4", ".m4v", ".mov", ".mkv", ".webm", ".avi", ".wmv", ".mpg", ".mpeg", ".3gp", ".ts"
+    };
+
+    // Segoe Fluent Icons glyphs for the HUD's file tile.
+    private const string PhotoGlyph = "";
+    private const string VideoGlyph = "";
+    private const string InfoGlyph = "";
+    private const string SuccessGlyph = "";
+    private const string WarningGlyph = "";
 
     private string _displayName = string.Empty;
     private string? _subtitle;
@@ -26,7 +33,8 @@ public sealed class FloatingResultViewModel : ObservableObject
     private bool _isSuccess;
     private bool _isFailure;
     private TimeSpan? _duration;
-    private System.Windows.Media.Brush _statusBrush;
+    private string _kindGlyph = PhotoGlyph;
+    private string? _savingsText;
 
     private readonly RelayCommand _cancelCommand;
 
@@ -38,7 +46,6 @@ public sealed class FloatingResultViewModel : ObservableObject
         RequestId = requestId;
         _dismiss = dismiss;
         _cancelRequest = cancelRequest;
-        _statusBrush = RunningBrush;
         _cancelCommand = new RelayCommand(_ => _cancelRequest?.Invoke(RequestId), _ => _cancelRequest is not null && IsRunning);
         DismissCommand = new RelayCommand(_ => _dismiss(this));
     }
@@ -114,11 +121,27 @@ public sealed class FloatingResultViewModel : ObservableObject
         private set => SetProperty(ref _duration, value);
     }
 
-    public System.Windows.Media.Brush StatusBrush
+    /// <summary>Icon shown in the HUD tile: photo or video for files, a status glyph for notifications.</summary>
+    public string KindGlyph
     {
-        get => _statusBrush;
-        private set => SetProperty(ref _statusBrush, value);
+        get => _kindGlyph;
+        private set => SetProperty(ref _kindGlyph, value);
     }
+
+    /// <summary>Relative saving such as "-54%", or null when nothing was saved.</summary>
+    public string? SavingsText
+    {
+        get => _savingsText;
+        private set
+        {
+            if (SetProperty(ref _savingsText, value))
+            {
+                OnPropertyChanged(nameof(HasSavings));
+            }
+        }
+    }
+
+    public bool HasSavings => !string.IsNullOrEmpty(_savingsText);
 
     public void ApplyRequest(OptimisationRequest request)
     {
@@ -128,8 +151,9 @@ public sealed class FloatingResultViewModel : ObservableObject
         _originalBytes = TryGetLength(request.SourcePath);
         DisplayName = request.SourcePath.Name;
         Subtitle = BuildSubtitle(request);
+        KindGlyph = VideoExtensions.Contains(Path.GetExtension(request.SourcePath.Value)) ? VideoGlyph : PhotoGlyph;
+        SavingsText = null;
         StatusText = "Queued";
-        StatusBrush = RunningBrush;
         Progress = 0d;
         IsRunning = true;
         IsSuccess = false;
@@ -149,7 +173,6 @@ public sealed class FloatingResultViewModel : ObservableObject
         }
 
         IsRunning = true;
-        StatusBrush = RunningBrush;
     }
 
     public void ApplyResult(OptimisationResult result, OptimisationRequest? request)
@@ -158,7 +181,6 @@ public sealed class FloatingResultViewModel : ObservableObject
         IsSuccess = result.Status == OptimisationStatus.Succeeded;
         IsFailure = !IsSuccess && result.Status != OptimisationStatus.Cancelled;
         Progress = 100d;
-        StatusBrush = IsSuccess ? SuccessBrush : FailureBrush;
         Duration = result.Duration;
         _outputPath = result.OutputPath ?? request?.SourcePath;
 
@@ -171,7 +193,9 @@ public sealed class FloatingResultViewModel : ObservableObject
             _ => result.Message ?? "Finished"
         };
 
-        var summary = IsSuccess ? BuildSizeSummary(_outputPath, _originalBytes) : null;
+        string? savings = null;
+        var summary = IsSuccess ? BuildSizeSummary(_outputPath, _originalBytes, out savings) : null;
+        SavingsText = savings;
 
         if (!string.IsNullOrWhiteSpace(summary))
         {
@@ -202,21 +226,23 @@ public sealed class FloatingResultViewModel : ObservableObject
         DisplayName = title;
         Subtitle = subtitle;
         StatusText = message;
+        KindGlyph = style switch
+        {
+            FloatingHudNotificationStyle.Success => SuccessGlyph,
+            FloatingHudNotificationStyle.Warning => WarningGlyph,
+            _ => InfoGlyph
+        };
+        SavingsText = null;
         Progress = 0d;
         Duration = null;
         IsRunning = false;
         IsSuccess = style == FloatingHudNotificationStyle.Success;
         IsFailure = style == FloatingHudNotificationStyle.Warning;
-        StatusBrush = style switch
-        {
-            FloatingHudNotificationStyle.Success => SuccessBrush,
-            FloatingHudNotificationStyle.Warning => FailureBrush,
-            _ => RunningBrush
-        };
     }
 
-    private static string? BuildSizeSummary(FilePath? outputPath, long? originalBytes)
+    private static string? BuildSizeSummary(FilePath? outputPath, long? originalBytes, out string? savings)
     {
+        savings = null;
         if (originalBytes is null || outputPath is null)
         {
             return null;
@@ -226,6 +252,15 @@ public sealed class FloatingResultViewModel : ObservableObject
         if (optimisedBytes is null)
         {
             return null;
+        }
+
+        if (originalBytes.Value > 0)
+        {
+            var saved = 1d - (double)optimisedBytes.Value / originalBytes.Value;
+            if (saved >= 0.01)
+            {
+                savings = string.Format(CultureInfo.CurrentCulture, "−{0:0}%", saved * 100d);
+            }
         }
 
         var original = originalBytes.Value.HumanSize();
@@ -296,12 +331,6 @@ public sealed class FloatingResultViewModel : ObservableObject
         return true;
     }
 
-    private static SolidColorBrush CreateBrush(byte r, byte g, byte b)
-    {
-        var brush = new SolidColorBrush(System.Windows.Media.Color.FromRgb(r, g, b));
-        brush.Freeze();
-        return brush;
-    }
 }
 
 public enum FloatingHudNotificationStyle

@@ -343,32 +343,32 @@
 
                     <TextBlock Text="{loc:Loc settings.optimisation.videoPreset.title}" Style="{StaticResource GroupTitle}" />
                     <TextBlock Text="{Binding VideoPresetSubtitle}" Style="{StaticResource GroupDescription}" />
-                    <ListBox Style="{StaticResource OptionCardList}"
-                             ItemsSource="{Binding VideoEncoderPresetOptions}"
-                             SelectedItem="{Binding SelectedVideoEncoderPreset}">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate>
-                                <StackPanel>
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Text="{Binding Title}" Style="{StaticResource Text.Title}" VerticalAlignment="Center" />
-                                        <Border x:Name="RecommendedBadge" Grid.Column="1" Style="{StaticResource Badge.Accent}" Margin="8,0,0,0" Visibility="Collapsed">
-                                            <TextBlock Text="{loc:Loc settings.optimisation.videoPreset.recommended}" />
-                                        </Border>
-                                    </Grid>
-                                    <TextBlock Text="{Binding Description}" Style="{StaticResource Text.Body}" Margin="0,6,0,0" />
-                                </StackPanel>
-                                <DataTemplate.Triggers>
-                                    <DataTrigger Binding="{Binding Preset}" Value="{x:Static core:VideoEncoderPreset.Auto}">
-                                        <Setter TargetName="RecommendedBadge" Property="Visibility" Value="Visible" />
-                                    </DataTrigger>
-                                </DataTemplate.Triggers>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
+                    <Border Style="{StaticResource Card}">
+                        <Grid ClipToBounds="True">
+                            <ListBox Style="{StaticResource RadioRowList}"
+                                     ItemsSource="{Binding VideoEncoderPresetOptions}"
+                                     SelectedItem="{Binding SelectedVideoEncoderPreset}">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding Title}" Style="{StaticResource Text.Title}" VerticalAlignment="Center" />
+                                                <Border x:Name="RecommendedBadge" Style="{StaticResource Badge.Accent}" Margin="8,0,0,0" Visibility="Collapsed">
+                                                    <TextBlock Text="{loc:Loc settings.optimisation.videoPreset.recommended}" />
+                                                </Border>
+                                            </StackPanel>
+                                            <TextBlock Text="{Binding Description}" Margin="0,3,0,0" FontSize="12.5" TextWrapping="Wrap" Foreground="{DynamicResource Brush.SecondaryText}" />
+                                        </StackPanel>
+                                        <DataTemplate.Triggers>
+                                            <DataTrigger Binding="{Binding Preset}" Value="{x:Static core:VideoEncoderPreset.Auto}">
+                                                <Setter TargetName="RecommendedBadge" Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </DataTemplate.Triggers>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Grid>
+                    </Border>
                 </StackPanel>
 
                 <!-- Output -->

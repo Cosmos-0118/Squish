@@ -16,14 +16,22 @@ namespace Squish.App.Views.FloatingHud;
 public partial class FloatingHudWindow : Window
 {
     private const double MarginFromScreen = 24d;
+    private const int WM_SIZING = 0x0214;
+    private const int WM_EXITSIZEMOVE = 0x0232;
+
     private System.Windows.Point? _dragStartPoint;
     private FrameworkElement? _dragSource;
     private bool _isDraggingCard;
+    private bool _isUserResizing;
+    private bool _hasRoundedCorners;
 
     public FloatingHudWindow()
     {
         InitializeComponent();
-        SourceInitialized += (_, _) => ApplyDarkModeHint();
+        SourceInitialized += OnSourceInitialized;
+        SizeChanged += OnSizeChanged;
+        Closed += (_, _) => Squish.App.Services.ThemeManager.ThemeApplied -= OnThemeApplied;
+        Squish.App.Services.ThemeManager.ThemeApplied += OnThemeApplied;
     }
 
     public void MoveToPlacement(FloatingHudPlacement placement)
@@ -348,24 +356,114 @@ public partial class FloatingHudWindow : Window
         Hide();
     }
 
-    private void ApplyDarkModeHint()
+    private void OnSourceInitialized(object? sender, EventArgs e)
     {
         if (PresentationSource.FromVisual(this) is not HwndSource source)
         {
             return;
         }
 
-        var hwnd = source.Handle;
-        var attrValue = new[] { 1 };
-        _ = NativeMethods.DwmSetWindowAttribute(hwnd, NativeMethods.DWMWA_USE_IMMERSIVE_DARK_MODE, attrValue, sizeof(int));
+        source.AddHook(WndProc);
+
+        // Windows 11 rounds the corners and draws a 1px frame itself; older systems keep the WPF border.
+        var preference = NativeMethods.DWMWCP_ROUND;
+        _hasRoundedCorners = NativeMethods.DwmSetWindowAttribute(source.Handle, NativeMethods.DWMWA_WINDOW_CORNER_PREFERENCE, ref preference, sizeof(int)) == 0;
+        if (_hasRoundedCorners)
+        {
+            RootBorder.BorderThickness = new Thickness(0);
+        }
+
+        ApplyFrameColours();
+    }
+
+    private void OnThemeApplied(object? sender, EventArgs e) => Dispatcher.InvokeAsync(ApplyFrameColours);
+
+    private void ApplyFrameColours()
+    {
+        if (PresentationSource.FromVisual(this) is not HwndSource source)
+        {
+            return;
+        }
+
+        var isDark = TryFindResource("Brush.HudBackground") is SolidColorBrush background
+            && (0.2126 * background.Color.R + 0.7152 * background.Color.G + 0.0722 * background.Color.B) < 128;
+        var darkMode = isDark ? 1 : 0;
+        _ = NativeMethods.DwmSetWindowAttribute(source.Handle, NativeMethods.DWMWA_USE_IMMERSIVE_DARK_MODE, ref darkMode, sizeof(int));
+
+        if (_hasRoundedCorners && TryFindResource("Brush.HudCardBorder") is SolidColorBrush border)
+        {
+            var colorRef = border.Color.R | (border.Color.G << 8) | (border.Color.B << 16);
+            _ = NativeMethods.DwmSetWindowAttribute(source.Handle, NativeMethods.DWMWA_BORDER_COLOR, ref colorRef, sizeof(int));
+        }
+    }
+
+    private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        switch (msg)
+        {
+            case WM_SIZING:
+                _isUserResizing = true;
+                break;
+            case WM_EXITSIZEMOVE when _isUserResizing:
+                _isUserResizing = false;
+                OnUserResized();
+                break;
+        }
+
+        return IntPtr.Zero;
+    }
+
+    /// <summary>
+    /// Dragging an edge switches WPF to manual sizing. Keep the new width, treat the new height as the HUD's
+    /// maximum height, and go back to sizing the height to the list.
+    /// </summary>
+    private void OnUserResized()
+    {
+        if (DataContext is FloatingHudViewModel viewModel)
+        {
+            viewModel.WindowWidth = ActualWidth;
+            viewModel.WindowHeight = ActualHeight;
+        }
+
+        SizeToContent = SizeToContent.Height;
+    }
+
+    /// <summary>
+    /// The window grows downwards as rows arrive. Keep the edge it is pinned to in place so a HUD at the bottom of
+    /// the screen grows upwards instead of running off it.
+    /// </summary>
+    private void OnSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (!e.HeightChanged || _isUserResizing || e.PreviousSize.Height <= 0)
+        {
+            return;
+        }
+
+        var delta = e.NewSize.Height - e.PreviousSize.Height;
+        var placement = SettingsHost.Get(SettingsRegistry.FloatingHudPlacement);
+        var shift = placement switch
+        {
+            FloatingHudPlacement.BottomLeft or FloatingHudPlacement.BottomCenter or FloatingHudPlacement.BottomRight => delta,
+            FloatingHudPlacement.MiddleLeft or FloatingHudPlacement.MiddleRight => delta / 2,
+            _ => 0d
+        };
+
+        if (shift != 0)
+        {
+            var workArea = SystemParameters.WorkArea;
+            Top = Math.Clamp(Top - shift, workArea.Top, Math.Max(workArea.Top, workArea.Bottom - e.NewSize.Height));
+        }
     }
 
     private static class NativeMethods
     {
         public const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
+        public const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
+        public const int DWMWA_BORDER_COLOR = 34;
+        public const int DWMWCP_ROUND = 2;
 
         [System.Runtime.InteropServices.DefaultDllImportSearchPaths(System.Runtime.InteropServices.DllImportSearchPath.System32)]
         [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
-        public static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, int[] attrValue, int attrSize);
+        public static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
     }
 }
