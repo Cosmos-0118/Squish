@@ -25,7 +25,7 @@ public sealed class CompareViewModel : ObservableObject, IDisposable
     private readonly FloatingHudController _hudController;
     private readonly ILogger<CompareViewModel> _logger;
     private readonly Dispatcher _dispatcher;
-    private readonly ConcurrentDictionary<string, OptimisationRequest> _trackedRequests = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, TrackedRequest> _trackedRequests = new(StringComparer.Ordinal);
     private readonly ObservableCollection<RecentOptimisationViewModel> _recentItems = new();
     private readonly ReadOnlyObservableCollection<RecentOptimisationViewModel> _readonlyRecentItems;
     private readonly RelayCommand _cancelActiveRequestsCommand;
@@ -132,7 +132,8 @@ public sealed class CompareViewModel : ObservableObject, IDisposable
                 AggressiveOptimisationHelper.Apply(itemType.Value, filePath, metadata);
 
                 var request = new OptimisationRequest(itemType.Value, filePath, metadata: metadata);
-                _trackedRequests[request.RequestId] = request;
+                // Optimisation rewrites the file in place, so the "before" size has to be captured now.
+                _trackedRequests[request.RequestId] = new TrackedRequest(request, TryGetLength(filePath));
                 NotifyActiveRequestsChanged();
 
                 _hudController.TrackRequest(request);
@@ -162,16 +163,18 @@ public sealed class CompareViewModel : ObservableObject, IDisposable
 
     private void OnRequestCompleted(object? sender, OptimisationCompletedEventArgs e)
     {
-        if (!_trackedRequests.TryRemove(e.Result.RequestId, out var request))
+        if (!_trackedRequests.TryRemove(e.Result.RequestId, out var tracked))
         {
             return;
         }
 
+        var request = tracked.Request;
         var outputPath = e.Result.OutputPath ?? request.SourcePath;
-        var summary = BuildSummary(request, outputPath, e.Result);
+        var summary = BuildSummary(request, tracked.OriginalBytes, outputPath, e.Result);
         if (string.IsNullOrWhiteSpace(summary.SizeSummary))
         {
-            var fallback = e.Result.Status == OptimisationStatus.Succeeded
+            // "No size change" is only true when we know the original size and it matches; otherwise stay neutral.
+            var fallback = e.Result.Status == OptimisationStatus.Succeeded && tracked.OriginalBytes is not null
                 ? SquishStringCatalog.Get("compare.recent.noChange")
                 : SquishStringCatalog.Get("compare.recent.completed");
             summary = summary with { SizeSummary = fallback };
@@ -216,9 +219,8 @@ public sealed class CompareViewModel : ObservableObject, IDisposable
         return string.Join(';', patterns);
     }
 
-    private static RecentOptimisationViewModel BuildSummary(OptimisationRequest request, FilePath outputPath, OptimisationResult result)
+    private static RecentOptimisationViewModel BuildSummary(OptimisationRequest request, long? originalBytes, FilePath outputPath, OptimisationResult result)
     {
-        var originalBytes = TryGetLength(request.SourcePath);
         var optimisedBytes = TryGetLength(outputPath);
         var sizeSummary = originalBytes is not null && optimisedBytes is not null
             ? BuildSizeSummary(originalBytes.Value, optimisedBytes.Value)
@@ -248,10 +250,13 @@ public sealed class CompareViewModel : ObservableObject, IDisposable
         var original = originalBytes.HumanSize();
         var final = optimisedBytes.HumanSize();
         var changeAmount = magnitude.HumanSize();
-        var percentage = originalBytes == 0 ? 0 : (double)delta / originalBytes * 100d;
+        // Signed change in file size: negative when the file got smaller.
+        var percentage = originalBytes == 0 ? 0 : (double)(optimisedBytes - originalBytes) / originalBytes * 100d;
         var direction = delta >= 0 ? "Saved" : "Added";
-        return string.Format(CultureInfo.CurrentCulture, "{0} {1} ({2} → {3}, {4:+0.##;-0.##;0}%)", direction, changeAmount, original, final, percentage);
+        return string.Format(CultureInfo.CurrentCulture, "{0} {1} ({2} → {3}, {4:+0.#;-0.#;0}%)", direction, changeAmount, original, final, percentage);
     }
+
+    private readonly record struct TrackedRequest(OptimisationRequest Request, long? OriginalBytes);
 
     private static long? TryGetLength(FilePath path)
     {
