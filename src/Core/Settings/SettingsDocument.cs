@@ -70,6 +70,44 @@ internal sealed class SettingsDocument
     public void Save(string path)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        File.WriteAllText(path, Root.ToJsonString(SettingsSerialization.Default));
+
+        // Write to a sibling temp file and swap it in: readers (the CLI, a second process, our own file watcher)
+        // never observe a truncated config.json, and a crash mid-write cannot corrupt the user's settings.
+        var json = Root.ToJsonString(SettingsSerialization.Default);
+        var temp = path + "." + Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture) + ".tmp";
+        try
+        {
+            File.WriteAllText(temp, json);
+            if (File.Exists(path))
+            {
+                File.Replace(temp, path, destinationBackupFileName: null, ignoreMetadataErrors: true);
+            }
+            else
+            {
+                File.Move(temp, path);
+            }
+        }
+        catch (IOException)
+        {
+            TryDelete(temp);
+            File.WriteAllText(path, json);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            TryDelete(temp);
+            File.WriteAllText(path, json);
+        }
+    }
+
+    private static void TryDelete(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch
+        {
+            // best effort
+        }
     }
 }

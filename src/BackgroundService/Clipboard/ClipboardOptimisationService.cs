@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.Specialized;
+using System.Threading.Channels;
 using System.IO;
 using System.Linq;
 using System.Runtime.Versioning;
@@ -25,8 +26,13 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
     private readonly ILogger<ClipboardOptimisationService> _logger;
     private readonly ConcurrentDictionary<string, ClipboardItem> _pending = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, byte> _inFlightPaths = new(StringComparer.Ordinal);
+    // origin snapshot sequence -> sequence produced by our latest write for it (several files from one copy)
+    private readonly ConcurrentDictionary<uint, uint> _ownWrites = new();
     private readonly object _stateGate = new();
     private readonly object _settingsGate = new();
+    // Snapshots are handled one at a time, in the order the user copied them. If processing ever falls behind, the
+    // oldest are dropped: only the most recent clipboard contents are interesting.
+    private volatile Channel<ClipboardSnapshot>? _snapshots;
 
     private bool _monitorRunning;
     private volatile bool _enableClipboard;
@@ -38,7 +44,6 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
     private volatile bool _optimiseClipboardFileDrops;
     private volatile bool _optimiseImagePathClipboard;
     private string _customTemplate = string.Empty;
-    private int _suppressNextNotification;
 
     public ClipboardOptimisationService(
         OptimisationCoordinator coordinator,
@@ -54,14 +59,22 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
         RefreshSettings(updateMonitor: false);
 
         _monitor.ClipboardChanged += HandleClipboardChanged;
-        _coordinator.RequestCompleted += OnCoordinatorRequestCompleted;
-        _coordinator.RequestFailed += OnCoordinatorRequestFailed;
         SettingsHost.SettingChanged += OnSettingChanged;
     }
 
     public async Task RunAsync(CancellationToken cancellationToken)
     {
+        var channel = Channel.CreateBounded<ClipboardSnapshot>(new BoundedChannelOptions(16)
+        {
+            SingleReader = true,
+            SingleWriter = true,
+            FullMode = BoundedChannelFullMode.DropOldest,
+            AllowSynchronousContinuations = false
+        });
+        _snapshots = channel;
+
         UpdateMonitorState();
+        var consumer = Task.Run(() => ConsumeSnapshotsAsync(channel.Reader, cancellationToken), CancellationToken.None);
 
         try
         {
@@ -71,13 +84,27 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
         {
             // Expected on shutdown.
         }
-
-        lock (_stateGate)
+        finally
         {
-            if (_monitorRunning)
+            _snapshots = null;
+            channel.Writer.TryComplete();
+
+            lock (_stateGate)
             {
-                _monitor.Stop();
-                _monitorRunning = false;
+                if (_monitorRunning)
+                {
+                    _monitor.Stop();
+                    _monitorRunning = false;
+                }
+            }
+
+            try
+            {
+                await consumer.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // shutting down
             }
         }
     }
@@ -86,8 +113,6 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
     {
         SettingsHost.SettingChanged -= OnSettingChanged;
         _monitor.ClipboardChanged -= HandleClipboardChanged;
-        _coordinator.RequestCompleted -= OnCoordinatorRequestCompleted;
-        _coordinator.RequestFailed -= OnCoordinatorRequestFailed;
 
         lock (_stateGate)
         {
@@ -103,29 +128,23 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
 
     private void HandleClipboardChanged(object? sender, ClipboardSnapshot snapshot)
     {
-        _ = Task.Run(() => ProcessSnapshotSafe(snapshot));
+        // Runs on the monitor's message-loop thread: hand off immediately.
+        _snapshots?.Writer.TryWrite(snapshot);
     }
 
-    private void ProcessSnapshotSafe(ClipboardSnapshot snapshot)
+    private async Task ConsumeSnapshotsAsync(ChannelReader<ClipboardSnapshot> reader, CancellationToken token)
     {
-        try
+        await foreach (var snapshot in reader.ReadAllAsync(token).ConfigureAwait(false))
         {
-            ProcessSnapshot(snapshot);
+            try
+            {
+                ProcessSnapshot(snapshot);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error processing clipboard snapshot.");
+            }
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error processing clipboard snapshot.");
-        }
-    }
-
-    private void OnCoordinatorRequestCompleted(object? sender, OptimisationCompletedEventArgs e)
-    {
-        _ = HandleCompletionAsync(e.Result);
-    }
-
-    private void OnCoordinatorRequestFailed(object? sender, OptimisationCompletedEventArgs e)
-    {
-        _ = HandleCompletionAsync(e.Result);
     }
 
     private async Task HandleCompletionAsync(OptimisationResult result)
@@ -153,15 +172,19 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
                     finalPath = RenameOptimisedClipboardImage(output);
                 }
 
-                if (_autoCopy)
+                if (_autoCopy && !CanWriteBack(item))
+                {
+                    _logger.LogDebug("Clipboard changed while {Path} was being optimised; leaving the newer clipboard contents alone.", sourcePath.Value);
+                }
+                else if (_autoCopy)
                 {
                     if (item.IsImage)
                     {
-                        await CopyImageToClipboardAsync(finalPath).ConfigureAwait(false);
+                        await CopyImageToClipboardAsync(finalPath, item).ConfigureAwait(false);
                     }
                     else if (item.IsVideo)
                     {
-                        await CopyFileToClipboardAsync(finalPath).ConfigureAwait(false);
+                        await CopyFileToClipboardAsync(finalPath, item).ConfigureAwait(false);
                     }
                 }
 
@@ -195,6 +218,22 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Optimising can take seconds. If the user copied something else meanwhile, writing our result back would
+    /// silently replace what they just copied.
+    /// </summary>
+    private bool CanWriteBack(ClipboardItem item)
+    {
+        if (item.OriginSequence == 0)
+        {
+            return true;
+        }
+
+        var current = _monitor.CurrentSequence;
+        return current == item.OriginSequence ||
+               (_ownWrites.TryGetValue(item.OriginSequence, out var ownSequence) && current == ownSequence);
+    }
+
     private void ProcessSnapshot(ClipboardSnapshot snapshot)
     {
         if (!_enableClipboard)
@@ -205,12 +244,6 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
         if (_paused)
         {
             _logger.LogTrace("Clipboard watcher paused; ignoring clipboard change.");
-            return;
-        }
-
-        if (Interlocked.Exchange(ref _suppressNextNotification, 0) == 1)
-        {
-            _logger.LogTrace("Clipboard snapshot suppressed by internal flag.");
             return;
         }
 
@@ -271,24 +304,25 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
 
                 if (MediaFormats.IsImage(filePath))
                 {
-                    results.Add(new ClipboardItem(filePath, ItemType.Image, ClipboardOrigin.FileDrop, false, true));
+                    results.Add(new ClipboardItem(filePath, ItemType.Image, ClipboardOrigin.FileDrop, false, true, snapshot.Sequence));
                 }
                 else if (MediaFormats.IsVideo(filePath))
                 {
                     if (_optimiseVideoClipboard)
                     {
-                        results.Add(new ClipboardItem(filePath, ItemType.Video, ClipboardOrigin.FileDrop, false, false));
+                        results.Add(new ClipboardItem(filePath, ItemType.Video, ClipboardOrigin.FileDrop, false, false, snapshot.Sequence));
                     }
                 }
             }
         }
 
-        if (snapshot.ImageBytes is { Length: > 0 } bytes)
+        // Apps that copy an image file also publish a preview bitmap of it; optimising both would do the work twice.
+        if (results.Count == 0 && snapshot.ImageBytes is { Length: > 0 } bytes)
         {
             var tempPath = PersistClipboardImage(bytes);
             if (tempPath is not null)
             {
-                results.Add(new ClipboardItem(tempPath.Value, ItemType.Image, ClipboardOrigin.Bitmap, true, true));
+                results.Add(new ClipboardItem(tempPath.Value, ItemType.Image, ClipboardOrigin.Bitmap, true, true, snapshot.Sequence));
             }
         }
 
@@ -314,13 +348,13 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
 
                 if (MediaFormats.IsImage(filePath))
                 {
-                    results.Add(new ClipboardItem(filePath, ItemType.Image, ClipboardOrigin.TextPath, false, true));
+                    results.Add(new ClipboardItem(filePath, ItemType.Image, ClipboardOrigin.TextPath, false, true, snapshot.Sequence));
                     continue;
                 }
 
                 if (_optimiseVideoClipboard && MediaFormats.IsVideo(filePath))
                 {
-                    results.Add(new ClipboardItem(filePath, ItemType.Video, ClipboardOrigin.TextPath, false, false));
+                    results.Add(new ClipboardItem(filePath, ItemType.Video, ClipboardOrigin.TextPath, false, false, snapshot.Sequence));
                 }
             }
         }
@@ -392,10 +426,36 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
         AggressiveOptimisationHelper.Apply(item.ItemType, item.SourcePath, metadata);
 
         var request = new OptimisationRequest(item.ItemType, item.SourcePath, metadata: metadata);
-        _pending[request.RequestId] = item;
-        var ticket = _coordinator.Enqueue(request);
+        var requestId = request.RequestId;
+        _pending[requestId] = item;
 
-        ticket.Completion.ContinueWith(_ => { }, TaskScheduler.Default);
+        OptimisationTicket ticket;
+        try
+        {
+            ticket = _coordinator.Enqueue(request);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to queue clipboard optimisation for {Path}.", item.SourcePath.Value);
+            _ = HandleCompletionAsync(OptimisationResult.Failure(requestId, ex.Message));
+            return;
+        }
+
+        // The ticket is the single source of truth: it completes for success, failure, cancellation and the
+        // "could not queue" path alike, so the in-flight bookkeeping cannot leak. HandleCompletionAsync is idempotent.
+        _ = ticket.Completion.ContinueWith(
+            static (task, state) =>
+            {
+                var (service, id) = ((ClipboardOptimisationService, string))state!;
+                var result = task.Status == TaskStatus.RanToCompletion
+                    ? task.Result
+                    : task.IsCanceled ? OptimisationResult.Cancelled(id) : OptimisationResult.Failure(id, task.Exception?.GetBaseException().Message);
+                return service.HandleCompletionAsync(result);
+            },
+            (this, requestId),
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
     }
 
     private FilePath RenameOptimisedClipboardImage(FilePath currentPath)
@@ -452,43 +512,40 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
         return currentPath;
     }
 
-    private async Task CopyImageToClipboardAsync(FilePath path)
+    private async Task CopyImageToClipboardAsync(FilePath path, ClipboardItem item)
     {
-        Interlocked.Exchange(ref _suppressNextNotification, 1);
+        System.Drawing.Bitmap? bitmap = null;
+        MemoryStream? bitmapStream = null;
 
         try
         {
-            // Preload image bytes outside STA thread to keep operations fast.
-            byte[] imageBytes = await File.ReadAllBytesAsync(path.Value).ConfigureAwait(false);
+            // Read the bytes before touching the STA thread so the clipboard thread only does clipboard work.
+            var imageBytes = await File.ReadAllBytesAsync(path.Value).ConfigureAwait(false);
+            var copyPath = _copyImageFilePath;
 
-            await _monitor.RunOnStaAsync(async () =>
-            {
-                const int maxAttempts = 3;
-                for (var attempt = 1; attempt <= maxAttempts; attempt++)
+            var sequence = await _monitor.WriteAsync(
+                () =>
                 {
-                    try
+                    bitmapStream = new MemoryStream(imageBytes, writable: false);
+                    bitmap = new System.Drawing.Bitmap(bitmapStream);
+                    var data = new System.Windows.Forms.DataObject();
+                    data.SetData(DataFormats.Bitmap, true, bitmap);
+                    if (copyPath)
                     {
-                        using var bitmapStream = new MemoryStream(imageBytes, writable: false);
-                        using var bitmap = new System.Drawing.Bitmap(bitmapStream);
-                        var data = new System.Windows.Forms.DataObject();
-                        data.SetData(DataFormats.Bitmap, true, bitmap);
-                        if (_copyImageFilePath)
-                        {
-                            var files = new StringCollection { path.Value };
-                            data.SetFileDropList(files);
-                            data.SetData(DataFormats.Text, path.Value);
-                        }
-                        data.SetData(ClipboardFormats.OptimisationStatus, "true");
+                        data.SetFileDropList(new StringCollection { path.Value });
+                        data.SetData(DataFormats.Text, path.Value);
+                    }
 
-                        WinFormsClipboard.SetDataObject(data, true);
-                        return;
-                    }
-                    catch (System.Runtime.InteropServices.ExternalException) when (attempt < maxAttempts)
-                    {
-                        await Task.Delay(50).ConfigureAwait(true);
-                    }
-                }
-            }).ConfigureAwait(false);
+                    data.SetData(ClipboardFormats.OptimisationStatus, "true");
+                    return data;
+                },
+                afterWrite: () =>
+                {
+                    bitmap?.Dispose();
+                    bitmapStream?.Dispose();
+                }).ConfigureAwait(false);
+
+            RememberOwnWrite(item, sequence);
         }
         catch (Exception ex)
         {
@@ -496,40 +553,40 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
         }
     }
 
-    private async Task CopyFileToClipboardAsync(FilePath path)
+    private async Task CopyFileToClipboardAsync(FilePath path, ClipboardItem item)
     {
-        Interlocked.Exchange(ref _suppressNextNotification, 1);
-
         try
         {
-            var populated = new StringCollection { path.Value };
-
-            await _monitor.RunOnStaAsync(async () =>
+            var sequence = await _monitor.WriteAsync(() =>
             {
-                const int maxAttempts = 3;
-                for (var attempt = 1; attempt <= maxAttempts; attempt++)
-                {
-                    try
-                    {
-                        var data = new System.Windows.Forms.DataObject();
-                        data.SetFileDropList(populated);
-                        data.SetData(DataFormats.Text, path.Value);
-                        data.SetData(ClipboardFormats.OptimisationStatus, "true");
-
-                        WinFormsClipboard.SetDataObject(data, true);
-                        return;
-                    }
-                    catch (System.Runtime.InteropServices.ExternalException) when (attempt < maxAttempts)
-                    {
-                        await Task.Delay(50).ConfigureAwait(true);
-                    }
-                }
+                var data = new System.Windows.Forms.DataObject();
+                data.SetFileDropList(new StringCollection { path.Value });
+                data.SetData(DataFormats.Text, path.Value);
+                data.SetData(ClipboardFormats.OptimisationStatus, "true");
+                return data;
             }).ConfigureAwait(false);
+
+            RememberOwnWrite(item, sequence);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to copy optimised clipboard file {Path} to clipboard", path.Value);
         }
+    }
+
+    private void RememberOwnWrite(ClipboardItem item, uint sequence)
+    {
+        if (item.OriginSequence == 0)
+        {
+            return;
+        }
+
+        if (_ownWrites.Count > 64)
+        {
+            _ownWrites.Clear();
+        }
+
+        _ownWrites[item.OriginSequence] = sequence;
     }
 
     private static FilePath EnsureUniquePath(FilePath desired)
@@ -626,6 +683,12 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
             _optimiseVideoClipboard = SettingsHost.Get(SettingsRegistry.OptimiseVideoClipboard);
             _optimiseClipboardFileDrops = SettingsHost.Get(SettingsRegistry.OptimiseClipboardFileDrops);
             _optimiseImagePathClipboard = SettingsHost.Get(SettingsRegistry.OptimiseImagePathClipboard);
+
+            // Only read what we will use: decoding a large text blob is wasted work otherwise.
+            _monitor.CaptureOptions = new ClipboardCaptureOptions(
+                Files: _optimiseClipboardFileDrops,
+                Image: true,
+                Text: _optimiseImagePathClipboard);
         }
 
         if (updateMonitor)

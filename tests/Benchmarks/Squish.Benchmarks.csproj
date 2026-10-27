@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Side-by-side benchmark of the current clipboard / folder watchers against the previous implementations
+       (kept verbatim in Legacy/). Run with: dotnet run -c Release (project tests/Benchmarks) -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <IsPackable>false</IsPackable>
+    <NoWarn>$(NoWarn);CA5392;CA1416;CA5394;CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\BackgroundService\Squish.BackgroundService.csproj" />
+  </ItemGroup>
+
+</Project>

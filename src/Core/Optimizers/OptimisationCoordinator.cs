@@ -131,7 +131,7 @@ public sealed class OptimisationCoordinator : IAsyncDisposable
             _status[request.RequestId] = OptimisationStatus.Cancelled;
             ClearRequestState(request.RequestId);
             workItem.Completion.TrySetCanceled(workItem.Token);
-            RequestFailed?.Invoke(this, new OptimisationCompletedEventArgs(cancelled));
+            Raise(RequestFailed, cancelled);
             return;
         }
 
@@ -141,7 +141,7 @@ public sealed class OptimisationCoordinator : IAsyncDisposable
             _status[request.RequestId] = OptimisationStatus.Unsupported;
             ClearRequestState(request.RequestId);
             workItem.Completion.TrySetResult(unsupported);
-            RequestFailed?.Invoke(this, new OptimisationCompletedEventArgs(unsupported));
+            Raise(RequestFailed, unsupported);
             return;
         }
 
@@ -157,8 +157,8 @@ public sealed class OptimisationCoordinator : IAsyncDisposable
             result = result with { Duration = duration };
             _status[request.RequestId] = result.Status;
             ClearRequestState(request.RequestId);
-            workItem.Completion.TrySetResult(result);
 
+            // Mark before completing the ticket so anyone awaiting it (watchers, clipboard) already sees the marker.
             if (result.Status == OptimisationStatus.Succeeded)
             {
                 var target = result.OutputPath ?? request.SourcePath;
@@ -166,12 +166,17 @@ public sealed class OptimisationCoordinator : IAsyncDisposable
                 {
                     SquishOptimisationMarker.TryMark(target);
                 }
+            }
 
-                RequestCompleted?.Invoke(this, new OptimisationCompletedEventArgs(result));
+            workItem.Completion.TrySetResult(result);
+
+            if (result.Status == OptimisationStatus.Succeeded)
+            {
+                Raise(RequestCompleted, result);
             }
             else
             {
-                RequestFailed?.Invoke(this, new OptimisationCompletedEventArgs(result));
+                Raise(RequestFailed, result);
             }
         }
         catch (OperationCanceledException)
@@ -180,7 +185,7 @@ public sealed class OptimisationCoordinator : IAsyncDisposable
             _status[request.RequestId] = OptimisationStatus.Cancelled;
             ClearRequestState(request.RequestId);
             workItem.Completion.TrySetCanceled(workItem.Token);
-            RequestFailed?.Invoke(this, new OptimisationCompletedEventArgs(cancelled));
+            Raise(RequestFailed, cancelled);
         }
         catch (Exception ex)
         {
@@ -188,7 +193,7 @@ public sealed class OptimisationCoordinator : IAsyncDisposable
             _status[request.RequestId] = OptimisationStatus.Failed;
             ClearRequestState(request.RequestId);
             workItem.Completion.TrySetResult(failed);
-            RequestFailed?.Invoke(this, new OptimisationCompletedEventArgs(failed));
+            Raise(RequestFailed, failed);
         }
         finally
         {
@@ -198,7 +203,41 @@ public sealed class OptimisationCoordinator : IAsyncDisposable
 
     private void ReportProgress(OptimisationProgress progress)
     {
-        ProgressChanged?.Invoke(this, new OptimisationProgressEventArgs(progress));
+        var handler = ProgressChanged;
+        if (handler is null)
+        {
+            return;
+        }
+
+        try
+        {
+            handler(this, new OptimisationProgressEventArgs(progress));
+        }
+        catch (Exception ex)
+        {
+            Log.Warning($"Optimisation progress subscriber threw: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Subscribers run on the worker that finished the job. A throwing subscriber must never be able to
+    /// flip an already-completed result into a failure or take a worker down with it.
+    /// </summary>
+    private void Raise(EventHandler<OptimisationCompletedEventArgs>? handler, OptimisationResult result)
+    {
+        if (handler is null)
+        {
+            return;
+        }
+
+        try
+        {
+            handler(this, new OptimisationCompletedEventArgs(result));
+        }
+        catch (Exception ex)
+        {
+            Log.Warning($"Optimisation completion subscriber threw for {result.RequestId}: {ex.Message}");
+        }
     }
 
     public async Task StopAsync()
@@ -236,7 +275,7 @@ public sealed class OptimisationCoordinator : IAsyncDisposable
         _status[requestId] = OptimisationStatus.Cancelled;
         workItem.Cancel();
         workItem.Completion.TrySetCanceled(workItem.Token);
-        RequestFailed?.Invoke(this, new OptimisationCompletedEventArgs(cancelled));
+        Raise(RequestFailed, cancelled);
         ClearRequestState(requestId);
     }
 

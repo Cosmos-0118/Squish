@@ -21,6 +21,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CliBridge.Tests", "..\tests
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "CliBridge", "CliBridge", "{40F2E1DD-E78F-EB98-EDDF-69BEB50BFF4B}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BackgroundService.Tests", "..\tests\BackgroundService.Tests\BackgroundService.Tests.csproj", "{9A50B9D3-26A5-46E3-AEA8-0A3BF3F0BA77}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "BackgroundService", "BackgroundService", "{C15067DA-440E-65EB-6CA3-F55E681F5BCA}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -127,6 +131,18 @@ Global
 		{6698F43C-C0F5-452C-8A53-5044CEA05A97}.Release|x64.Build.0 = Release|Any CPU
 		{6698F43C-C0F5-452C-8A53-5044CEA05A97}.Release|x86.ActiveCfg = Release|Any CPU
 		{6698F43C-C0F5-452C-8A53-5044CEA05A97}.Release|x86.Build.0 = Release|Any CPU
+		{9A50B9D3-26A5-46E3-AEA8-0A3BF3F0BA77}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9A50B9D3-26A5-46E3-AEA8-0A3BF3F0BA77}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9A50B9D3-26A5-46E3-AEA8-0A3BF3F0BA77}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{9A50B9D3-26A5-46E3-AEA8-0A3BF3F0BA77}.Debug|x64.Build.0 = Debug|Any CPU
+		{9A50B9D3-26A5-46E3-AEA8-0A3BF3F0BA77}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{9A50B9D3-26A5-46E3-AEA8-0A3BF3F0BA77}.Debug|x86.Build.0 = Debug|Any CPU
+		{9A50B9D3-26A5-46E3-AEA8-0A3BF3F0BA77}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9A50B9D3-26A5-46E3-AEA8-0A3BF3F0BA77}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9A50B9D3-26A5-46E3-AEA8-0A3BF3F0BA77}.Release|x64.ActiveCfg = Release|Any CPU
+		{9A50B9D3-26A5-46E3-AEA8-0A3BF3F0BA77}.Release|x64.Build.0 = Release|Any CPU
+		{9A50B9D3-26A5-46E3-AEA8-0A3BF3F0BA77}.Release|x86.ActiveCfg = Release|Any CPU
+		{9A50B9D3-26A5-46E3-AEA8-0A3BF3F0BA77}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

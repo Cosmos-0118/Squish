@@ -15,7 +15,9 @@ public sealed class SettingsStore : IDisposable
     private readonly FileSystemWatcher? _configWatcher;
     private readonly Timer? _reloadTimer;
     private bool _disposed;
+    private int _reloadRetries;
     private static readonly TimeSpan ReloadDebounce = TimeSpan.FromMilliseconds(250);
+    private const int MaxReloadRetries = 20;
 
     public SettingsStore(string? configDirectory = null)
     {
@@ -117,6 +119,7 @@ public sealed class SettingsStore : IDisposable
             watcher.Created += OnConfigFileChanged;
             watcher.Renamed += OnConfigFileRenamed;
             watcher.Deleted += OnConfigFileDeleted;
+            watcher.Error += OnConfigWatcherError;
             return watcher;
         }
         catch (Exception ex)
@@ -155,6 +158,27 @@ public sealed class SettingsStore : IDisposable
         }
     }
 
+    private void OnConfigWatcherError(object sender, ErrorEventArgs e)
+    {
+        // Buffer overflow or the settings directory vanishing: events may have been lost, so reconcile with the file
+        // and re-arm the watcher instead of silently going deaf to external edits.
+        Log.Warning($"Settings watcher error: {e.GetException().Message}");
+        if (sender is FileSystemWatcher watcher && !_disposed)
+        {
+            try
+            {
+                watcher.EnableRaisingEvents = false;
+                watcher.EnableRaisingEvents = true;
+            }
+            catch (Exception ex)
+            {
+                Log.Warning($"Failed to re-arm settings watcher: {ex.Message}");
+            }
+        }
+
+        ScheduleReload();
+    }
+
     private void OnConfigFileChanged(object sender, FileSystemEventArgs e) => ScheduleReload();
 
     private void OnConfigFileRenamed(object sender, RenamedEventArgs e) => ScheduleReload();
@@ -180,14 +204,18 @@ public sealed class SettingsStore : IDisposable
                 _document = document;
             }
         }
-        catch (IOException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            ScheduleReload();
-            return;
-        }
-        catch (UnauthorizedAccessException)
-        {
-            ScheduleReload();
+            // The writer may still hold the file; retry a bounded number of times instead of spinning forever.
+            if (Interlocked.Increment(ref _reloadRetries) <= MaxReloadRetries)
+            {
+                ScheduleReload();
+            }
+            else
+            {
+                Log.Warning($"Giving up reloading settings after repeated failures: {ex.Message}");
+            }
+
             return;
         }
         catch (Exception ex)
@@ -195,6 +223,8 @@ public sealed class SettingsStore : IDisposable
             Log.Warning($"Failed to reload settings: {ex.Message}");
             return;
         }
+
+        Interlocked.Exchange(ref _reloadRetries, 0);
 
         if (changes is null || changes.Count == 0)
         {
@@ -271,6 +301,7 @@ public sealed class SettingsStore : IDisposable
             _configWatcher.Created -= OnConfigFileChanged;
             _configWatcher.Renamed -= OnConfigFileRenamed;
             _configWatcher.Deleted -= OnConfigFileDeleted;
+            _configWatcher.Error -= OnConfigWatcherError;
             _configWatcher.Dispose();
         }
         _reloadTimer?.Dispose();
