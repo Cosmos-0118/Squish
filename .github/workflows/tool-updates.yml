@@ -1,0 +1,92 @@
+name: tool-updates
+
+# Weekly check for new encoder releases (ffmpeg, mozjpeg, jpegli, oxipng, libwebp, libavif, pngquant, gifsicle).
+# Versions stay pinned in tools/tools-manifest.json: this only proposes updates. When something is newer it pins the
+# new download's SHA256, runs the tests against the new encoders and opens a pull request for review.
+#
+# Repository setup:
+# - Settings > Actions > General > "Allow GitHub Actions to create and approve pull requests" must be on.
+# - Pull requests opened with the default GITHUB_TOKEN do not start the ci workflow. Add a fine-grained token with
+#   contents and pull-requests write access as the TOOL_UPDATES_TOKEN secret to have CI run on them too; the
+#   tests below run either way and their result is in the pull request description.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: tool-updates
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check for new releases
+        id: check
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: ./scripts/check-tool-updates.ps1 -Apply -SummaryPath "$env:RUNNER_TEMP/tool-updates.md"
+
+      - name: Report
+        if: always()
+        shell: pwsh
+        run: |
+          $summary = Join-Path $env:RUNNER_TEMP 'tool-updates.md'
+          if (Test-Path $summary) { Get-Content $summary | Add-Content $env:GITHUB_STEP_SUMMARY }
+
+      - name: Set up .NET SDK (global.json)
+        if: steps.check.outputs.updated == 'true'
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Stage the updated tools
+        if: steps.check.outputs.updated == 'true'
+        shell: pwsh
+        run: ./scripts/fetch-tools.ps1
+
+      - name: Build and test against the new encoders
+        id: tests
+        if: steps.check.outputs.updated == 'true'
+        continue-on-error: true
+        env:
+          SQUISH_TOOLS_DIR: ${{ github.workspace }}\tools
+        shell: pwsh
+        run: |
+          dotnet build src/Squish.sln --configuration Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet test src/Squish.sln --configuration Release --no-build
+
+      - name: Add the test result to the description
+        if: steps.check.outputs.updated == 'true'
+        shell: pwsh
+        run: |
+          $result = if ('${{ steps.tests.outcome }}' -eq 'success') {
+            'Build and tests passed against the new encoders.'
+          } else {
+            '**Build or tests failed against the new encoders.** See the workflow run before merging.'
+          }
+          $run = "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          "`n$result ([workflow run]($run))" | Add-Content (Join-Path $env:RUNNER_TEMP 'tool-updates.md')
+
+      - name: Open pull request
+        if: steps.check.outputs.updated == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.TOOL_UPDATES_TOKEN || github.token }}
+          branch: chore/tool-updates
+          delete-branch: true
+          add-paths: tools/tools-manifest.json
+          commit-message: Update pinned encoder tools
+          title: Update pinned encoder tools
+          body-path: ${{ runner.temp }}/tool-updates.md
