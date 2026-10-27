@@ -264,6 +264,8 @@ Bug reports, ideas and pull requests are welcome. If you spot behaviour that dif
 
 Squish is a hobby project and the installer is **unsigned**. Some antivirus engines flag it heuristically because it bundles encoder binaries and watches the clipboard. There is no malicious intent, and the full source is in this repository.
 
+<!-- This block is rewritten by the release workflow (scripts/update-release-integrity.ps1). Do not edit it by hand. -->
+<!-- release-integrity:start -->
 - **Latest public build checksum:**
   - Installer: `Clop-Setup_1.1.0.exe` (released before the rename to Squish)
   - SHA256: `7a82332765fbbbc1e438e36f3cbc20f90b4995926c464f90bc0e1a89b39deb5f`
@@ -272,6 +274,7 @@ Squish is a hobby project and the installer is **unsigned**. Some antivirus engi
   ```powershell
   CertUtil -hashfile Clop-Setup_1.1.0.exe SHA256
   ```
+<!-- release-integrity:end -->
 
 - You are also welcome to upload the installer to VirusTotal yourself.
 

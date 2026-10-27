@@ -111,6 +111,39 @@ jobs:
             'installer/SquishInstaller.iss'
           Copy-Item installer/Output/*.exe artifacts -Force
 
+      - name: Write checksums and release notes
+        shell: pwsh
+        run: |
+          $files = @(Get-ChildItem artifacts -File | Where-Object { $_.Extension -in '.exe', '.zip' } | ForEach-Object FullName)
+          # Hash the files and write SHA256SUMS.txt. The README block it also rewrites here is a scratch copy:
+          # the update-readme job does the real update on the default branch.
+          ./scripts/update-release-integrity.ps1 `
+            -Version $env:APP_VERSION `
+            -Files $files `
+            -ChecksumsPath 'artifacts/SHA256SUMS.txt' `
+            -Repository '${{ github.repository }}'
+
+          $installer = "Squish-Setup-$($env:APP_VERSION).exe"
+          $sha = (Get-FileHash "artifacts/$installer" -Algorithm SHA256).Hash.ToLowerInvariant()
+          $notes = @(
+            "Download **$installer** and run it. Squish is unsigned, so Windows SmartScreen may warn.",
+            '',
+            'SHA256 of the installer:',
+            '',
+            '```',
+            $sha,
+            '```',
+            '',
+            'Check your download in PowerShell (prints `True` when it matches):',
+            '',
+            '```powershell',
+            "(Get-FileHash .\$installer -Algorithm SHA256).Hash -eq '$sha'",
+            '```',
+            '',
+            'All hashes are in `SHA256SUMS.txt`.'
+          ) -join "`n"
+          Set-Content -Path "$env:RUNNER_TEMP/release-notes.md" -Value $notes -Encoding utf8
+
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -120,6 +153,57 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
+          name: Squish ${{ github.ref_name }}
+          body_path: ${{ runner.temp }}/release-notes.md
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          fail_on_unmatched_files: true
           files: artifacts/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  update-readme:
+    # Puts the new version, hashes and verify command in the README's "Installer integrity" section through a pull
+    # request against the default branch. Pull requests opened with the default GITHUB_TOKEN do not start the ci
+    # workflow; add a fine-grained token with contents and pull-requests write access as RELEASE_README_TOKEN to
+    # have CI run on them too. "Allow GitHub Actions to create and approve pull requests" must be on.
+    needs: build-package
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: windows-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout default branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Download release checksums
+        uses: actions/download-artifact@v4
+        with:
+          name: squish-windows-release
+          path: release
+
+      - name: Update README
+        shell: pwsh
+        run: |
+          $version = '${{ github.ref_name }}'.TrimStart('v')
+          ./scripts/update-release-integrity.ps1 `
+            -Version $version `
+            -FromChecksums release/SHA256SUMS.txt `
+            -Repository '${{ github.repository }}'
+
+      - name: Open pull request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.RELEASE_README_TOKEN || github.token }}
+          branch: chore/readme-${{ github.ref_name }}
+          delete-branch: true
+          add-paths: README.md
+          commit-message: "docs: update README for Squish ${{ github.ref_name }}"
+          title: "docs: update README checksums for Squish ${{ github.ref_name }}"
+          body: |
+            Automated by the release workflow after publishing [Squish ${{ github.ref_name }}](${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }}).
+
+            Updates the version, SHA256 checksums and verify commands in the README's *Installer integrity* section. Nothing else changes.
