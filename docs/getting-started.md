@@ -12,8 +12,8 @@ This guide gets a new contributor from clone to running Squish locally.
 ## Clone the repo
 
 ```pwsh
-git clone https://github.com/Cosmos-0118/Clop-For-Windows.git
-cd Squish-For-Windows
+git clone https://github.com/Cosmos-0118/Squish.git
+cd Squish
 ```
 
 ## Restore external tools (one-time)

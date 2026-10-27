@@ -11,7 +11,7 @@ By installing or using this software you agree to the terms of the GPLv3,
 including (but not limited to):
   • You may run the program for any purpose.
   • You may study and modify the source code (available at
-    https://github.com/Cosmos-0118/Clop-For-Windows).
+    https://github.com/Cosmos-0118/Squish).
   • You may redistribute original or modified copies, provided you do so
     under the GPLv3 and include the corresponding source.
   • This program is provided WITHOUT ANY WARRANTY; see the GPL for details.
@@ -37,7 +37,7 @@ Source Code Availability
 ------------------------
 The full source that produced this installer, along with build scripts and
 manifest files, is always published at:
-  https://github.com/Cosmos-0118/Clop-For-Windows
+  https://github.com/Cosmos-0118/Squish
 
 You may build your own binaries by following `INSTALLER-WORKFLOW.TXT` in
 that repository. Contributions, forks, and issue reports are welcome.
