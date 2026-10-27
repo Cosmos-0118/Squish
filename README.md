@@ -266,13 +266,26 @@ Squish is a hobby project and the installer is **unsigned**. Some antivirus engi
 
 <!-- This block is rewritten by the release workflow (scripts/update-release-integrity.ps1). Do not edit it by hand. -->
 <!-- release-integrity:start -->
-- **Latest public build checksum:**
-  - Installer: `Clop-Setup_1.1.0.exe` (released before the rename to Squish)
-  - SHA256: `7a82332765fbbbc1e438e36f3cbc20f90b4995926c464f90bc0e1a89b39deb5f`
-- **Verify locally:**
+- **Latest release:** [Squish 2.3.0](https://github.com/Cosmos-0118/Clop-For-Windows/releases/tag/v2.3.0)
+- **SHA256 checksums:**
+
+  | File | SHA256 |
+  | --- | --- |
+  | `Squish-2.3.0-win-x64.zip` | `07402610c42248baac80e6837726ec80c9c5ba7ca2bc66b4f76f7cbddd13468c` |
+  | `Squish-Setup-2.3.0.exe` | `4abecdd6fed45dbc9e03140f76c508114c58bb77c029021ac491f6cd05e4d68b` |
+
+  The same values are published as `SHA256SUMS.txt` on the release page.
+
+- **Verify locally** (run it in the folder you downloaded to):
 
   ```powershell
-  CertUtil -hashfile Clop-Setup_1.1.0.exe SHA256
+  CertUtil -hashfile Squish-Setup-2.3.0.exe SHA256
+  ```
+
+  Or have PowerShell compare it for you; it prints `True` when the file is genuine:
+
+  ```powershell
+  (Get-FileHash .\Squish-Setup-2.3.0.exe -Algorithm SHA256).Hash -eq '4abecdd6fed45dbc9e03140f76c508114c58bb77c029021ac491f6cd05e4d68b'
   ```
 <!-- release-integrity:end -->
 
