@@ -24,7 +24,7 @@ param(
     [string]$FromChecksums,
     [string]$ReadmePath = "README.md",
     [string]$ChecksumsPath,
-    [string]$Repository = "Cosmos-0118/Clop-For-Windows"
+    [string]$Repository = "Cosmos-0118/Squish"
 )
 
 Set-StrictMode -Version Latest

@@ -9,17 +9,17 @@
 **Clipboard-first image and video optimisation for Windows.**
 Copy, drop or save a file and Squish makes it smaller, without the visible quality loss.
 
-[![CI](https://img.shields.io/github/actions/workflow/status/Cosmos-0118/Clop-For-Windows/ci.yml?branch=main&label=build&style=flat-square)](https://github.com/Cosmos-0118/Clop-For-Windows/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/Cosmos-0118/Clop-For-Windows?include_prereleases&style=flat-square&color=4FFFB0&labelColor=171717)](https://github.com/Cosmos-0118/Clop-For-Windows/releases)
+[![CI](https://img.shields.io/github/actions/workflow/status/Cosmos-0118/Squish/ci.yml?branch=main&label=build&style=flat-square)](https://github.com/Cosmos-0118/Squish/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Cosmos-0118/Squish?include_prereleases&style=flat-square&color=4FFFB0&labelColor=171717)](https://github.com/Cosmos-0118/Squish/releases)
 [![License: GPL v3](https://img.shields.io/badge/license-GPLv3-blue?style=flat-square)](LICENSE)
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D4?style=flat-square)
 ![.NET](https://img.shields.io/badge/.NET-10-512BD4?style=flat-square)
 
-[Download](https://github.com/Cosmos-0118/Clop-For-Windows/releases) ·
+[Download](https://github.com/Cosmos-0118/Squish/releases) ·
 [Getting started](docs/getting-started.md) ·
 [CLI reference](docs/cli.md) ·
 [How it works](docs/optimisation-pipeline.md) ·
-[Report a bug](https://github.com/Cosmos-0118/Clop-For-Windows/issues)
+[Report a bug](https://github.com/Cosmos-0118/Squish/issues)
 
 </div>
 
@@ -99,7 +99,7 @@ Oversized screenshots, 12 MB PNG exports and phone videos add up fast, and compr
 
 ## Install
 
-1. Download the latest **`Squish-Setup-<version>.exe`** from the [Releases](https://github.com/Cosmos-0118/Clop-For-Windows/releases) page.
+1. Download the latest **`Squish-Setup-<version>.exe`** from the [Releases](https://github.com/Cosmos-0118/Squish/releases) page.
 2. Run the installer. Squish starts in the system tray.
 3. Open **Settings** to choose which folders to watch and what the clipboard optimiser should do.
 
@@ -185,8 +185,8 @@ More detail: [docs/architecture.md](docs/architecture.md).
 **Requirements:** Windows 10 (2004) or later, the [.NET 10 SDK](https://dotnet.microsoft.com/download), Git, and PowerShell 7 for the tool fetch script. Visual Studio 2022 is optional.
 
 ```powershell
-git clone https://github.com/Cosmos-0118/Clop-For-Windows.git
-cd Clop-For-Windows
+git clone https://github.com/Cosmos-0118/Squish.git
+cd Squish
 
 # One-time: download the pinned encoder binaries (ffmpeg, mozjpeg, oxipng, ...) with checksum verification
 pwsh scripts/fetch-tools.ps1
