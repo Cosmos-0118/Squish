@@ -59,6 +59,10 @@ public sealed class OnboardingViewModel : ObservableObject
 
         _readonlySteps = new ReadOnlyObservableCollection<OnboardingStepViewModel>(_steps);
         _selectedStep = _steps.FirstOrDefault();
+        if (_selectedStep is not null)
+        {
+            _selectedStep.IsReached = true;
+        }
 
         GetStartedCommand = new RelayCommand(_ => CompleteOnboarding());
         NextStepCommand = new RelayCommand(_ => MoveStep(1), _ => !IsLastStep);
@@ -82,6 +86,12 @@ public sealed class OnboardingViewModel : ObservableObject
             if (!SetProperty(ref _selectedStep, value))
             {
                 return;
+            }
+
+            var selectedIndex = SelectedStepIndex;
+            for (var i = 0; i < _steps.Count; i++)
+            {
+                _steps[i].IsReached = i <= selectedIndex;
             }
 
             OnPropertyChanged(nameof(StepPosition));
@@ -127,8 +137,10 @@ public sealed class OnboardingViewModel : ObservableObject
     }
 }
 
-public sealed class OnboardingStepViewModel
+public sealed class OnboardingStepViewModel : ObservableObject
 {
+    private bool _isReached;
+
     public OnboardingStepViewModel(string title, string description, IEnumerable<string> details)
     {
         Title = title;
@@ -141,4 +153,11 @@ public sealed class OnboardingStepViewModel
     public string Description { get; }
 
     public IReadOnlyList<string> Details { get; }
+
+    /// <summary>True for the selected step and the ones before it; fills the guide's progress segments.</summary>
+    public bool IsReached
+    {
+        get => _isReached;
+        set => SetProperty(ref _isReached, value);
+    }
 }

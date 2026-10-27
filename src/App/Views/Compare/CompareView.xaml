@@ -16,7 +16,17 @@
           DragLeave="OnDragLeave"
           Drop="OnDropFiles">
         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-            <Border Style="{StaticResource PageColumn}" MaxWidth="880">
+            <Border>
+                <Border.Style>
+                    <Style TargetType="Border" BasedOn="{StaticResource PageColumn}">
+                        <Setter Property="MaxWidth" Value="880" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding DataContext.IsWideLayout, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                                <Setter Property="MaxWidth" Value="1040" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
                 <StackPanel>
                     <StackPanel Margin="0,0,0,20">
                         <TextBlock Text="{loc:Loc navigation.compare.title}" Style="{StaticResource Text.PageTitle}" />

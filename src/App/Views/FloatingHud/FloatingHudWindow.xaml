@@ -3,367 +3,252 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:loc="clr-namespace:Squish.App.Localization"
         xmlns:viewModels="clr-namespace:Squish.App.ViewModels"
-        xmlns:helpers="clr-namespace:Squish.App.Infrastructure"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         Title="Squish Floating HUD"
-        AllowsTransparency="False"
         Background="{DynamicResource Brush.HudBackground}"
+        Foreground="{DynamicResource Brush.HudTextPrimary}"
+        FontFamily="{DynamicResource Font.Body}"
+        FontSize="13"
         WindowStyle="None"
-        ResizeMode="CanResizeWithGrip"
+        ResizeMode="CanResize"
+        SizeToContent="Height"
         ShowInTaskbar="False"
         ShowActivated="False"
         Topmost="True"
-        MinHeight="150"
-        MinWidth="280"
+        UseLayoutRounding="True"
+        MinWidth="{x:Static viewModels:FloatingHudViewModel.MinWindowWidth}"
+        MaxWidth="{x:Static viewModels:FloatingHudViewModel.MaxWindowWidth}"
         Width="{Binding WindowWidth, Mode=TwoWay}"
-        Height="{Binding WindowHeight, Mode=TwoWay}"
-        AutomationProperties.Name="{loc:Loc hud.title}"
-        Opacity="1">
+        MaxHeight="{Binding WindowHeight}"
+        AutomationProperties.Name="{loc:Loc hud.title}">
+    <!-- Height follows the content; the saved HUD height is the most it may grow to before the list scrolls. -->
     <shell:WindowChrome.WindowChrome>
         <shell:WindowChrome CaptionHeight="0"
-                             GlassFrameThickness="0"
-                             CornerRadius="18"
-                             ResizeBorderThickness="6"
-                             UseAeroCaptionButtons="False"/>
+                            GlassFrameThickness="0"
+                            CornerRadius="0"
+                            ResizeBorderThickness="6"
+                            UseAeroCaptionButtons="False" />
     </shell:WindowChrome.WindowChrome>
+
     <Window.Resources>
-        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
-        <DropShadowEffect x:Key="HudShadow"
-                          Color="#16000000"
-                          ShadowDepth="0"
-                          BlurRadius="32"
-                          Opacity="0.9" />
-
-        <Style x:Key="IconButtonStyle" TargetType="Button">
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="BorderBrush" Value="Transparent"/>
-            <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Padding" Value="6"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Focusable" Value="False"/>
-            <Setter Property="FontFamily" Value="Segoe MDL2 Assets"/>
-            <Setter Property="FontSize" Value="12"/>
-            <Setter Property="Foreground" Value="{DynamicResource Brush.HudTextPrimary}"/>
+        <Style x:Key="HudProgressBar" TargetType="ProgressBar">
+            <Setter Property="Height" Value="3" />
+            <Setter Property="Maximum" Value="100" />
+            <Setter Property="Foreground" Value="{DynamicResource Brush.HudProgress}" />
+            <Setter Property="Background" Value="{DynamicResource Brush.HudProgressBackground}" />
             <Setter Property="Template">
                 <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="Chrome"
-                                Background="{TemplateBinding Background}"
-                                CornerRadius="6"
-                                Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Chrome" Property="Background" Value="#14FFFFFF"/>
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="Chrome" Property="Background" Value="#1FFFFFFF"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <Style x:Key="HudCloseButtonStyle" TargetType="Button">
-            <Setter Property="Background" Value="#FFF14141"/>
-            <Setter Property="BorderBrush" Value="#A8FFB3B3"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Foreground" Value="#FFFFFFFF"/>
-            <Setter Property="Padding" Value="0"/>
-            <Setter Property="Width" Value="30"/>
-            <Setter Property="Height" Value="30"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Focusable" Value="False"/>
-            <Setter Property="FontSize" Value="14"/>
-            <Setter Property="FontWeight" Value="Bold"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="Chrome"
-                                Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="15">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Chrome" Property="Background" Value="#FFFF2F2F"/>
-                                <Setter TargetName="Chrome" Property="BorderBrush" Value="#FFFFD0D0"/>
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="Chrome" Property="Background" Value="#FFD62828"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <Style x:Key="HudResizeGripStyle" TargetType="ResizeGrip">
-            <Setter Property="Width" Value="18"/>
-            <Setter Property="Height" Value="18"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ResizeGrip">
-                        <Grid Width="18" Height="18" Background="Transparent">
-                            <Canvas Width="18" Height="18" HorizontalAlignment="Right" VerticalAlignment="Bottom">
-                                <Ellipse x:Name="Dot1" Width="2.2" Height="2.2" Fill="#66E2E8FF" Canvas.Left="14" Canvas.Top="4"/>
-                                <Ellipse x:Name="Dot2" Width="2.2" Height="2.2" Fill="#66E2E8FF" Canvas.Left="11" Canvas.Top="7"/>
-                                <Ellipse x:Name="Dot3" Width="2.2" Height="2.2" Fill="#66E2E8FF" Canvas.Left="14" Canvas.Top="7"/>
-                                <Ellipse x:Name="Dot4" Width="2.2" Height="2.2" Fill="#66E2E8FF" Canvas.Left="8" Canvas.Top="10"/>
-                                <Ellipse x:Name="Dot5" Width="2.2" Height="2.2" Fill="#66E2E8FF" Canvas.Left="11" Canvas.Top="10"/>
-                                <Ellipse x:Name="Dot6" Width="2.2" Height="2.2" Fill="#66E2E8FF" Canvas.Left="14" Canvas.Top="10"/>
-                            </Canvas>
+                    <ControlTemplate TargetType="ProgressBar">
+                        <Grid>
+                            <Border x:Name="PART_Track" Background="{TemplateBinding Background}" CornerRadius="1.5" />
+                            <Border x:Name="PART_Indicator" Background="{TemplateBinding Foreground}" CornerRadius="1.5" HorizontalAlignment="Left" />
                         </Grid>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Dot1" Property="Fill" Value="#99F4F7FF"/>
-                                <Setter TargetName="Dot2" Property="Fill" Value="#99F4F7FF"/>
-                                <Setter TargetName="Dot3" Property="Fill" Value="#99F4F7FF"/>
-                                <Setter TargetName="Dot4" Property="Fill" Value="#99F4F7FF"/>
-                                <Setter TargetName="Dot5" Property="Fill" Value="#99F4F7FF"/>
-                                <Setter TargetName="Dot6" Property="Fill" Value="#99F4F7FF"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
         </Style>
 
-        <Style x:Key="ToggleIconButtonStyle" TargetType="ToggleButton">
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="BorderBrush" Value="Transparent"/>
-            <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Padding" Value="6"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Focusable" Value="False"/>
-            <Setter Property="FontFamily" Value="Segoe MDL2 Assets"/>
-            <Setter Property="FontSize" Value="12"/>
-            <Setter Property="Foreground" Value="{DynamicResource Brush.HudTextPrimary}"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ToggleButton">
-                        <Border x:Name="Chrome"
-                                Background="{TemplateBinding Background}"
-                                CornerRadius="6"
-                                Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Chrome" Property="Background" Value="#14FFFFFF"/>
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="Chrome" Property="Background" Value="#1FFFFFFF"/>
-                            </Trigger>
-                            <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="Chrome" Property="Background" Value="#22FFFFFF"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
+        <Style x:Key="HudIconButton" TargetType="Button" BasedOn="{StaticResource IconButton}">
+            <Setter Property="Width" Value="26" />
+            <Setter Property="Height" Value="26" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Foreground" Value="{DynamicResource Brush.HudTextSecondary}" />
         </Style>
     </Window.Resources>
 
-    <Border Background="{DynamicResource Brush.HudBackground}"
-            CornerRadius="18"
-            Padding="0"
-            Effect="{StaticResource HudShadow}">
+    <Border x:Name="RootBorder"
+            BorderBrush="{DynamicResource Brush.HudCardBorder}"
+            BorderThickness="1">
         <Grid>
             <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="*"/>
-                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
             </Grid.RowDefinitions>
 
-            <Canvas IsHitTestVisible="False" Opacity="0.35">
-                <Path Fill="#22D8DEFF" Data="M 94 88 L 100 100 L 112 106 L 100 112 L 94 124 L 88 112 L 76 106 L 88 100 Z"/>
-                <Path Fill="#1AD8DEFF" Data="M 276 248 L 282 260 L 294 266 L 282 272 L 276 284 L 270 272 L 258 266 L 270 260 Z"/>
-                <Path Fill="#18D8DEFF" Data="M 34 286 L 39 296 L 49 301 L 39 306 L 34 316 L 29 306 L 19 301 L 29 296 Z"/>
-            </Canvas>
-
+            <!-- Header doubles as the drag handle. -->
             <Grid x:Name="TitleBar"
-                Grid.Row="0"
-                Margin="14,12,14,6"
-                MouseLeftButtonDown="OnTitleBarMouseDown">
+                  Background="Transparent"
+                  Margin="14,8,8,8"
+                  MouseLeftButtonDown="OnTitleBarMouseDown">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition/>
-                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-                <StackPanel Orientation="Vertical">
-                    <TextBlock Text="{loc:Loc hud.title}"
-                               FontWeight="SemiBold"
-                               Foreground="{DynamicResource Brush.HudTextPrimary}"
-                               FontSize="12"/>
-                    <TextBlock Text="{loc:Loc hud.subtitle}"
-                               Margin="0,1,0,0"
-                               Foreground="{DynamicResource Brush.HudTextSecondary}"
-                               FontSize="10.5"/>
-                </StackPanel>
-                <StackPanel Grid.Column="1" Orientation="Horizontal">
-                    <Button Style="{StaticResource HudCloseButtonStyle}"
-                            Content="X"
-                            Click="OnHideClicked"
-                            AutomationProperties.Name="{loc:Loc hud.hide.toggle}"
-                            ToolTip="{loc:Loc hud.hide.tooltip}"/>
-                </StackPanel>
+                <Image Source="{StaticResource Image.SquishLogo}" Width="16" Height="16" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1"
+                           Margin="8,0,0,0"
+                           VerticalAlignment="Center"
+                           FontWeight="SemiBold"
+                           Text="{loc:Loc hud.title}" />
+                <Border Grid.Column="2"
+                        Margin="8,0,0,0"
+                        Padding="6,2"
+                        VerticalAlignment="Center"
+                        CornerRadius="{DynamicResource Radius.Pill}"
+                        Background="{DynamicResource Brush.HudCardBackground}"
+                        Visibility="{Binding HasResults, Converter={StaticResource BoolToVisibility}}">
+                    <TextBlock Text="{Binding Results.Count}" FontSize="11" Foreground="{DynamicResource Brush.HudTextSecondary}" />
+                </Border>
+                <Button Grid.Column="4"
+                        Style="{StaticResource HudIconButton}"
+                        Content="&#xE711;"
+                        Click="OnHideClicked"
+                        AutomationProperties.Name="{loc:Loc hud.hide.toggle}"
+                        ToolTip="{loc:Loc hud.hide.tooltip}" />
             </Grid>
 
-                <Border Grid.Row="1"
-                    Margin="14,0,14,10"
-                    Padding="5"
-                    Background="{DynamicResource Brush.HudCardBackground}"
-                    BorderBrush="{DynamicResource Brush.HudCardBorder}"
-                    BorderThickness="3"
-                    CornerRadius="14">
-                <Grid>
-                    <ScrollViewer Margin="4"
-                                  Visibility="{Binding HasResults, Converter={StaticResource BooleanToVisibilityConverter}}"
-                                  VerticalScrollBarVisibility="Auto"
-                                  HorizontalScrollBarVisibility="Disabled">
-                        <ItemsControl x:Name="ResultItemsControl"
-                                      ItemsSource="{Binding Results}"
-                                      AutomationProperties.LiveSetting="Polite"
-                                      AutomationProperties.Name="{loc:Loc hud.automation.name}"
-                                      AutomationProperties.HelpText="{loc:Loc hud.automation.help}">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <StackPanel />
-                                </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemContainerStyle>
-                                <Style TargetType="ContentPresenter">
-                                    <Setter Property="Margin" Value="0,0,0,12"/>
-                                </Style>
-                            </ItemsControl.ItemContainerStyle>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate DataType="{x:Type viewModels:FloatingResultViewModel}">
-                                    <Grid>
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition Height="Auto"/>
-                                            <RowDefinition Height="Auto"/>
-                                        </Grid.RowDefinitions>
-                                        <Border x:Name="ResultCard"
-                                                Grid.Row="0"
-                                                Background="{DynamicResource Brush.HudCardBackground}"
-                                                BorderBrush="#2EFFFFFF"
-                                                BorderThickness="1"
-                                                CornerRadius="14"
-                                                Padding="12"
-                                                Cursor="Hand"
-                                                MouseLeftButtonDown="OnResultCardMouseLeftButtonDown"
-                                                MouseLeftButtonUp="OnResultCardMouseLeftButtonUp"
-                                                MouseMove="OnResultCardMouseMove"
-                                                MouseLeave="OnResultCardMouseLeave">
-                                            <Grid>
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                </Grid.ColumnDefinitions>
-                                                <StackPanel Orientation="Vertical" Margin="0,0,10,0">
-                                                    <TextBlock Text="{Binding DisplayName}"
-                                                               FontWeight="SemiBold"
-                                                               FontSize="14"
-                                                               Foreground="{DynamicResource Brush.HudTextPrimary}"/>
-                                                    <TextBlock Text="{Binding Subtitle}"
-                                                               Margin="0,2,0,0"
-                                                               Foreground="{DynamicResource Brush.HudTextSecondary}"
-                                                               FontSize="11.5"
-                                                               TextTrimming="CharacterEllipsis">
-                                                        <TextBlock.Style>
-                                                            <Style TargetType="TextBlock">
-                                                                <Setter Property="Visibility" Value="Visible"/>
-                                                                <Style.Triggers>
-                                                                    <Trigger Property="Text" Value="">
-                                                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                                                    </Trigger>
-                                                                    <Trigger Property="Text" Value="{x:Null}">
-                                                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                                                    </Trigger>
-                                                                </Style.Triggers>
-                                                            </Style>
-                                                        </TextBlock.Style>
-                                                    </TextBlock>
-                                                    <TextBlock Text="{Binding StatusText}"
-                                                               Margin="0,8,0,0"
-                                                               FontSize="13"
-                                                               FontWeight="SemiBold"
-                                                               Foreground="{Binding StatusBrush}"/>
-                                                    <ProgressBar Margin="0,12,0,0"
-                                                                 Height="4"
-                                                                 Value="{Binding Progress, Mode=OneWay}"
-                                                                 Maximum="100"
-                                                                 Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}"
-                                                                 Foreground="{DynamicResource Brush.HudProgress}"
-                                                                 Background="{DynamicResource Brush.HudProgressBackground}"/>
-                                                </StackPanel>
-                                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
-                                                    <Button Width="26"
-                                                            Height="26"
-                                                            Margin="0,0,6,0"
-                                                            Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}"
-                                                            Command="{Binding CancelCommand}"
-                                                            Style="{StaticResource IconButtonStyle}"
-                                                            AutomationProperties.Name="{loc:Loc hud.cancel.button}"
-                                                            ToolTip="{loc:Loc hud.cancel.tooltip}">
-                                                        <TextBlock Text="" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                    </Button>
-                                                    <Button Width="26"
-                                                            Height="26"
-                                                            Command="{Binding DismissCommand}"
-                                                            Style="{StaticResource IconButtonStyle}">
-                                                        <Button.Content>
-                                                            <TextBlock Text="" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                        </Button.Content>
-                                                    </Button>
-                                                </StackPanel>
-                                            </Grid>
-                                        </Border>
-                                        <Border Grid.Row="1"
-                                                Margin="14,10,14,0"
-                                                Height="1"
-                                                CornerRadius="1"
-                                                Background="#26AAB3C2"/>
+            <Border Grid.Row="1" Height="1" Background="{DynamicResource Brush.HudCardBorder}" />
+
+            <ScrollViewer Grid.Row="2"
+                          Padding="6"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled"
+                          Visibility="{Binding HasResults, Converter={StaticResource BoolToVisibility}}">
+                <ItemsControl x:Name="ResultItemsControl"
+                              ItemsSource="{Binding Results}"
+                              AutomationProperties.LiveSetting="Polite"
+                              AutomationProperties.Name="{loc:Loc hud.automation.name}"
+                              AutomationProperties.HelpText="{loc:Loc hud.automation.help}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type viewModels:FloatingResultViewModel}">
+                            <Border x:Name="ResultCard"
+                                    Padding="8"
+                                    CornerRadius="8"
+                                    Cursor="Hand"
+                                    ToolTip="{Binding Subtitle}"
+                                    ToolTipService.InitialShowDelay="900"
+                                    MouseLeftButtonDown="OnResultCardMouseLeftButtonDown"
+                                    MouseLeftButtonUp="OnResultCardMouseLeftButtonUp"
+                                    MouseMove="OnResultCardMouseMove"
+                                    MouseLeave="OnResultCardMouseLeave">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Setter Property="Background" Value="Transparent" />
+                                        <Style.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter Property="Background" Value="{DynamicResource Brush.HudCardBackground}" />
+                                            </Trigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <Border Width="32"
+                                            Height="32"
+                                            CornerRadius="7"
+                                            VerticalAlignment="Top"
+                                            Background="{DynamicResource Brush.HudCardBackground}"
+                                            BorderBrush="{DynamicResource Brush.HudCardBorder}"
+                                            BorderThickness="1">
+                                        <TextBlock x:Name="KindIcon"
+                                                   Text="{Binding KindGlyph}"
+                                                   FontFamily="{DynamicResource Font.Icons}"
+                                                   FontSize="14"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource Brush.HudTextSecondary}" />
+                                    </Border>
+
+                                    <StackPanel Grid.Column="1" Margin="10,0,8,0" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding DisplayName}"
+                                                   FontWeight="SemiBold"
+                                                   TextTrimming="CharacterEllipsis" />
+                                        <TextBlock x:Name="StatusLine"
+                                                   Text="{Binding StatusText}"
+                                                   Margin="0,2,0,0"
+                                                   FontSize="12"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   Foreground="{DynamicResource Brush.HudTextSecondary}" />
+                                        <ProgressBar Style="{StaticResource HudProgressBar}"
+                                                     Margin="0,7,0,1"
+                                                     Value="{Binding Progress, Mode=OneWay}"
+                                                     Visibility="{Binding IsRunning, Converter={StaticResource BoolToVisibility}}" />
+                                    </StackPanel>
+
+                                    <!-- Savings (or progress) at rest; actions while hovered. -->
+                                    <Grid Grid.Column="2" VerticalAlignment="Center">
+                                        <StackPanel x:Name="RestState" Orientation="Horizontal" VerticalAlignment="Center">
+                                            <Border Padding="7,2"
+                                                    CornerRadius="{DynamicResource Radius.Pill}"
+                                                    Background="{DynamicResource Brush.AccentBadgeBackground}"
+                                                    Visibility="{Binding HasSavings, Converter={StaticResource BoolToVisibility}}">
+                                                <TextBlock Text="{Binding SavingsText}"
+                                                           FontSize="11.5"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource Brush.AccentBadgeForeground}" />
+                                            </Border>
+                                            <TextBlock Text="{Binding Progress, StringFormat={}{0:0}%}"
+                                                       FontSize="11.5"
+                                                       Foreground="{DynamicResource Brush.HudTextSecondary}"
+                                                       Visibility="{Binding IsRunning, Converter={StaticResource BoolToVisibility}}" />
+                                        </StackPanel>
+                                        <StackPanel x:Name="HoverActions" Orientation="Horizontal" Visibility="Collapsed">
+                                            <Button Style="{StaticResource HudIconButton}"
+                                                    Content="&#xE71A;"
+                                                    Command="{Binding CancelCommand}"
+                                                    Visibility="{Binding IsRunning, Converter={StaticResource BoolToVisibility}}"
+                                                    AutomationProperties.Name="{loc:Loc hud.cancel.button}"
+                                                    ToolTip="{loc:Loc hud.cancel.tooltip}" />
+                                            <Button Style="{StaticResource HudIconButton}"
+                                                    Content="&#xE711;"
+                                                    Command="{Binding DismissCommand}" />
+                                        </StackPanel>
                                     </Grid>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </ScrollViewer>
+                                </Grid>
+                            </Border>
+                            <DataTemplate.Triggers>
+                                <DataTrigger Binding="{Binding IsFailure}" Value="True">
+                                    <Setter TargetName="StatusLine" Property="Foreground" Value="{DynamicResource Brush.StatusDanger}" />
+                                    <Setter TargetName="KindIcon" Property="Foreground" Value="{DynamicResource Brush.StatusDanger}" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding IsMouseOver, ElementName=ResultCard}" Value="True">
+                                    <Setter TargetName="RestState" Property="Visibility" Value="Collapsed" />
+                                    <Setter TargetName="HoverActions" Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                            </DataTemplate.Triggers>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
 
-                    <StackPanel HorizontalAlignment="Center"
-                                VerticalAlignment="Center"
-                                Margin="20"
-                                MaxWidth="260">
-                        <StackPanel.Style>
-                            <Style TargetType="StackPanel">
-                                <Setter Property="Visibility" Value="Collapsed" />
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding HasResults}" Value="False">
-                                        <Setter Property="Visibility" Value="Visible" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </StackPanel.Style>
-                        <TextBlock Text="{loc:Loc hud.empty.title}" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Brush.HudTextPrimary}" TextAlignment="Center"/>
-                        <TextBlock Text="{loc:Loc hud.empty.description}"
-                                   Margin="0,4,0,0"
-                                   TextWrapping="Wrap"
-                                   FontSize="11"
-                                   Foreground="{DynamicResource Brush.HudTextSecondary}"
-                                   TextAlignment="Center"/>
-                    </StackPanel>
-                </Grid>
-            </Border>
-
-            <ResizeGrip Grid.Row="2"
-                        HorizontalAlignment="Right"
-                        VerticalAlignment="Bottom"
-                        Margin="0,0,14,14"
-                        Style="{StaticResource HudResizeGripStyle}"/>
+            <StackPanel Grid.Row="2" Margin="24,22,24,24" HorizontalAlignment="Center">
+                <StackPanel.Style>
+                    <Style TargetType="StackPanel">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding HasResults}" Value="False">
+                                <Setter Property="Visibility" Value="Visible" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </StackPanel.Style>
+                <TextBlock Text="&#xE91B;"
+                           FontFamily="{DynamicResource Font.Icons}"
+                           FontSize="20"
+                           HorizontalAlignment="Center"
+                           Foreground="{DynamicResource Brush.HudTextSecondary}" />
+                <TextBlock Text="{loc:Loc hud.empty.title}"
+                           Margin="0,10,0,0"
+                           FontWeight="SemiBold"
+                           TextAlignment="Center" />
+                <TextBlock Text="{loc:Loc hud.empty.description}"
+                           Margin="0,4,0,0"
+                           MaxWidth="260"
+                           FontSize="12"
+                           TextWrapping="Wrap"
+                           TextAlignment="Center"
+                           Foreground="{DynamicResource Brush.HudTextSecondary}" />
+            </StackPanel>
         </Grid>
     </Border>
 </Window>

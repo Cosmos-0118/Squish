@@ -174,12 +174,74 @@
     </Style>
 
     <!-- Pill chips used as an in-page section switcher when the sidebar is collapsed. -->
+    <!--
+        Single-choice list inside a Card: radio on the left, content on the right, rows split by dividers.
+        The list is shifted up 1px inside a clipping parent so the first row's divider is hidden.
+    -->
+    <Style x:Key="RadioRowItem" TargetType="ListBoxItem">
+        <Setter Property="Foreground" Value="{DynamicResource Brush.PrimaryText}" />
+        <Setter Property="Padding" Value="{DynamicResource Spacing.SettingRow}" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="FocusVisualStyle" Value="{DynamicResource FocusVisual.Rounded}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListBoxItem">
+                    <Border Background="Transparent"
+                            BorderBrush="{DynamicResource Brush.Divider}"
+                            BorderThickness="0,1,0,0"
+                            Padding="{TemplateBinding Padding}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid Width="16" Height="16" Margin="0,1,12,0" VerticalAlignment="Top">
+                                <Ellipse x:Name="Ring" Stroke="{DynamicResource Brush.FieldHoverBorder}" StrokeThickness="1.5" />
+                                <Ellipse x:Name="Dot" Width="8" Height="8" Fill="{DynamicResource Brush.PrimaryText}" Visibility="Collapsed" />
+                            </Grid>
+                            <ContentPresenter Grid.Column="1" HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" />
+                        </Grid>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Ring" Property="Stroke" Value="{DynamicResource Brush.SecondaryText}" />
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="Ring" Property="Stroke" Value="{DynamicResource Brush.PrimaryText}" />
+                            <Setter TargetName="Dot" Property="Visibility" Value="Visible" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.5" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="RadioRowList" TargetType="ListBox">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Margin" Value="0,-1,0,0" />
+        <Setter Property="ItemContainerStyle" Value="{StaticResource RadioRowItem}" />
+        <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+        <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Disabled" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListBox">
+                    <ItemsPresenter />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Section switcher shown when the sidebar is a rail: quiet tabs, the selected one filled. -->
     <Style x:Key="ChipItem" TargetType="ListBoxItem">
         <Setter Property="Foreground" Value="{DynamicResource Brush.SecondaryText}" />
-        <Setter Property="FontSize" Value="12.5" />
-        <Setter Property="FontWeight" Value="Medium" />
-        <Setter Property="Padding" Value="10,5" />
-        <Setter Property="Margin" Value="0,0,6,6" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="Padding" Value="10,6" />
+        <Setter Property="Margin" Value="0,0,2,4" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="FocusVisualStyle" Value="{DynamicResource FocusVisual.Rounded}" />
         <Setter Property="Template">
@@ -187,9 +249,7 @@
                 <ControlTemplate TargetType="ListBoxItem">
                     <Border x:Name="Chrome"
                             Background="Transparent"
-                            BorderBrush="{DynamicResource Brush.ControlBorder}"
-                            BorderThickness="1"
-                            CornerRadius="{DynamicResource Radius.Pill}"
+                            CornerRadius="{DynamicResource Radius.Control}"
                             Padding="{TemplateBinding Padding}">
                         <ContentPresenter />
                     </Border>
@@ -199,9 +259,9 @@
                             <Setter Property="Foreground" Value="{DynamicResource Brush.PrimaryText}" />
                         </Trigger>
                         <Trigger Property="IsSelected" Value="True">
-                            <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource Brush.PrimaryButtonBackground}" />
-                            <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource Brush.PrimaryButtonBackground}" />
-                            <Setter Property="Foreground" Value="{DynamicResource Brush.PrimaryButtonForeground}" />
+                            <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource Brush.NavigationItemSelectedBackground}" />
+                            <Setter Property="Foreground" Value="{DynamicResource Brush.PrimaryText}" />
+                            <Setter Property="FontWeight" Value="Medium" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -239,6 +299,9 @@
         <Style.Triggers>
             <DataTrigger Binding="{Binding DataContext.IsCompactLayout, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
                 <Setter Property="Padding" Value="{DynamicResource Spacing.ContentPaddingCompact}" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding DataContext.IsWideLayout, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                <Setter Property="MaxWidth" Value="{DynamicResource Layout.ContentMaxWidthWide}" />
             </DataTrigger>
         </Style.Triggers>
     </Style>

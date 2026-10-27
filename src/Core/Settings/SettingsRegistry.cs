@@ -8,7 +8,7 @@ public static class SettingsRegistry
     private const string DefaultSameFolderTemplate = "%f-optimised";
     private const string DefaultSpecificFolderTemplate = "%P/optimised/%f";
     public const double DefaultFloatingHudWidth = 360d;
-    public const double DefaultFloatingHudHeight = 260d;
+    public const double DefaultFloatingHudHeight = 400d;
 
     private static readonly string DesktopPath = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
 

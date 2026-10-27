@@ -76,13 +76,13 @@
     <SolidColorBrush x:Key="Brush.StatusDanger" Color="#FFD93036" />
 
     <!-- Floating HUD -->
-    <SolidColorBrush x:Key="Brush.HudBackground" Color="#E6FFFFFF" />
-    <SolidColorBrush x:Key="Brush.HudCardBackground" Color="#FFFDFEFF" />
-    <SolidColorBrush x:Key="Brush.HudCardBorder" Color="#331E3A5F" />
-    <SolidColorBrush x:Key="Brush.HudTextPrimary" Color="#FF152033" />
-    <SolidColorBrush x:Key="Brush.HudTextSecondary" Color="#FF4C607A" />
-    <SolidColorBrush x:Key="Brush.HudProgress" Color="#FF2A7DFF" />
-    <SolidColorBrush x:Key="Brush.HudProgressBackground" Color="#332A7DFF" />
+    <SolidColorBrush x:Key="Brush.HudBackground" Color="#FFFFFFFF" />
+    <SolidColorBrush x:Key="Brush.HudCardBackground" Color="#FFF4F4F4" />
+    <SolidColorBrush x:Key="Brush.HudCardBorder" Color="#FFE0E0E0" />
+    <SolidColorBrush x:Key="Brush.HudTextPrimary" Color="#FF0A0A0A" />
+    <SolidColorBrush x:Key="Brush.HudTextSecondary" Color="#FF666666" />
+    <SolidColorBrush x:Key="Brush.HudProgress" Color="#FF0A0A0A" />
+    <SolidColorBrush x:Key="Brush.HudProgressBackground" Color="#FFE8E8E8" />
 
     <!-- Scroll bars -->
     <SolidColorBrush x:Key="Brush.ScrollBar.Track" Color="Transparent" />

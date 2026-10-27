@@ -46,7 +46,9 @@ internal sealed record GifInfo(int Width, int Height, int FrameCount)
 
                         break;
                     case 0x2C: // image descriptor
-                        Span<byte> descriptor = stackalloc byte[9];
+                        // Reuse the header buffer (width and height are already read): a stackalloc here would grow the
+                        // stack by 9 bytes per frame until the method returns.
+                        var descriptor = header[..9];
                         if (stream.Read(descriptor) != 9)
                         {
                             return null;

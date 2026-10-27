@@ -44,11 +44,43 @@
                 <Border Style="{StaticResource Card}" Margin="0,28,0,0">
                     <StackPanel>
                         <StackPanel Margin="24,22,24,20">
-                            <Border Style="{StaticResource Badge}">
-                                <TextBlock Text="{Binding StepPosition}" />
-                            </Border>
+                            <!-- Progress: one segment per step, filled up to the current one. -->
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <ItemsControl ItemsSource="{Binding Steps}" VerticalAlignment="Center" Focusable="False">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <UniformGrid Rows="1" />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Height="4" Margin="0,0,6,0" CornerRadius="2">
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <Setter Property="Background" Value="{DynamicResource Brush.SwitchTrack}" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsReached}" Value="True">
+                                                                <Setter Property="Background" Value="{DynamicResource Brush.PrimaryText}" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <TextBlock Grid.Column="1"
+                                           Margin="8,0,0,0"
+                                           VerticalAlignment="Center"
+                                           Text="{Binding StepPosition}"
+                                           Style="{StaticResource Text.Caption}" />
+                            </Grid>
                             <TextBlock Text="{Binding SelectedStep.Title}"
-                                       Margin="0,12,0,0"
+                                       Margin="0,22,0,0"
                                        FontSize="18"
                                        FontWeight="SemiBold"
                                        Foreground="{DynamicResource Brush.PrimaryText}"
@@ -85,14 +117,25 @@
 
                         <Border Style="{StaticResource Divider}" />
                         <Grid Margin="24,14">
-                            <Button Style="{StaticResource GhostButton}"
-                                    HorizontalAlignment="Left"
+                            <Button HorizontalAlignment="Left"
                                     Content="{loc:Loc onboarding.back}"
-                                    Command="{Binding PreviousStepCommand}" />
+                                    Command="{Binding PreviousStepCommand}">
+                                <Button.Style>
+                                    <!-- Nothing to go back to on the first step, so the button is hidden rather than greyed out. -->
+                                    <Style TargetType="Button" BasedOn="{StaticResource GhostButton}">
+                                        <Style.Triggers>
+                                            <Trigger Property="IsEnabled" Value="False">
+                                                <Setter Property="Visibility" Value="Hidden" />
+                                            </Trigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                <Button Content="{loc:Loc onboarding.next}" Command="{Binding NextStepCommand}">
+                                <!-- Before the last step: Skip + Next. On the last step: Get started. -->
+                                <Button Content="{loc:Loc onboarding.skip}" Command="{Binding GetStartedCommand}">
                                     <Button.Style>
-                                        <Style TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
+                                        <Style TargetType="Button" BasedOn="{StaticResource GhostButton}">
                                             <Style.Triggers>
                                                 <DataTrigger Binding="{Binding IsLastStep}" Value="True">
                                                     <Setter Property="Visibility" Value="Collapsed" />
@@ -101,10 +144,29 @@
                                         </Style>
                                     </Button.Style>
                                 </Button>
-                                <Button Style="{StaticResource PrimaryButton}"
-                                        Margin="8,0,0,0"
-                                        Content="{loc:Loc onboarding.cta}"
-                                        Command="{Binding GetStartedCommand}" />
+                                <Button Margin="8,0,0,0" Content="{loc:Loc onboarding.next}" Command="{Binding NextStepCommand}">
+                                    <Button.Style>
+                                        <Style TargetType="Button" BasedOn="{StaticResource PrimaryButton}">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsLastStep}" Value="True">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
+                                <Button Margin="8,0,0,0" Content="{loc:Loc onboarding.cta}" Command="{Binding GetStartedCommand}">
+                                    <Button.Style>
+                                        <Style TargetType="Button" BasedOn="{StaticResource PrimaryButton}">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsLastStep}" Value="True">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
                             </StackPanel>
                         </Grid>
                     </StackPanel>
