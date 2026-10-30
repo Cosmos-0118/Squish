@@ -24,7 +24,7 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
     private readonly ClipboardMonitor _monitor;
     private readonly OptimisedFileRegistry _optimisedFiles;
     private readonly ILogger<ClipboardOptimisationService> _logger;
-    private readonly ConcurrentDictionary<string, ClipboardItem> _pending = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, PendingClipboardWork> _pending = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, byte> _inFlightPaths = new(StringComparer.Ordinal);
     // origin snapshot sequence -> sequence produced by our latest write for it (several files from one copy)
     private readonly ConcurrentDictionary<uint, uint> _ownWrites = new();
@@ -44,6 +44,7 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
     private volatile bool _optimiseClipboardFileDrops;
     private volatile bool _optimiseImagePathClipboard;
     private string _customTemplate = string.Empty;
+    private static readonly byte[] PngSignature = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
 
     public ClipboardOptimisationService(
         OptimisationCoordinator coordinator,
@@ -149,14 +150,17 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
 
     private async Task HandleCompletionAsync(OptimisationResult result)
     {
-        if (!_pending.TryRemove(result.RequestId, out var item))
+        if (!_pending.TryRemove(result.RequestId, out var work))
         {
             _logger.LogDebug("No pending clipboard context found for request {RequestId}", result.RequestId);
             return;
         }
 
+        var item = work.Item;
         _inFlightPaths.TryRemove(item.SourcePath.Value, out _);
 
+        ClipboardItem? contributionItem = null;
+        FilePath? contributionPath = null;
         try
         {
             var sourcePath = item.SourcePath;
@@ -172,20 +176,10 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
                     finalPath = RenameOptimisedClipboardImage(output);
                 }
 
-                if (_autoCopy && !CanWriteBack(item))
+                if (_autoCopy)
                 {
-                    _logger.LogDebug("Clipboard changed while {Path} was being optimised; leaving the newer clipboard contents alone.", sourcePath.Value);
-                }
-                else if (_autoCopy)
-                {
-                    if (item.IsImage)
-                    {
-                        await CopyImageToClipboardAsync(finalPath, item).ConfigureAwait(false);
-                    }
-                    else if (item.IsVideo)
-                    {
-                        await CopyFileToClipboardAsync(finalPath, item).ConfigureAwait(false);
-                    }
+                    contributionItem = item;
+                    contributionPath = finalPath;
                 }
 
                 RegisterOptimisedResult(finalPath);
@@ -216,6 +210,8 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
         {
             _logger.LogError(ex, "Failed finalising clipboard optimisation {RequestId}", result.RequestId);
         }
+
+        await work.Batch.ContributeAsync(this, contributionItem, contributionPath).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -265,9 +261,12 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
             return;
         }
 
+        // One clipboard generation for the whole copy. Writing each file back as it finishes fills Win+V
+        // with an entry per file, and only the last one is actually on the clipboard.
+        var batch = new CopyBatch(items.Count);
         foreach (var item in items)
         {
-            EnqueueItem(item);
+            EnqueueItem(item, batch);
         }
     }
 
@@ -403,7 +402,7 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
         }
     }
 
-    private void EnqueueItem(ClipboardItem item)
+    private void EnqueueItem(ClipboardItem item, CopyBatch batch)
     {
         if (!_inFlightPaths.TryAdd(item.SourcePath.Value, 0))
         {
@@ -412,50 +411,93 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
             {
                 TryDeleteFile(item.SourcePath);
             }
+
+            _ = batch.ContributeAsync(this, null, null);
             return;
         }
 
-        var metadata = new Dictionary<string, object?>(StringComparer.Ordinal)
-        {
-            ["source"] = "clipboard",
-            ["clipboard.origin"] = item.Origin.ToString()
-        };
-
-        OutputBehaviourSettings.ApplyTo(metadata);
-        VideoEncoderPresetSettings.ApplyTo(metadata);
-        AggressiveOptimisationHelper.Apply(item.ItemType, item.SourcePath, metadata);
-
-        var request = new OptimisationRequest(item.ItemType, item.SourcePath, metadata: metadata);
-        var requestId = request.RequestId;
-        _pending[requestId] = item;
-
-        OptimisationTicket ticket;
+        string? requestId = null;
         try
         {
-            ticket = _coordinator.Enqueue(request);
+            var metadata = new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["source"] = "clipboard",
+                ["clipboard.origin"] = item.Origin.ToString()
+            };
+
+            OutputBehaviourSettings.ApplyTo(metadata);
+            VideoEncoderPresetSettings.ApplyTo(metadata);
+            AggressiveOptimisationHelper.Apply(item.ItemType, item.SourcePath, metadata);
+
+            var request = new OptimisationRequest(item.ItemType, item.SourcePath, metadata: metadata);
+            requestId = request.RequestId;
+            _pending[requestId] = new PendingClipboardWork(item, batch);
+
+            var ticket = _coordinator.Enqueue(request);
+            // The ticket is the single source of truth: it completes for success, failure, cancellation and the
+            // "could not queue" path alike, so the in-flight bookkeeping cannot leak. HandleCompletionAsync is idempotent.
+            _ = ticket.Completion.ContinueWith(
+                static (task, state) =>
+                {
+                    var (service, id) = ((ClipboardOptimisationService, string))state!;
+                    var result = task.Status == TaskStatus.RanToCompletion
+                        ? task.Result
+                        : task.IsCanceled ? OptimisationResult.Cancelled(id) : OptimisationResult.Failure(id, task.Exception?.GetBaseException().Message);
+                    return service.HandleCompletionAsync(result);
+                },
+                (this, requestId),
+                CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to queue clipboard optimisation for {Path}.", item.SourcePath.Value);
-            _ = HandleCompletionAsync(OptimisationResult.Failure(requestId, ex.Message));
+            if (requestId is not null && _pending.ContainsKey(requestId))
+            {
+                _ = HandleCompletionAsync(OptimisationResult.Failure(requestId, ex.Message));
+            }
+            else
+            {
+                _inFlightPaths.TryRemove(item.SourcePath.Value, out _);
+                _ = batch.ContributeAsync(this, null, null);
+            }
+        }
+    }
+
+    private async Task FlushBatchAsync(IReadOnlyList<(ClipboardItem Item, FilePath Path)> ready)
+    {
+        var representative = ready[0].Item;
+        if (!CanWriteBack(representative))
+        {
+            _logger.LogDebug("Clipboard changed while {Count} item(s) were being optimised; leaving the newer clipboard contents alone.", ready.Count);
             return;
         }
 
-        // The ticket is the single source of truth: it completes for success, failure, cancellation and the
-        // "could not queue" path alike, so the in-flight bookkeeping cannot leak. HandleCompletionAsync is idempotent.
-        _ = ticket.Completion.ContinueWith(
-            static (task, state) =>
+        var images = 0;
+        var videos = 0;
+        foreach (var entry in ready)
+        {
+            if (entry.Item.IsImage)
             {
-                var (service, id) = ((ClipboardOptimisationService, string))state!;
-                var result = task.Status == TaskStatus.RanToCompletion
-                    ? task.Result
-                    : task.IsCanceled ? OptimisationResult.Cancelled(id) : OptimisationResult.Failure(id, task.Exception?.GetBaseException().Message);
-                return service.HandleCompletionAsync(result);
-            },
-            (this, requestId),
-            CancellationToken.None,
-            TaskContinuationOptions.ExecuteSynchronously,
-            TaskScheduler.Default);
+                images++;
+            }
+            else if (entry.Item.IsVideo)
+            {
+                videos++;
+            }
+        }
+
+        // A single image still has to be the picture, so paste targets that only accept a bitmap keep working.
+        // Several files are one file drop: Win+V then has one entry, and paste drops every optimised file.
+        if (images == 1 && videos == 0)
+        {
+            var image = ready.First(entry => entry.Item.IsImage);
+            await CopyImageToClipboardAsync(image.Path, image.Item).ConfigureAwait(false);
+            return;
+        }
+
+        await CopyFilesToClipboardAsync(ready.Select(entry => entry.Path).ToArray(), representative).ConfigureAwait(false);
     }
 
     private FilePath RenameOptimisedClipboardImage(FilePath currentPath)
@@ -516,12 +558,14 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
     {
         System.Drawing.Bitmap? bitmap = null;
         MemoryStream? bitmapStream = null;
+        MemoryStream? pngStream = null;
 
         try
         {
             // Read the bytes before touching the STA thread so the clipboard thread only does clipboard work.
             var imageBytes = await File.ReadAllBytesAsync(path.Value).ConfigureAwait(false);
             var copyPath = _copyImageFilePath;
+            var includePng = imageBytes.Length >= PngSignature.Length && imageBytes.AsSpan(0, PngSignature.Length).SequenceEqual(PngSignature);
 
             var sequence = await _monitor.WriteAsync(
                 () =>
@@ -529,6 +573,14 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
                     bitmapStream = new MemoryStream(imageBytes, writable: false);
                     bitmap = new System.Drawing.Bitmap(bitmapStream);
                     var data = new System.Windows.Forms.DataObject();
+                    // PNG keeps transparency. CF_DIB is added as well so apps that only understand a bitmap can paste.
+                    // Both formats go out in one clipboard update, so Win+V records a single image.
+                    if (includePng)
+                    {
+                        pngStream = new MemoryStream(imageBytes, writable: false);
+                        data.SetData("PNG", false, pngStream);
+                    }
+
                     data.SetData(DataFormats.Bitmap, true, bitmap);
                     if (copyPath)
                     {
@@ -536,13 +588,15 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
                         data.SetData(DataFormats.Text, path.Value);
                     }
 
-                    data.SetData(ClipboardFormats.OptimisationStatus, "true");
+                    // autoConvert: false so the marker string is not also offered as CF_UNICODETEXT ("true").
+                    data.SetData(ClipboardFormats.OptimisationStatus, false, "true");
                     return data;
                 },
                 afterWrite: () =>
                 {
                     bitmap?.Dispose();
                     bitmapStream?.Dispose();
+                    pngStream?.Dispose();
                 }).ConfigureAwait(false);
 
             RememberOwnWrite(item, sequence);
@@ -553,16 +607,22 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
         }
     }
 
-    private async Task CopyFileToClipboardAsync(FilePath path, ClipboardItem item)
+    private async Task CopyFilesToClipboardAsync(IReadOnlyList<FilePath> paths, ClipboardItem item)
     {
         try
         {
             var sequence = await _monitor.WriteAsync(() =>
             {
+                var files = new StringCollection();
+                foreach (var path in paths)
+                {
+                    files.Add(path.Value);
+                }
+
                 var data = new System.Windows.Forms.DataObject();
-                data.SetFileDropList(new StringCollection { path.Value });
-                data.SetData(DataFormats.Text, path.Value);
-                data.SetData(ClipboardFormats.OptimisationStatus, "true");
+                data.SetFileDropList(files);
+                data.SetData(DataFormats.Text, string.Join(Environment.NewLine, paths.Select(path => path.Value)));
+                data.SetData(ClipboardFormats.OptimisationStatus, false, "true");
                 return data;
             }).ConfigureAwait(false);
 
@@ -570,7 +630,7 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to copy optimised clipboard file {Path} to clipboard", path.Value);
+            _logger.LogError(ex, "Failed to copy {Count} optimised clipboard file(s) to clipboard", paths.Count);
         }
     }
 
@@ -714,6 +774,48 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
                 _monitorRunning = false;
                 _logger.LogInformation("Clipboard watcher stopped.");
             }
+        }
+    }
+
+    private sealed class PendingClipboardWork(ClipboardItem item, CopyBatch batch)
+    {
+        public ClipboardItem Item { get; } = item;
+        public CopyBatch Batch { get; } = batch;
+    }
+
+    /// <summary>
+    /// Items that came from one clipboard copy. The clipboard is updated once, after the last of them finishes.
+    /// </summary>
+    private sealed class CopyBatch
+    {
+        private readonly object _gate = new();
+        private readonly List<(ClipboardItem Item, FilePath Path)> _ready = new();
+        private int _remaining;
+
+        public CopyBatch(int remaining) => _remaining = remaining;
+
+        public Task ContributeAsync(ClipboardOptimisationService owner, ClipboardItem? item, FilePath? path)
+        {
+            IReadOnlyList<(ClipboardItem Item, FilePath Path)>? flush = null;
+            lock (_gate)
+            {
+                if (_remaining <= 0)
+                {
+                    return Task.CompletedTask;
+                }
+
+                if (item is not null && path is { } readyPath)
+                {
+                    _ready.Add((item, readyPath));
+                }
+
+                if (--_remaining == 0 && _ready.Count > 0)
+                {
+                    flush = _ready.ToArray();
+                }
+            }
+
+            return flush is null ? Task.CompletedTask : owner.FlushBatchAsync(flush);
         }
     }
 }

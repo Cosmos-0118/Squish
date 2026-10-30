@@ -193,8 +193,11 @@ public sealed class ClipboardMonitor : IDisposable
             try
             {
                 var data = build();
-                // copy: true renders the data into the clipboard now, so it survives us releasing the source objects.
-                WinFormsClipboard.SetDataObject(data, copy: true, retryTimes: 8, retryDelay: 40);
+                // Render first, then publish in one Open/Empty/Set/Close. SetDataObject(copy: true) calls
+                // OleSetClipboard and then OleFlushClipboard, and each one is a separate clipboard generation.
+                // Win+V records both, so a single optimised image showed up twice.
+                var payloads = ClipboardNativeWriter.BuildPayloads(data);
+                ClipboardNativeWriter.Place(payloads, pump.Hwnd);
                 var sequence = GetSequenceSafe();
                 pump.LastCaptured = sequence;
                 pump.LastSeen = sequence;
