@@ -192,17 +192,27 @@ internal sealed class FfmpegVideoQualitySearch : IVideoQualitySearch
             .Distinct()
             .ToArray();
 
-        var frames = await ReadFramesAsync(plan, plan.SourcePath.Value, window, picks, token).ConfigureAwait(false);
-        if (frames.Count == 0)
+        // Each full-resolution frame is reduced to its sample tiles as it arrives, so only one frame is alive at a time.
+        int frameWidth = 0, frameHeight = 0;
+        var references = await ReadFramesAsync(plan, plan.SourcePath.Value, window, picks, (_, frame) =>
+        {
+            frameWidth = frame.Width;
+            frameHeight = frame.Height;
+            return TileReference.Create(frame);
+        }, token).ConfigureAwait(false);
+        if (references.Count == 0)
         {
             return null;
         }
 
-        var references = frames.Select(f => TileReference.Create(f)).ToList();
-        return new SampleReference(window, picks, references, frames[0].Width, frames[0].Height);
+        return new SampleReference(window, picks, references, frameWidth, frameHeight);
     }
 
-    private async Task<List<RasterImage>> ReadFramesAsync(VideoOptimiserPlan plan, string input, SampleWindow window, int[] frameIndexes, CancellationToken token, bool inputIsSample = false)
+    /// <summary>
+    /// Streams the selected frames from ffmpeg, handing each one to <paramref name="project"/> (frame position, frame) and
+    /// keeping only what it returns. The frame must not be retained: a 4K RGBA frame is 33 MB on the Large Object Heap.
+    /// </summary>
+    private async Task<List<T>> ReadFramesAsync<T>(VideoOptimiserPlan plan, string input, SampleWindow window, int[] frameIndexes, Func<int, RasterImage, T> project, CancellationToken token, bool inputIsSample = false)
     {
         var width = 0;
         var height = 0;
@@ -229,11 +239,11 @@ internal sealed class FfmpegVideoQualitySearch : IVideoQualitySearch
         (width, height) = await ProbeFrameSizeAsync(input, filters, window, inputIsSample, token).ConfigureAwait(false);
         if (width <= 0 || height <= 0)
         {
-            return new List<RasterImage>();
+            return new List<T>();
         }
 
         var frameBytes = checked(width * height * 4);
-        var frames = new List<RasterImage>();
+        var frames = new List<T>();
         var startInfo = new ProcessStartInfo(_options.FfmpegPath)
         {
             RedirectStandardOutput = true,
@@ -292,7 +302,7 @@ internal sealed class FfmpegVideoQualitySearch : IVideoQualitySearch
                 break;
             }
 
-            frames.Add(new RasterImage(width, height, buffer));
+            frames.Add(project(frames.Count, new RasterImage(width, height, buffer)));
         }
 
         await process.WaitForExitAsync(token).ConfigureAwait(false);
@@ -406,17 +416,20 @@ internal sealed class FfmpegVideoQualitySearch : IVideoQualitySearch
             totalBytes += new FileInfo(samplePath).Length;
             totalSeconds += reference.Window.Seconds;
 
-            var decoded = await ReadFramesAsync(plan, samplePath, reference.Window, reference.FrameIndexes, token, inputIsSample: true).ConfigureAwait(false);
-            if (decoded.Count == 0)
+            var frameScores = await ReadFramesAsync(plan, samplePath, reference.Window, reference.FrameIndexes, (i, frame) =>
+                i < reference.Tiles.Count && frame.Width == reference.Width && frame.Height == reference.Height
+                    ? reference.Tiles[i].Score(frame, token)
+                    : (double?)null, token, inputIsSample: true).ConfigureAwait(false);
+            if (frameScores.Count == 0)
             {
                 return null;
             }
 
-            for (var i = 0; i < Math.Min(decoded.Count, reference.Tiles.Count); i++)
+            foreach (var frameScore in frameScores)
             {
-                if (decoded[i].Width == reference.Width && decoded[i].Height == reference.Height)
+                if (frameScore is double value)
                 {
-                    scores.Add(reference.Tiles[i].Score(decoded[i], token));
+                    scores.Add(value);
                 }
             }
 

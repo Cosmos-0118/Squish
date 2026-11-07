@@ -104,7 +104,9 @@ internal static class ImageIO
 
             try
             {
-                ResourceLimits.LimitMemory(new Percentage(40));
+                // A tray utility must not let one big image claim a share of physical RAM: past these budgets
+                // ImageMagick pages its pixel cache to disk instead of growing the working set.
+                ResourceLimits.Memory = 512UL * 1024 * 1024;
                 ResourceLimits.Disk = 4UL * 1024 * 1024 * 1024;
                 ResourceLimits.Thread = (ulong)Math.Clamp(Environment.ProcessorCount, 1, 4);
                 ResourceLimits.Width = 65_536;
