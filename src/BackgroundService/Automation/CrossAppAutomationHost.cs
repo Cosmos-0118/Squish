@@ -338,12 +338,12 @@ public sealed class CrossAppAutomationHost : IAsyncDisposable
         }
         catch (JsonException ex)
         {
-            _logger.LogWarning(ex, "Invalid JSON payload received from automation endpoint {Path}.", path);
+            _logger.LogWarning(ex, "Invalid JSON payload received from automation endpoint {Path}.", SanitizeForLog(path));
             await WriteStatusAsync(context.Response, HttpStatusCode.BadRequest, new { error = "invalid_json" }).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unhandled automation endpoint error for {Path}.", path);
+            _logger.LogError(ex, "Unhandled automation endpoint error for {Path}.", SanitizeForLog(path));
             await WriteStatusAsync(context.Response, HttpStatusCode.InternalServerError, new { error = "internal_error" }).ConfigureAwait(false);
         }
     }
@@ -502,6 +502,30 @@ public sealed class CrossAppAutomationHost : IAsyncDisposable
             result.Status.ToString(),
             result.Message,
             directory);
+    }
+
+    /// <summary>Neutralises client-supplied text before logging so it cannot forge log entries.</summary>
+    internal static string SanitizeForLog(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return string.Empty;
+        }
+
+        const int MaxLength = 200;
+        var cleaned = value.Replace("\r", string.Empty).Replace("\n", string.Empty);
+        var builder = new StringBuilder(Math.Min(cleaned.Length, MaxLength));
+        foreach (var ch in cleaned)
+        {
+            if (builder.Length >= MaxLength)
+            {
+                break;
+            }
+
+            builder.Append(char.IsControl(ch) ? '?' : ch);
+        }
+
+        return builder.ToString();
     }
 
     private static Task WriteStatusAsync(HttpListenerResponse response, HttpStatusCode statusCode, object payload)
