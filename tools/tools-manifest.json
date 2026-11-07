@@ -96,15 +96,17 @@
     },
     {
       "name": "gifsicle",
-      "version": "1.97",
-      "url": "https://eternallybored.org/misc/gifsicle/releases/gifsicle-1.97-win64.zip",
-      "sha256": "bb3ad4e1521a3953152f406eaafabda153fb5986938405860a7e7f12a3d13227",
+      "version": "1.95",
+      "url": "https://eternallybored.org/misc/gifsicle/releases/gifsicle-1.95-win64.zip",
+      "sha256": "7e47dd0bfd5ee47f911464c57faeed89a8709a7625dd1c449b16579889539ee8",
       "archiveType": "zip",
       "destination": "gifsicle",
       "updateSource": {
         "type": "page-regex",
         "url": "https://eternallybored.org/misc/gifsicle/",
-        "pattern": "gifsicle-(?<version>[0-9.]+)-win64\\.zip"
+        "pattern": "gifsicle-(?<version>[0-9.]+)-win64\\.zip",
+        "skipVersions": [ "1.97" ],
+        "skipReason": "gifsicle 1.97 --lossy barely shrinks anything (fixed upstream in 1.98), so the lossy GIF search finds no savings. Waiting for a Windows build of 1.98 or later."
       }
     }
   ]
