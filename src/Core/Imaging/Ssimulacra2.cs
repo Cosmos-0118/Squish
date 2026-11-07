@@ -78,10 +78,32 @@ internal static class Ssimulacra2
         }
 
         var backdrops = channels == 3
-            ? new[] { PrepareBackdrop(reference, width, height, 3, 0f, cancellationToken) }
-            : new[] { PrepareBackdrop(reference, width, height, 4, 0.1f, cancellationToken), PrepareBackdrop(reference, width, height, 4, 0.9f, cancellationToken) };
+            ? new[] { PrepareBackdrop(reference, width, height, 3, 3, 0f, cancellationToken) }
+            : new[] { PrepareBackdrop(reference, width, height, 4, 4, 0.1f, cancellationToken), PrepareBackdrop(reference, width, height, 4, 4, 0.9f, cancellationToken) };
 
-        return new PreparedReference(width, height, channels, backdrops);
+        return new PreparedReference(width, height, channels, channels, backdrops);
+    }
+
+    /// <summary>
+    /// Scores two fully opaque images that are stored as RGBA (alpha ignored), so callers do not have to copy them
+    /// into a packed RGB buffer first. Same result as <see cref="Compute"/> on the RGB data.
+    /// </summary>
+    public static double ComputeOpaqueRgba(ReadOnlySpan<byte> reference, ReadOnlySpan<byte> distorted, int width, int height, CancellationToken cancellationToken = default)
+        => PrepareOpaqueRgba(reference, width, height, cancellationToken).Compare(distorted, cancellationToken);
+
+    /// <summary>
+    /// Like <see cref="Prepare"/> for an opaque RGBA reference. The prepared reference expects RGBA candidates
+    /// (alpha ignored) in <see cref="PreparedReference.Compare"/>.
+    /// </summary>
+    public static PreparedReference PrepareOpaqueRgba(ReadOnlySpan<byte> reference, int width, int height, CancellationToken cancellationToken = default)
+    {
+        var expected = (long)width * height * 4;
+        if (width < MinDimension || height < MinDimension || reference.Length < expected)
+        {
+            throw new ArgumentException("Images must be at least 8x8 and match the declared dimensions.");
+        }
+
+        return new PreparedReference(width, height, 3, 4, new[] { PrepareBackdrop(reference, width, height, 3, 4, 0f, cancellationToken) });
     }
 
     /// <summary>A reference image ready to be compared with any number of candidates. Immutable, so thread-safe.</summary>
@@ -89,11 +111,12 @@ internal static class Ssimulacra2
     {
         private readonly Backdrop[] _backdrops;
 
-        internal PreparedReference(int width, int height, int channels, Backdrop[] backdrops)
+        internal PreparedReference(int width, int height, int channels, int stride, Backdrop[] backdrops)
         {
             Width = width;
             Height = height;
             Channels = channels;
+            Stride = stride;
             _backdrops = backdrops;
         }
 
@@ -103,10 +126,13 @@ internal static class Ssimulacra2
 
         public int Channels { get; }
 
+        /// <summary>Bytes per pixel the candidate buffer is expected to use (3, or 4 for RGBA).</summary>
+        public int Stride { get; }
+
         /// <summary>Scores <paramref name="distorted"/> (same size and channel layout as the reference).</summary>
         public double Compare(ReadOnlySpan<byte> distorted, CancellationToken cancellationToken = default)
         {
-            if (distorted.Length < (long)Width * Height * Channels)
+            if (distorted.Length < (long)Width * Height * Stride)
             {
                 throw new ArgumentException("Images must be at least 8x8 and match the declared dimensions.");
             }
@@ -114,7 +140,7 @@ internal static class Ssimulacra2
             var score = double.MaxValue;
             foreach (var backdrop in _backdrops)
             {
-                score = Math.Min(score, CompareBackdrop(backdrop, distorted, Width, Height, Channels, cancellationToken));
+                score = Math.Min(score, CompareBackdrop(backdrop, distorted, Width, Height, Channels, Stride, cancellationToken));
             }
 
             return score;
@@ -127,11 +153,14 @@ internal static class Ssimulacra2
     /// <summary>One pyramid level of the reference: XYB planes plus their blurred mean and blurred square.</summary>
     internal sealed record ReferenceScale(int Width, int Height, float[][] Xyb, float[][] Mu, float[][] Sigma);
 
-    private static Backdrop PrepareBackdrop(ReadOnlySpan<byte> reference, int width, int height, int channels, float backdrop, CancellationToken token)
+    private static Backdrop PrepareBackdrop(ReadOnlySpan<byte> reference, int width, int height, int channels, int stride, float backdrop, CancellationToken token)
     {
-        var lin = ToLinearPlanes(reference, width, height, channels, backdrop);
+        var lin = ToLinearPlanes(reference, width, height, channels, stride, backdrop);
         var scales = new List<ReferenceScale>(NumScales);
         int w = width, h = height, gateW = width, gateH = height;
+
+        // One blur scratch plane serves every channel and every (smaller) scale.
+        var tmp = new float[width * height];
 
         for (var scale = 0; scale < NumScales; scale++)
         {
@@ -141,23 +170,29 @@ internal static class Ssimulacra2
                 break;
             }
 
-            var next = Downsample(lin, w, h, out var nextW, out var nextH);
+            // The last level has no successor, so skip the downsample that would only be thrown away.
+            int nextW = 0, nextH = 0;
+            var next = scale + 1 < NumScales ? Downsample(lin, w, h, out nextW, out nextH) : null;
+
             ToXyb(lin, w * h);
 
             var pixels = w * h;
             var mu = new float[3][];
             var sigma = new float[3][];
-            var (cw, ch, xyb) = (w, h, lin);
-            Parallel.For(0, 3, new ParallelOptions { MaxDegreeOfParallelism = Math.Min(3, Environment.ProcessorCount), CancellationToken = token }, c =>
+            for (var c = 0; c < 3; c++)
             {
-                var tmp = new float[pixels];
                 mu[c] = new float[pixels];
                 sigma[c] = new float[pixels];
-                Blur(xyb[c], mu[c], tmp, cw, ch);
-                BlurProduct(xyb[c], xyb[c], sigma[c], tmp, cw, ch);
-            });
+                Blur(lin[c], mu[c], tmp, w, h);
+                BlurProduct(lin[c], lin[c], sigma[c], tmp, w, h);
+            }
 
             scales.Add(new ReferenceScale(w, h, lin, mu, sigma));
+
+            if (next is null)
+            {
+                break;
+            }
 
             lin = next;
             gateW = w;
@@ -169,11 +204,16 @@ internal static class Ssimulacra2
         return new Backdrop(backdrop, scales.ToArray());
     }
 
-    private static double CompareBackdrop(Backdrop reference, ReadOnlySpan<byte> distorted, int width, int height, int channels, CancellationToken token)
+    private static double CompareBackdrop(Backdrop reference, ReadOnlySpan<byte> distorted, int width, int height, int channels, int stride, CancellationToken token)
     {
-        var lin2 = ToLinearPlanes(distorted, width, height, channels, reference.Value);
+        var lin2 = ToLinearPlanes(distorted, width, height, channels, stride, reference.Value);
         var scales = new (double[] Ssim, double[] Edge)[NumScales];
         var scaleCount = 0;
+
+        // Four working planes sized for the largest scale; every channel and every smaller scale reuses their prefix,
+        // instead of allocating (and abandoning on the LOH) a fresh set per channel per scale.
+        var first = reference.Scales[0];
+        var work = new Workspace(first.Width * first.Height);
 
         foreach (var level in reference.Scales)
         {
@@ -181,7 +221,7 @@ internal static class Ssimulacra2
             var next2 = scaleCount + 1 < reference.Scales.Length ? Downsample(lin2, level.Width, level.Height, out _, out _) : null;
             ToXyb(lin2, level.Width * level.Height);
 
-            scales[scaleCount++] = ComputeScale(level, lin2, token);
+            scales[scaleCount++] = ComputeScale(level, lin2, work, token);
 
             lin2 = next2!;
         }
@@ -189,7 +229,27 @@ internal static class Ssimulacra2
         return FinalScore(scales, scaleCount);
     }
 
-    private static (double[] Ssim, double[] Edge) ComputeScale(ReferenceScale reference, float[][] xyb2, CancellationToken token)
+    /// <summary>Scratch planes for one scale's comparison. Contents are undefined between uses.</summary>
+    private sealed class Workspace
+    {
+        public Workspace(int pixels)
+        {
+            Tmp = new float[pixels];
+            Mu2 = new float[pixels];
+            S22 = new float[pixels];
+            S12 = new float[pixels];
+        }
+
+        public float[] Tmp { get; }
+
+        public float[] Mu2 { get; }
+
+        public float[] S22 { get; }
+
+        public float[] S12 { get; }
+    }
+
+    private static (double[] Ssim, double[] Edge) ComputeScale(ReferenceScale reference, float[][] xyb2, Workspace work, CancellationToken token)
     {
         var ssim = new double[6];
         var edge = new double[12];
@@ -197,18 +257,20 @@ internal static class Ssimulacra2
         var h = reference.Height;
         var pixels = w * h;
         var perChannel = new (double S0, double S1, double[] Edge)[3];
+        var tmp = work.Tmp;
+        var mu2 = work.Mu2;
+        var s22 = work.S22;
+        var s12 = work.S12;
 
-        // The three XYB channels are independent from here on, which also keeps peak memory at one channel's worth.
-        Parallel.For(0, 3, new ParallelOptions { MaxDegreeOfParallelism = Math.Min(3, Environment.ProcessorCount), CancellationToken = token }, c =>
+        // Channels run one after another over a single set of scratch planes (peak memory = one channel's worth);
+        // the blur itself is parallel across rows for large planes, so cores stay busy.
+        for (var c = 0; c < 3; c++)
         {
+            token.ThrowIfCancellationRequested();
             var a = reference.Xyb[c];
             var b = xyb2[c];
             var mu1 = reference.Mu[c];
             var s11 = reference.Sigma[c];
-            var tmp = new float[pixels];
-            var mu2 = new float[pixels];
-            var s22 = new float[pixels];
-            var s12 = new float[pixels];
 
             Blur(b, mu2, tmp, w, h);
             BlurProduct(b, b, s22, tmp, w, h);
@@ -240,7 +302,7 @@ internal static class Ssimulacra2
             }
 
             perChannel[c] = (sum0, sum1, e);
-        });
+        }
 
         var inv = 1.0 / pixels;
         for (var c = 0; c < 3; c++)
@@ -289,7 +351,8 @@ internal static class Ssimulacra2
 
     // ---- colour ------------------------------------------------------------------------------------------
 
-    private static float[][] ToLinearPlanes(ReadOnlySpan<byte> pixels, int width, int height, int channels, float backdrop)
+    /// <param name="stride">Bytes per pixel in <paramref name="pixels"/>. With <paramref name="channels"/> = 3 and stride 4 the alpha byte is ignored.</param>
+    private static float[][] ToLinearPlanes(ReadOnlySpan<byte> pixels, int width, int height, int channels, int stride, float backdrop)
     {
         var count = width * height;
         var planes = new[] { new float[count], new float[count], new float[count] };
@@ -299,7 +362,7 @@ internal static class Ssimulacra2
         {
             for (var i = 0; i < count; i++)
             {
-                var o = i * 3;
+                var o = i * stride;
                 planes[0][i] = lut[pixels[o]];
                 planes[1][i] = lut[pixels[o + 1]];
                 planes[2][i] = lut[pixels[o + 2]];
@@ -402,22 +465,40 @@ internal static class Ssimulacra2
 
     private static void BlurProduct(float[] a, float[] b, float[] destination, float[] scratch, int w, int h)
     {
-        var product = new float[a.Length];
-        for (var i = 0; i < product.Length; i++)
+        // Blur reads its source fully into scratch before writing destination, so the product can live in destination.
+        var count = w * h;
+        for (var i = 0; i < count; i++)
         {
-            product[i] = a[i] * b[i];
+            destination[i] = a[i] * b[i];
         }
 
-        Blur(product, destination, scratch, w, h);
+        Blur(destination, destination, scratch, w, h);
     }
+
+    // Below this the thread hand-off costs more than the blur saves.
+    private const int ParallelBlurPixels = 128 * 1024;
 
     private static void Blur(float[] source, float[] destination, float[] scratch, int w, int h)
     {
+        if ((long)w * h >= ParallelBlurPixels)
+        {
+            const int rowsPerBlock = 32;
+            var blocks = (h + rowsPerBlock - 1) / rowsPerBlock;
+            Parallel.For(0, blocks, block => BlurHorizontal(source, scratch, w, block * rowsPerBlock, Math.Min(h, (block + 1) * rowsPerBlock)));
+            Parallel.For(0, blocks, block => BlurVertical(scratch, destination, w, h, block * rowsPerBlock, Math.Min(h, (block + 1) * rowsPerBlock)));
+            return;
+        }
+
+        BlurHorizontal(source, scratch, w, 0, h);
+        BlurVertical(scratch, destination, w, h, 0, h);
+    }
+
+    // Horizontal pass (zero padded) over rows [yStart, yEnd).
+    private static void BlurHorizontal(float[] source, float[] scratch, int w, int yStart, int yEnd)
+    {
         var k = Kernel;
         var r = KernelRadius;
-
-        // Horizontal pass (zero padded).
-        for (var y = 0; y < h; y++)
+        for (var y = yStart; y < yEnd; y++)
         {
             var row = y * w;
             for (var x = 0; x < w; x++)
@@ -433,10 +514,15 @@ internal static class Ssimulacra2
                 scratch[row + x] = sum;
             }
         }
+    }
 
-        // Vertical pass, row-vectorised.
+    // Vertical pass, row-vectorised, writing rows [yStart, yEnd) of the destination.
+    private static void BlurVertical(float[] scratch, float[] destination, int w, int h, int yStart, int yEnd)
+    {
+        var k = Kernel;
+        var r = KernelRadius;
         var lanes = Vector<float>.Count;
-        for (var y = 0; y < h; y++)
+        for (var y = yStart; y < yEnd; y++)
         {
             var from = Math.Max(0, y - r);
             var to = Math.Min(h - 1, y + r);

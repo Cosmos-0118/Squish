@@ -236,7 +236,8 @@ internal sealed class ImageOptimisationJob : IDisposable
             return null;
         }
 
-        var reference = ImageIO.ToRaster(PrepareImage(decoded.Image, downscale));
+        // The decoded pixels are not needed again on this path, so convert in place instead of cloning them natively.
+        var reference = ImageIO.ToRasterInPlace(PrepareImage(decoded.Image, downscale));
         if (!PerceptualReference.IsSupported(reference))
         {
             return null;
@@ -301,17 +302,20 @@ internal sealed class ImageOptimisationJob : IDisposable
 
         // The searches are independent (separate encoder processes, read-only reference), so run them side by side.
         var perceptual = PerceptualReference.Create(reference);
+        // The final full-frame check is identical for every search, so they share one reference (and its prepared
+        // pyramid) and take turns on it: concurrent full-frame decodes + scoring were the biggest memory spike.
+        var verification = perceptual.IsWholeImage ? null : new Verification(PerceptualReference.CreateFullCoverage(reference));
         // Every chroma layout is tried with each JPEG encoder; the smallest file that passes wins.
         var entries = new List<(ChromaSubsampling Chroma, string Encoder, Task<EncodedCandidate?> Search)>();
         foreach (var chroma in chromas)
         {
             var layout = chroma;
             entries.Add((layout, mozjpeg ? "mozjpeg" : "built-in encoder", SearchLossyAsync(reference, perceptual, lowest, highest,
-                (image, quality, token) => _encoders.EncodeJpegAsync(image, quality, layout, token))));
+                (image, quality, token) => _encoders.EncodeJpegAsync(image, quality, layout, token), verification: verification)));
             if (_encoders.HasJpegli)
             {
                 entries.Add((layout, "jpegli", SearchLossyAsync(reference, perceptual, lowest, highest,
-                    (image, quality, token) => _encoders.EncodeJpegliAsync(image, quality, layout, token))));
+                    (image, quality, token) => _encoders.EncodeJpegliAsync(image, quality, layout, token), verification: verification)));
             }
         }
 
@@ -418,7 +422,9 @@ internal sealed class ImageOptimisationJob : IDisposable
         {
             _context.ReportProgress(30, "Evaluating lossy options");
             using var decoded = ImageIO.Decode(_source.Value, SourceFormat.Png, autoOrient: true);
-            var reference = ImageIO.ToRaster(PrepareImage(decoded.Image, downscale));
+            // The downscaled PNG candidate re-reads the decoded image later; otherwise it is free to consume.
+            var prepared = PrepareImage(decoded.Image, downscale);
+            var reference = downscale ? ImageIO.ToRaster(prepared) : ImageIO.ToRasterInPlace(prepared);
             var hasAlpha = reference.HasVisibleAlpha();
             var content = ImageContentAnalyzer.Analyse(reference, hasAlpha);
             var blobs = new MetadataBlobs(decoded.ExifProfile, decoded.IccProfile, decoded.XmpProfile, decoded.IptcProfile);
@@ -503,6 +509,10 @@ internal sealed class ImageOptimisationJob : IDisposable
         double? bestScore = null;
         var bestQuality = 0;
 
+        // pngquant runs side by side (cheap external processes), but decoding + scoring a candidate holds the whole
+        // frame and a scoring workspace, so those take turns.
+        var scoring = perceptual is null ? null : new Verification(perceptual);
+
         // Quantises at a pngquant quality cap; the file comes back only when it meets the target.
         async Task<(int Quality, FilePath? File, double? Score)> ProbeAsync(int quality)
         {
@@ -517,7 +527,7 @@ internal sealed class ImageOptimisationJob : IDisposable
                 return (quality, quantised, null);
             }
 
-            var score = await Task.Run(() => perceptual.Score(ImageIO.DecodeToRaster(quantised.Value.Value), _token), _token).ConfigureAwait(false);
+            var score = await scoring!.ScoreAsync(quantised.Value.Value, _token).ConfigureAwait(false);
             if (score < _targetScore)
             {
                 _temp.Release(quantised.Value);
@@ -865,6 +875,28 @@ internal sealed class ImageOptimisationJob : IDisposable
     // ------------------------------------------------------------------------------------------------------
 
     /// <summary>
+    /// A full-frame reference plus a gate so only one decode-and-score runs at a time per job: each holds the decoded
+    /// frame and a whole scoring workspace, which is tens to hundreds of MB for large images.
+    /// </summary>
+    private sealed class Verification(PerceptualReference reference)
+    {
+        private readonly SemaphoreSlim _gate = new(1, 1);
+
+        public async Task<double> ScoreAsync(string path, CancellationToken token)
+        {
+            await _gate.WaitAsync(token).ConfigureAwait(false);
+            try
+            {
+                return await Task.Run(() => reference.Score(ImageIO.DecodeToRaster(path), token), token).ConfigureAwait(false);
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+    }
+
+    /// <summary>
     /// Bisects quality on a small mosaic of representative tiles (or the whole picture when it is small), then
     /// encodes the real image once and verifies it, nudging quality up if the full encode scores below target.
     /// </summary>
@@ -874,7 +906,8 @@ internal sealed class ImageOptimisationJob : IDisposable
         int lowest,
         int highest,
         Func<RasterImage, int, CancellationToken, Task<FilePath?>> encode,
-        int iterations = SearchIterations)
+        int iterations = SearchIterations,
+        Verification? verification = null)
     {
         var useMosaic = !perceptual.IsWholeImage;
         var probeImage = useMosaic ? perceptual.BuildMosaic() : reference;
@@ -953,7 +986,7 @@ internal sealed class ImageOptimisationJob : IDisposable
 
         // The search judged a few sampled tiles; the shipped file is judged on every pixel. Sampled tiles miss
         // low-frequency error such as chroma re-subsampling of a 4:2:2 / 4:4:4 source (seen 5+ points too generous).
-        var verifier = perceptual.IsWholeImage ? perceptual : PerceptualReference.CreateFullCoverage(reference);
+        verification ??= new Verification(perceptual.IsWholeImage ? perceptual : PerceptualReference.CreateFullCoverage(reference));
         var quality = found.Value;
         for (var attempt = 0; attempt < VerificationRetries; attempt++)
         {
@@ -964,8 +997,7 @@ internal sealed class ImageOptimisationJob : IDisposable
                 return null;
             }
 
-            var decoded = ImageIO.DecodeToRaster(file.Value.Value);
-            var score = verifier.Score(decoded, _token);
+            var score = await verification.ScoreAsync(file.Value.Value, _token).ConfigureAwait(false);
             if (score >= _targetScore)
             {
                 return new EncodedCandidate(file.Value, quality, score);
