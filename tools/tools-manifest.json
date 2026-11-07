@@ -68,9 +68,9 @@
     },
     {
       "name": "libavif",
-      "version": "1.4.1",
-      "url": "https://github.com/AOMediaCodec/libavif/releases/download/v1.4.1/windows-artifacts.zip",
-      "sha256": "54d665ba6ca8f4ba98fa3dc2c761ebe78c32fadf93d3bf92d5880a6622271656",
+      "version": "1.4.2",
+      "url": "https://github.com/AOMediaCodec/libavif/releases/download/v1.4.2/windows-artifacts.zip",
+      "sha256": "cb2d9fea43dcbab1d0707e3b37eb7b08070ad2fb60a2c188c39ec12382c0484a",
       "archiveType": "zip",
       "destination": "libavif",
       "updateSource": {
@@ -104,7 +104,9 @@
       "updateSource": {
         "type": "page-regex",
         "url": "https://eternallybored.org/misc/gifsicle/",
-        "pattern": "gifsicle-(?<version>[0-9.]+)-win64\\.zip"
+        "pattern": "gifsicle-(?<version>[0-9.]+)-win64\\.zip",
+        "skipVersions": [ "1.97" ],
+        "skipReason": "gifsicle 1.97 --lossy barely shrinks anything (fixed upstream in 1.98), so the lossy GIF search finds no savings. Waiting for a Windows build of 1.98 or later."
       }
     }
   ]
