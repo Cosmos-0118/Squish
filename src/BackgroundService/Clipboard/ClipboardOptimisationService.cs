@@ -26,6 +26,10 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
     private readonly ILogger<ClipboardOptimisationService> _logger;
     private readonly ConcurrentDictionary<string, PendingClipboardWork> _pending = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, byte> _inFlightPaths = new(StringComparer.Ordinal);
+    // One screenshot reaches the clipboard several times; this collapses those writes into one optimisation.
+    private readonly ClipboardImageTracker _recentImages = new();
+    // Requests cancelled because a newer clipboard image replaced theirs; a result that still arrives is discarded.
+    private readonly ConcurrentDictionary<string, byte> _superseded = new(StringComparer.Ordinal);
     // origin snapshot sequence -> sequence produced by our latest write for it (several files from one copy)
     private readonly ConcurrentDictionary<uint, uint> _ownWrites = new();
     private readonly object _stateGate = new();
@@ -158,6 +162,7 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
 
         var item = work.Item;
         _inFlightPaths.TryRemove(item.SourcePath.Value, out _);
+        var superseded = _superseded.TryRemove(result.RequestId, out _);
 
         ClipboardItem? contributionItem = null;
         FilePath? contributionPath = null;
@@ -166,7 +171,19 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
             var sourcePath = item.SourcePath;
             var finalPath = sourcePath;
 
-            if (result.Status == OptimisationStatus.Succeeded)
+            if (result.Status == OptimisationStatus.Succeeded && superseded && item.IsTemporary)
+            {
+                // The cancel arrived too late to stop the job, but a newer clipboard image has replaced this one:
+                // the result can never be written back, and the temporary file would otherwise sit in the images folder.
+                _logger.LogDebug("Discarding clipboard optimisation {RequestId}; a newer clipboard image replaced it.", result.RequestId);
+                var output = result.OutputPath ?? sourcePath;
+                TryDeleteFile(output);
+                if (!PathsEqual(sourcePath, output))
+                {
+                    TryDeleteFile(sourcePath);
+                }
+            }
+            else if (result.Status == OptimisationStatus.Succeeded)
             {
                 var output = result.OutputPath ?? sourcePath;
                 finalPath = output;
@@ -185,6 +202,14 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
                 RegisterOptimisedResult(finalPath);
 
                 if (item.IsTemporary && !PathsEqual(sourcePath, finalPath))
+                {
+                    TryDeleteFile(sourcePath);
+                }
+            }
+            else if (superseded && result.Status == OptimisationStatus.Cancelled)
+            {
+                _logger.LogDebug("Clipboard optimisation {RequestId} cancelled; a newer clipboard image replaced it.", result.RequestId);
+                if (item.IsTemporary)
                 {
                     TryDeleteFile(sourcePath);
                 }
@@ -211,7 +236,15 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
             _logger.LogError(ex, "Failed finalising clipboard optimisation {RequestId}", result.RequestId);
         }
 
-        await work.Batch.ContributeAsync(this, contributionItem, contributionPath).ConfigureAwait(false);
+        try
+        {
+            await work.Batch.ContributeAsync(this, contributionItem, contributionPath).ConfigureAwait(false);
+        }
+        finally
+        {
+            // Keep a success on record briefly so a late repeat of the same snip is still recognised.
+            _recentImages.Finish(result.RequestId, keep: result.Status == OptimisationStatus.Succeeded && !superseded);
+        }
     }
 
     /// <summary>
@@ -227,6 +260,7 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
 
         var current = _monitor.CurrentSequence;
         return current == item.OriginSequence ||
+               _recentImages.IsLatestSequence(item.OriginSequence, current) ||
                (_ownWrites.TryGetValue(item.OriginSequence, out var ownSequence) && current == ownSequence);
     }
 
@@ -260,6 +294,8 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
             _logger.LogTrace("Clipboard change did not contain optimisable content.");
             return;
         }
+
+        CancelSupersededImages();
 
         // One clipboard generation for the whole copy. Writing each file back as it finishes fills Win+V
         // with an entry per file, and only the last one is actually on the clipboard.
@@ -318,10 +354,10 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
         // Apps that copy an image file also publish a preview bitmap of it; optimising both would do the work twice.
         if (results.Count == 0 && snapshot.ImageBytes is { Length: > 0 } bytes)
         {
-            var tempPath = PersistClipboardImage(bytes);
-            if (tempPath is not null)
+            var item = BuildBitmapItem(bytes, snapshot.Sequence);
+            if (item is not null)
             {
-                results.Add(new ClipboardItem(tempPath.Value, ItemType.Image, ClipboardOrigin.Bitmap, true, true, snapshot.Sequence));
+                results.Add(item);
             }
         }
 
@@ -359,6 +395,61 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
         }
 
         return results;
+    }
+
+    /// <summary>
+    /// Turns a clipboard bitmap into an item to optimise, unless it is a repeat. A single Windows screenshot is
+    /// written to the clipboard two or three times (the capture overlay, then Snipping Tool's own PNG), and each write
+    /// is a separate snapshot; the repeats are recognised here, before anything is written to disk.
+    /// </summary>
+    private ClipboardItem? BuildBitmapItem(byte[] bytes, uint sequence)
+    {
+        var signature = ClipboardImageSignature.Create(bytes);
+
+        if (_recentImages.FindDuplicate(signature, sequence) is not null)
+        {
+            _logger.LogDebug("Clipboard image is a repeat of one already handled ({Width}x{Height}); skipping.", signature.Width, signature.Height);
+            return null;
+        }
+
+        // Output we produced earlier (or any recently optimised file with identical bytes) needs no second pass.
+        if (_optimisedFiles.WasFingerprintRecentlyOptimised(signature.Fingerprint))
+        {
+            _logger.LogDebug("Clipboard image matches a recently optimised file; skipping.");
+            return null;
+        }
+
+        var tempPath = PersistClipboardImage(bytes);
+        if (tempPath is null)
+        {
+            return null;
+        }
+
+        var entry = _recentImages.Add(signature, sequence);
+        return new ClipboardItem(tempPath.Value, ItemType.Image, ClipboardOrigin.Bitmap, true, true, sequence)
+        {
+            ImageEntry = entry
+        };
+    }
+
+    /// <summary>
+    /// A different clipboard image arrived while older ones are still being optimised. The clipboard holds one
+    /// thing, so their results could never be written back; stop them instead of finishing and discarding the work.
+    /// </summary>
+    private void CancelSupersededImages()
+    {
+        if (!_autoCopy)
+        {
+            // Without write-back the optimised file in the images folder is the result, and each one is still wanted.
+            return;
+        }
+
+        foreach (var requestId in _recentImages.SupersedeInFlight())
+        {
+            _superseded[requestId] = 0;
+            _logger.LogDebug("Cancelling clipboard optimisation {RequestId}; the clipboard now holds a different image.", requestId);
+            _coordinator.Cancel(requestId, "Superseded by newer clipboard content");
+        }
     }
 
     private bool ShouldSkipSourceFile(FilePath filePath)
@@ -412,6 +503,7 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
                 TryDeleteFile(item.SourcePath);
             }
 
+            DiscardImageEntry(item);
             _ = batch.ContributeAsync(this, null, null);
             return;
         }
@@ -432,6 +524,10 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
             var request = new OptimisationRequest(item.ItemType, item.SourcePath, metadata: metadata);
             requestId = request.RequestId;
             _pending[requestId] = new PendingClipboardWork(item, batch);
+            if (item.ImageEntry is { } imageEntry)
+            {
+                _recentImages.MarkQueued(imageEntry, requestId);
+            }
 
             var ticket = _coordinator.Enqueue(request);
             // The ticket is the single source of truth: it completes for success, failure, cancellation and the
@@ -460,8 +556,17 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
             else
             {
                 _inFlightPaths.TryRemove(item.SourcePath.Value, out _);
+                DiscardImageEntry(item);
                 _ = batch.ContributeAsync(this, null, null);
             }
+        }
+    }
+
+    private void DiscardImageEntry(ClipboardItem item)
+    {
+        if (item.ImageEntry is { } entry)
+        {
+            _recentImages.Discard(entry);
         }
     }
 

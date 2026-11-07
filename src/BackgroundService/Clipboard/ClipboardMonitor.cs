@@ -37,9 +37,13 @@ public sealed class ClipboardMonitor : IDisposable
     private const int CaptureTimerId = 1;
     private const int WatchdogTimerId = 2;
     private const int MaxTextChars = 64 * 1024;
+    private const uint CfBitmap = 2;
+    private const uint CfDib = 8;
 
     private static readonly int[] RetryBackoffMs = { 20, 40, 80, 150, 250, 250, 250 };
     private static readonly byte[] PngSignature = { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
+    // The "PNG" clipboard format that browsers and Snipping Tool publish; registered once per process.
+    private static readonly Lazy<uint> PngFormat = new(() => RegisterClipboardFormat("PNG"));
 
     private readonly ILogger<ClipboardMonitor> _logger;
     private readonly ClipboardMonitorOptions _options;
@@ -361,7 +365,7 @@ public sealed class ClipboardMonitor : IDisposable
                 Interlocked.Increment(ref _notifications);
                 pump.LastSeen = GetSequenceSafe();
                 pump.Attempt = 0;
-                ScheduleCapture(pump, _options.Debounce);
+                ScheduleCapture(pump, DebounceForCurrentContent(pump));
                 return true;
 
             case WmTimer:
@@ -428,19 +432,36 @@ public sealed class ClipboardMonitor : IDisposable
         }
 
         pump.Attempt = 0;
-        ScheduleCapture(pump, _options.Debounce);
+        ScheduleCapture(pump, DebounceForCurrentContent(pump));
+    }
+
+    /// <summary>
+    /// Screenshots take longer to settle than text. The capture overlay puts a bitmap on the clipboard and Snipping
+    /// Tool then replaces it with its own PNG (and sometimes a third write) over the next few hundred milliseconds, so
+    /// while an image is on the clipboard the monitor waits for a longer quiet period before reading it.
+    /// </summary>
+    private TimeSpan DebounceForCurrentContent(Pump pump)
+    {
+        if (_captureOptions.Image && ClipboardHasImage())
+        {
+            pump.ImagePending = true;
+            return _options.ImageDebounce;
+        }
+
+        return _options.Debounce;
     }
 
     private void ScheduleCapture(Pump pump, TimeSpan delay)
     {
         var now = Environment.TickCount64;
         var ms = (long)delay.TotalMilliseconds;
+        var maxDebounce = pump.ImagePending ? _options.ImageMaxDebounce : _options.MaxDebounce;
 
         if (pump.FirstPendingTick == 0)
         {
             pump.FirstPendingTick = now;
         }
-        else if (now - pump.FirstPendingTick >= _options.MaxDebounce.TotalMilliseconds)
+        else if (now - pump.FirstPendingTick >= maxDebounce.TotalMilliseconds)
         {
             // Continuous churn must not postpone the capture forever.
             ms = 1;
@@ -449,12 +470,18 @@ public sealed class ClipboardMonitor : IDisposable
         SetTimer(pump.Hwnd, (UIntPtr)CaptureTimerId, (uint)Math.Max(1, ms), IntPtr.Zero);
     }
 
+    private static void ResetPending(Pump pump)
+    {
+        pump.FirstPendingTick = 0;
+        pump.ImagePending = false;
+    }
+
     private void AttemptCapture(Pump pump)
     {
         var sequence = GetSequenceSafe();
         if (sequence == 0)
         {
-            pump.FirstPendingTick = 0;
+            ResetPending(pump);
             return;
         }
 
@@ -462,7 +489,7 @@ public sealed class ClipboardMonitor : IDisposable
         {
             // Our own write, or a notification for content we already handled.
             Interlocked.Increment(ref _skippedDuplicates);
-            pump.FirstPendingTick = 0;
+            ResetPending(pump);
             return;
         }
 
@@ -484,7 +511,7 @@ public sealed class ClipboardMonitor : IDisposable
             return;
         }
 
-        pump.FirstPendingTick = 0;
+        ResetPending(pump);
         pump.Attempt = 0;
         pump.LastCaptured = sequence;
 
@@ -609,6 +636,18 @@ public sealed class ClipboardMonitor : IDisposable
         }
     }
 
+    private static bool ClipboardHasImage()
+    {
+        try
+        {
+            return IsClipboardFormatAvailable(CfDib) || IsClipboardFormatAvailable(CfBitmap) || IsClipboardFormatAvailable(PngFormat.Value);
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
     private uint GetSequenceSafe()
     {
         try
@@ -642,6 +681,7 @@ public sealed class ClipboardMonitor : IDisposable
         public uint LastCaptured;
         public uint LastSeen;
         public long FirstPendingTick;
+        public bool ImagePending;
         public int Attempt;
 
         public void CancelAll()
@@ -748,6 +788,15 @@ public sealed class ClipboardMonitor : IDisposable
     private static extern uint GetClipboardSequenceNumber();
 
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsClipboardFormatAvailable(uint format);
+
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern uint RegisterClipboardFormat(string name);
+
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool AddClipboardFormatListener(IntPtr hwnd);
@@ -796,6 +845,15 @@ internal sealed record ClipboardMonitorOptions
 
     /// <summary>Upper bound on how long continuous notifications may postpone a capture.</summary>
     public TimeSpan MaxDebounce { get; init; } = TimeSpan.FromMilliseconds(250);
+
+    /// <summary>
+    /// Quiet time used instead of <see cref="Debounce"/> while an image is on the clipboard. Screenshot tools hand the
+    /// capture between processes and publish it again a few hundred milliseconds later.
+    /// </summary>
+    public TimeSpan ImageDebounce { get; init; } = TimeSpan.FromMilliseconds(200);
+
+    /// <summary>Upper bound on how long continuous notifications may postpone the capture of an image.</summary>
+    public TimeSpan ImageMaxDebounce { get; init; } = TimeSpan.FromMilliseconds(750);
 
     /// <summary>How often the watchdog compares sequence numbers to catch undelivered notifications.</summary>
     public TimeSpan WatchdogInterval { get; init; } = TimeSpan.FromSeconds(3);

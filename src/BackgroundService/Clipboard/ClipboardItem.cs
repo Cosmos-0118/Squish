@@ -18,6 +18,9 @@ internal sealed record ClipboardItem(
     bool ShouldCopyToClipboard,
     uint OriginSequence)
 {
+    /// <summary>Set for bitmaps taken straight from the clipboard; used to recognise repeats of the same image.</summary>
+    public ClipboardImageEntry? ImageEntry { get; init; }
+
     public bool IsImage => ItemType == ItemType.Image;
 
     public bool IsVideo => ItemType == ItemType.Video;
