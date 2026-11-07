@@ -156,6 +156,33 @@ public sealed class ClipboardMonitorTests : IDisposable
     }
 
     [ClipboardFact]
+    public async Task AScreenshotPublishedTwiceInQuickSuccessionIsReportedOnce()
+    {
+        _monitor.Start();
+
+        // Snipping Tool style: the capture overlay puts a bitmap on the clipboard, then the tool publishes it again.
+        for (var i = 0; i < 2; i++)
+        {
+            RunSta(() =>
+            {
+                using var bitmap = new Bitmap(64, 48);
+                using (var g = Graphics.FromImage(bitmap))
+                {
+                    g.Clear(Color.CornflowerBlue);
+                }
+
+                Clipboard.SetImage(bitmap);
+            });
+            await Task.Delay(100);
+        }
+
+        await Eventually(() => _seen.Any(s => s.Snapshot.ImageBytes is { Length: > 8 }));
+        await Task.Delay(600);
+
+        Assert.Single(_seen);
+    }
+
+    [ClipboardFact]
     public async Task SkipsReadingImageAndTextWhenNotWanted()
     {
         _monitor.CaptureOptions = new ClipboardCaptureOptions(Files: false, Image: false, Text: false);
