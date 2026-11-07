@@ -193,6 +193,12 @@ try {
             $latest = Get-LatestRelease -Tool $tool
             $current = ConvertTo-Version $tool.version
             $candidate = ConvertTo-Version $latest.Version
+            if ($tool.updateSource.PSObject.Properties['skipVersions'] -and @($tool.updateSource.skipVersions) -contains $latest.Version) {
+                $reason = if ($tool.updateSource.PSObject.Properties['skipReason']) { $tool.updateSource.skipReason } else { 'listed in skipVersions' }
+                Write-Host "==> $($tool.name) $($tool.version): $($latest.Version) is skipped ($reason)"
+                continue
+            }
+
             if (-not $candidate -or ($current -and $candidate -le $current)) {
                 Write-Host "==> $($tool.name) $($tool.version): up to date"
                 continue
