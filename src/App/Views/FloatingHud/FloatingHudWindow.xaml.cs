@@ -123,6 +123,8 @@ public partial class FloatingHudWindow : Window
 
         animation.Completed += (_, _) =>
         {
+            // Drop the held clock (and the closure it keeps alive) before restoring the local value.
+            card.BeginAnimation(OpacityProperty, null);
             card.Opacity = 1;
             onCompleted();
         };

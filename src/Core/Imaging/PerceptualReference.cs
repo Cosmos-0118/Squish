@@ -21,6 +21,12 @@ internal sealed class PerceptualReference
     public const int DefaultTileSize = 384;
     public const int DefaultMaxTiles = 6;
 
+    /// <summary>
+    /// Largest full-coverage reference (pixels) whose prepared pyramid is kept for the life of the reference
+    /// (~36 bytes per pixel, so ~150 MB). Beyond this each score re-prepares its tiles to bound memory.
+    /// </summary>
+    public const int MaxCachedFullCoveragePixels = 4_200_000;
+
     private readonly RasterImage _reference;
 
     // Reference side of each tile's SSIMULACRA2 comparison, built on first use: [tile, 0] = RGB, [tile, 1] = RGBA.
@@ -91,7 +97,9 @@ internal sealed class PerceptualReference
             }
         }
 
-        return new PerceptualReference(reference, tiles, wholeImage: false, cachePrepared: false);
+        // Scoring every candidate against a re-built reference pyramid doubles the work and the allocations, so keep
+        // it whenever it fits; only very large frames fall back to re-preparing per score.
+        return new PerceptualReference(reference, tiles, wholeImage: false, cachePrepared: reference.PixelCount <= MaxCachedFullCoveragePixels);
     }
 
     /// <summary>Splits [0, length) into tile-sized spans; a short remainder is merged into the last span.</summary>
@@ -229,14 +237,15 @@ internal sealed class PerceptualReference
                 var reference = TileOf(tile);
                 cached = alpha
                     ? Ssimulacra2.Prepare(reference.Pixels, reference.Width, reference.Height, 4, token)
-                    : Ssimulacra2.Prepare(Rgb(reference), reference.Width, reference.Height, 3, token);
+                    : Ssimulacra2.PrepareOpaqueRgba(reference.Pixels, reference.Width, reference.Height, token);
                 _prepared[index, slot] = cached;
             }
 
             prepared = cached;
         }
 
-        return alpha ? prepared.Compare(candidate.Pixels, token) : prepared.Compare(Rgb(candidate), token);
+        // Both layouts read RGBA directly (an opaque reference ignores the alpha byte), so no packed-RGB copy is made.
+        return prepared.Compare(candidate.Pixels, token);
     }
 
     private RasterImage TileOf(SampleTile tile)
@@ -249,13 +258,11 @@ internal sealed class PerceptualReference
         var alpha = HasTransparency(reference.Pixels) || HasTransparency(candidate.Pixels);
         if (!alpha)
         {
-            return Ssimulacra2.Compute(Rgb(reference), Rgb(candidate), reference.Width, reference.Height, 3, token);
+            return Ssimulacra2.ComputeOpaqueRgba(reference.Pixels, candidate.Pixels, reference.Width, reference.Height, token);
         }
 
         return Ssimulacra2.Compute(reference.Pixels, candidate.Pixels, reference.Width, reference.Height, 4, token);
     }
-
-    private static byte[] Rgb(RasterImage image) => image.ToRgb();
 
     private static bool HasTransparency(byte[] rgba)
     {

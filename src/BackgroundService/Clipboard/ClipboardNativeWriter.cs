@@ -263,7 +263,8 @@ internal static class ClipboardNativeWriter
 
     private static byte[] ToDib(Bitmap bitmap)
     {
-        using var stream = new MemoryStream();
+        // Pre-size for the uncompressed BMP so the stream does not grow by doubling through the Large Object Heap.
+        using var stream = new MemoryStream(checked(bitmap.Width * bitmap.Height * 4 + 1024));
         bitmap.Save(stream, ImageFormat.Bmp);
         if (stream.Length <= 14)
         {

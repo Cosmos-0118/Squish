@@ -19,6 +19,11 @@ public sealed class OptimisationCoordinator : IAsyncDisposable
     private readonly ConcurrentDictionary<string, OptimisationWorkItem> _workItems = new(StringComparer.Ordinal);
     private readonly int _degreeOfParallelism;
 
+    // After a burst, wait this long with nothing running or queued before handing freed memory back to Windows.
+    private static readonly TimeSpan IdleReclaimDelay = TimeSpan.FromSeconds(3);
+    private readonly Timer _idleReclaimTimer;
+    private int _activeWorkItems;
+
     public OptimisationCoordinator(IEnumerable<IOptimiser> optimisers, int degreeOfParallelism = 2)
     {
         if (degreeOfParallelism <= 0)
@@ -38,6 +43,8 @@ public sealed class OptimisationCoordinator : IAsyncDisposable
             SingleReader = false,
             AllowSynchronousContinuations = false
         });
+
+        _idleReclaimTimer = new Timer(_ => ReclaimIfIdle(), null, Timeout.Infinite, Timeout.Infinite);
 
         for (var i = 0; i < _degreeOfParallelism; i++)
         {
@@ -112,13 +119,45 @@ public sealed class OptimisationCoordinator : IAsyncDisposable
             {
                 while (_channel.Reader.TryRead(out var workItem))
                 {
-                    await ProcessWorkItemAsync(workItem).ConfigureAwait(false);
+                    Interlocked.Increment(ref _activeWorkItems);
+                    _idleReclaimTimer.Change(Timeout.Infinite, Timeout.Infinite);
+                    try
+                    {
+                        await ProcessWorkItemAsync(workItem).ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        if (Interlocked.Decrement(ref _activeWorkItems) == 0 && _channel.Reader.Count == 0)
+                        {
+                            ScheduleIdleReclaim();
+                        }
+                    }
                 }
             }
         }
         catch (OperationCanceledException)
         {
             // shutting down
+        }
+    }
+
+    private void ScheduleIdleReclaim()
+    {
+        try
+        {
+            _idleReclaimTimer.Change(IdleReclaimDelay, Timeout.InfiniteTimeSpan);
+        }
+        catch (ObjectDisposedException)
+        {
+            // shutting down
+        }
+    }
+
+    private void ReclaimIfIdle()
+    {
+        if (Volatile.Read(ref _activeWorkItems) == 0 && _channel.Reader.Count == 0)
+        {
+            MemoryReclaimer.Reclaim();
         }
     }
 
@@ -257,6 +296,7 @@ public sealed class OptimisationCoordinator : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await StopAsync().ConfigureAwait(false);
+        await _idleReclaimTimer.DisposeAsync().ConfigureAwait(false);
         _shutdownCts.Dispose();
     }
 
