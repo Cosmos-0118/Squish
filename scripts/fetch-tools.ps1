@@ -61,9 +61,13 @@ function Invoke-FileDownload {
                     Remove-Item -LiteralPath $OutFile -Force -ErrorAction SilentlyContinue
                 }
 
+                # Strict mode is on, so reading .Response directly throws on exceptions that have no such property
+                # (timeouts, connection resets, cancelled requests). That used to abort the whole script and skip
+                # both the retries and the fallback URLs, so look the property up safely.
                 $statusCode = $null
-                if ($_.Exception.Response -and $_.Exception.Response.StatusCode) {
-                    $statusCode = [int]$_.Exception.Response.StatusCode
+                $responseProperty = $_.Exception.PSObject.Properties['Response']
+                if ($responseProperty -and $responseProperty.Value -and $responseProperty.Value.StatusCode) {
+                    $statusCode = [int]$responseProperty.Value.StatusCode
                 }
 
                 $errorText = "[$url attempt $attempt] $($_.Exception.Message)"
