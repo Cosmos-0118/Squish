@@ -112,7 +112,10 @@ jobs:
           Copy-Item installer/Output/*.exe artifacts -Force
 
       - name: Write checksums and release notes
+        id: notes
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $files = @(Get-ChildItem artifacts -File | Where-Object { $_.Extension -in '.exe', '.zip' } | ForEach-Object FullName)
           # Hash the files and write SHA256SUMS.txt. The README block it also rewrites here is a scratch copy:
@@ -125,7 +128,30 @@ jobs:
 
           $installer = "Squish-Setup-$($env:APP_VERSION).exe"
           $sha = (Get-FileHash "artifacts/$installer" -Algorithm SHA256).Hash.ToLowerInvariant()
-          $notes = @(
+          # Hand-written notes are kept, never replaced. Source, first match wins:
+          #   1. .github/release-notes/<tag>.md in the repo (e.g. v2.3.3.md)
+          #   2. the body of a release that already exists for this tag (written in the GitHub UI before tagging).
+          # The download/checksum block is appended below them between markers, so re-running the workflow
+          # replaces only that block and keeps the notes.
+          $tag = '${{ github.ref_name }}'
+          $custom = ''
+          $notesFile = ".github/release-notes/$tag.md"
+          if (Test-Path $notesFile) {
+            $custom = (Get-Content $notesFile -Raw).Trim()
+          } else {
+            try {
+              $existing = (gh release view $tag --json body --jq .body 2>$null) -join "`n"
+              if ($LASTEXITCODE -eq 0 -and $existing) {
+                $existing = $existing -replace '(?s)<!-- squish-integrity:start -->.*?<!-- squish-integrity:end -->', ''
+                $custom = $existing.Trim()
+              }
+            } catch { }
+          }
+
+          $integrity = @(
+            '<!-- squish-integrity:start -->',
+            '## Download',
+            '',
             "Download **$installer** and run it. Squish is unsigned, so Windows SmartScreen may warn.",
             '',
             'SHA256 of the installer:',
@@ -140,8 +166,17 @@ jobs:
             "(Get-FileHash .\$installer -Algorithm SHA256).Hash -eq '$sha'",
             '```',
             '',
-            'All hashes are in `SHA256SUMS.txt`.'
+            'All hashes are in `SHA256SUMS.txt`.',
+            '<!-- squish-integrity:end -->'
           ) -join "`n"
+
+          if ($custom) {
+            $notes = $custom + "`n`n---`n`n" + $integrity
+            "has_custom=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          } else {
+            $notes = $integrity
+            "has_custom=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          }
           Set-Content -Path "$env:RUNNER_TEMP/release-notes.md" -Value $notes -Encoding utf8
 
       - name: Upload workflow artifacts
@@ -155,7 +190,8 @@ jobs:
         with:
           name: Squish ${{ github.ref_name }}
           body_path: ${{ runner.temp }}/release-notes.md
-          generate_release_notes: true
+          # Auto "What's Changed" only when there are no hand-written notes (they carry their own list).
+          generate_release_notes: ${{ steps.notes.outputs.has_custom != 'true' }}
           prerelease: ${{ contains(github.ref_name, '-') }}
           fail_on_unmatched_files: true
           files: artifacts/*
