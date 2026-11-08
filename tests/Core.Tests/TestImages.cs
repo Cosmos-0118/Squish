@@ -120,7 +120,8 @@ internal static class TestImages
             image.Alpha(AlphaAction.Opaque);
         }
 
-        return image.GetPixelsUnsafe().ToByteArray(PixelMapping.RGBA)!;
+        using var pixels = image.GetPixelsUnsafe();
+        return pixels.ToByteArray(PixelMapping.RGBA)!;
     }
 
     public static (int Width, int Height) Dimensions(string path)

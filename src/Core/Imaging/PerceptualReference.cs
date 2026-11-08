@@ -102,16 +102,23 @@ internal sealed class PerceptualReference
         return new PerceptualReference(reference, tiles, wholeImage: false, cachePrepared: reference.PixelCount <= MaxCachedFullCoveragePixels);
     }
 
-    /// <summary>Splits [0, length) into tile-sized spans; a short remainder is merged into the last span.</summary>
-    private static IEnumerable<(int Start, int Length)> Spans(int length, int size)
+    /// <summary>
+    /// Splits [0, length) into the fewest near-equal spans that are no longer than <paramref name="size"/>, so a remainder
+    /// never inflates one tile (merging it into the last span made a 3840x2560 frame's corner tile 2.75 MP instead of ~1 MP).
+    /// </summary>
+    internal static IEnumerable<(int Start, int Length)> Spans(int length, int size)
     {
-        var count = Math.Max(1, length / size);
+        var count = Math.Max(1, (length + size - 1) / size);
         for (var i = 0; i < count; i++)
         {
-            var start = i * size;
-            yield return (start, i == count - 1 ? length - start : size);
+            yield return (Boundary(length, count, i), Boundary(length, count, i + 1) - Boundary(length, count, i));
         }
     }
+
+    // Interior boundaries snap to the nearest 16 px so tiles keep JPEG/AVIF block-grid alignment (as ChooseTiles does);
+    // a span can therefore exceed the nominal size by a few pixels.
+    private static int Boundary(int length, int count, int index)
+        => index <= 0 ? 0 : index >= count ? length : Math.Min(length - 1, (int)(((long)length * index / count + 8) / 16 * 16));
 
     /// <summary>Score of <paramref name="candidate"/> (same dimensions as the reference). Higher is better.</summary>
     public double Score(RasterImage candidate, CancellationToken cancellationToken = default)

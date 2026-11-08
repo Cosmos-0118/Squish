@@ -259,6 +259,31 @@ public static class ShortcutCatalog
         }
     }
 
+    /// <summary>
+    /// Forgets the bindings registered for a window that has been closed, so this static catalog does not keep the
+    /// closed window alive through its <see cref="InputBindingCollection"/>. Reopening the window re-applies them.
+    /// </summary>
+    public static void ReleaseMainWindowBindings(InputBindingCollection bindings)
+    {
+        ArgumentNullException.ThrowIfNull(bindings);
+
+        foreach (var (id, entry) in MainWindowBindings.ToList())
+        {
+            if (!ReferenceEquals(entry.Owner, bindings))
+            {
+                continue;
+            }
+
+            if (entry.Binding is not null)
+            {
+                bindings.Remove(entry.Binding);
+                entry.Binding = null;
+            }
+
+            MainWindowBindings.Remove(id);
+        }
+    }
+
     private static void ApplyBinding(MainWindowBindingEntry entry, ShortcutDefinition definition)
     {
         var binding = GetBinding(definition);

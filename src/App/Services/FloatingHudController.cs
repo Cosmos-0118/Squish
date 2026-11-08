@@ -19,7 +19,7 @@ public sealed class FloatingHudController : IDisposable
     private static readonly TimeSpan DefaultNotificationDuration = TimeSpan.FromSeconds(4);
 
     private readonly FloatingHudViewModel _viewModel;
-    private readonly FloatingHudWindow _window;
+    private readonly Func<FloatingHudWindow> _windowFactory;
     private readonly OptimisationCoordinator _coordinator;
     private readonly ILogger<FloatingHudController> _logger;
     private readonly Dictionary<string, FloatingResultViewModel> _results = new(StringComparer.Ordinal);
@@ -27,17 +27,20 @@ public sealed class FloatingHudController : IDisposable
     private readonly Dictionary<string, CancellationTokenSource> _dismissDelays = new(StringComparer.Ordinal);
     private readonly HashSet<string> _pendingDismissals = new(StringComparer.Ordinal);
 
+    // The window is created when there is something to show and closed again when the list empties, so an idle
+    // tray app holds no HUD visual tree (and does not pay for WPF's render target until a result appears).
+    private FloatingHudWindow? _window;
     private bool _isInitialized;
     private bool _isDisposed;
 
     public FloatingHudController(
         FloatingHudViewModel viewModel,
-        FloatingHudWindow window,
+        Func<FloatingHudWindow> windowFactory,
         OptimisationCoordinator coordinator,
         ILogger<FloatingHudController> logger)
     {
         _viewModel = viewModel;
-        _window = window;
+        _windowFactory = windowFactory;
         _coordinator = coordinator;
         _logger = logger;
     }
@@ -52,7 +55,6 @@ public sealed class FloatingHudController : IDisposable
         }
 
         _isInitialized = true;
-        _window.DataContext = _viewModel;
 
         _coordinator.ProgressChanged += OnProgressChanged;
         _coordinator.RequestCompleted += OnRequestCompleted;
@@ -77,13 +79,7 @@ public sealed class FloatingHudController : IDisposable
     public void Hide()
     {
         ThrowIfDisposed();
-        Dispatch(() =>
-        {
-            if (_window.IsVisible)
-            {
-                _window.Hide();
-            }
-        });
+        Dispatch(CloseWindow);
     }
 
     public void TrackRequest(OptimisationRequest request)
@@ -134,35 +130,67 @@ public sealed class FloatingHudController : IDisposable
     {
         if (!SettingsHost.Get(SettingsRegistry.EnableFloatingResults))
         {
-            if (_window.IsVisible)
-            {
-                _window.Hide();
-            }
-
+            CloseWindow();
             return;
         }
 
         if (!forceShow && _results.Count == 0)
         {
-            if (_window.IsVisible)
-            {
-                _window.Hide();
-            }
-
+            CloseWindow();
             return;
         }
 
-        if (!_window.IsVisible)
+        var window = _window ??= CreateWindow();
+        if (!window.IsVisible)
         {
-            _window.Show();
+            window.Show();
         }
 
         PositionWindow();
-        _window.BringToFront();
+        window.BringToFront();
+    }
+
+    private FloatingHudWindow CreateWindow()
+    {
+        var window = _windowFactory();
+        window.DataContext = _viewModel;
+        window.IsVisibleChanged += OnWindowVisibleChanged;
+        window.Closed += OnWindowClosed;
+        return window;
+    }
+
+    private void OnWindowVisibleChanged(object sender, System.Windows.DependencyPropertyChangedEventArgs e)
+        => IdleTrim.HudVisible = _window?.IsVisible == true;
+
+    private void OnWindowClosed(object? sender, EventArgs e)
+    {
+        if (sender is FloatingHudWindow window)
+        {
+            window.IsVisibleChanged -= OnWindowVisibleChanged;
+            window.Closed -= OnWindowClosed;
+            window.DataContext = null;
+            if (ReferenceEquals(_window, window))
+            {
+                _window = null;
+            }
+        }
+
+        IdleTrim.HudVisible = false;
+        IdleTrim.Schedule();
+    }
+
+    private void CloseWindow()
+    {
+        _window?.Close();
     }
 
     private void PositionWindow()
     {
+        if (_window is null)
+        {
+            return;
+        }
+
         var placement = SettingsHost.Get(SettingsRegistry.FloatingHudPlacement);
         _window.MoveToPlacement(placement);
     }
@@ -291,11 +319,11 @@ public sealed class FloatingHudController : IDisposable
             return;
         }
 
-        var animated = _window.TryAnimateDismissal(viewModel, () =>
+        var animated = _window?.TryAnimateDismissal(viewModel, () =>
         {
             _pendingDismissals.Remove(viewModel.RequestId);
             RemoveResult(viewModel);
-        });
+        }) ?? false;
 
         if (!animated)
         {
@@ -350,7 +378,7 @@ public sealed class FloatingHudController : IDisposable
             {
                 if (!enabled)
                 {
-                    _window.Hide();
+                    CloseWindow();
                 }
                 else
                 {
@@ -500,13 +528,19 @@ public sealed class FloatingHudController : IDisposable
 
     private void Dispatch(Action action)
     {
-        if (_window.Dispatcher.CheckAccess())
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is null)
+        {
+            return;
+        }
+
+        if (dispatcher.CheckAccess())
         {
             action();
         }
         else
         {
-            _ = _window.Dispatcher.InvokeAsync(action, DispatcherPriority.Render);
+            _ = dispatcher.InvokeAsync(action, DispatcherPriority.Render);
         }
     }
 
@@ -538,5 +572,11 @@ public sealed class FloatingHudController : IDisposable
         }
 
         _dismissDelays.Clear();
+
+        var window = _window;
+        if (window is not null)
+        {
+            window.Dispatcher.BeginInvoke(new Action(window.Close));
+        }
     }
 }
