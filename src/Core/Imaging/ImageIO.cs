@@ -59,6 +59,7 @@ internal sealed class DecodedImage : IDisposable
     /// <summary>True when the source JPEG stores chroma at 4:2:0, false for 4:4:4 / 4:2:2 / other, null when unknown or not a JPEG.</summary>
     public bool? JpegChroma420 { get; init; }
 
+    /// <summary>Frames actually decoded: <see cref="ImageIO.Decode"/> reads only the first frame, so this is always 1. Use the probe for the source's real frame count.</summary>
     public int FrameCount { get; init; } = 1;
 
     public ImageColorKind ColorKind { get; init; } = ImageColorKind.Rgb;
@@ -218,7 +219,9 @@ internal static class ImageIO
             }
         }
 
-        return indices.Select(index => new GifSample(index, starts[index], ToRaster((MagickImage)frames[index]))).ToList();
+        // The collection is disposed on return, so the frames can be flattened in place without cloning each one
+        // (flattening is idempotent, so a frame picked twice is harmless).
+        return indices.Select(index => new GifSample(index, starts[index], ToRasterInPlace((MagickImage)frames[index]))).ToList();
     }
 
     /// <summary>Decodes the first frame (animated formats are handled by dedicated code paths).</summary>
@@ -230,7 +233,8 @@ internal static class ImageIO
             throw new NotSupportedException("Unsupported or unrecognised image format.");
         }
 
-        var settings = new MagickReadSettings { Format = ToMagickFormat(format) };
+        // Only the first frame is ever used; never decode (and hold in native memory) the rest of an animation.
+        var settings = new MagickReadSettings { Format = ToMagickFormat(format), FrameCount = 1 };
         if (format == SourceFormat.Jpeg)
         {
             settings.SetDefine(MagickFormat.Jpeg, "preserve-settings", "false");
@@ -240,21 +244,6 @@ internal static class ImageIO
         try
         {
             using var stream = OpenRead(path);
-            if (format == SourceFormat.Gif)
-            {
-                using var frames = new MagickImageCollection();
-                frames.Read(stream, settings);
-                var count = frames.Count;
-                if (count == 0)
-                {
-                    throw new InvalidDataException("Image contains no frames.");
-                }
-
-                image.Dispose();
-                image = (MagickImage)frames[0].Clone();
-                return Finish(image, format, autoOrient, count);
-            }
-
             image.Read(stream, settings);
             return Finish(image, format, autoOrient, 1);
         }
@@ -359,8 +348,19 @@ internal static class ImageIO
             image.Alpha(AlphaAction.Set);
         }
 
-        var bytes = image.GetPixelsUnsafe().ToByteArray(PixelMapping.RGBA)
-            ?? throw new InvalidOperationException("Unable to read pixels.");
+        // The pixel collection holds a native cache view that references the image's pixel cache; it has no finalizer,
+        // so it must be disposed or the pixel buffer outlives the image for the life of the process.
+        byte[]? bytes;
+        using (var pixels = image.GetPixelsUnsafe())
+        {
+            bytes = pixels.ToByteArray(PixelMapping.RGBA);
+        }
+
+        if (bytes is null)
+        {
+            throw new InvalidOperationException("Unable to read pixels.");
+        }
+
         return new RasterImage((int)image.Width, (int)image.Height, bytes);
     }
 

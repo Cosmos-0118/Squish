@@ -600,6 +600,7 @@ public sealed class ClipboardMonitor : IDisposable
         {
             if (dataObject.GetDataPresent("PNG", false) && dataObject.GetData("PNG", false) is MemoryStream stream)
             {
+                using var pngStream = stream;
                 var bytes = stream.ToArray();
                 if (bytes.Length > PngSignature.Length && bytes.AsSpan(0, PngSignature.Length).SequenceEqual(PngSignature))
                 {

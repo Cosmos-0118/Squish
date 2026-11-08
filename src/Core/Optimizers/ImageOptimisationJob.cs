@@ -174,17 +174,19 @@ internal sealed class ImageOptimisationJob : IDisposable
         var blobs = JpegSegments.Extract(bytes);
         var orientation = blobs.Exif is { Length: > 0 } exif ? JpegSegments.ReadOrientation(exif) : 1;
         var downscale = NeedsDownscale(probe);
+        var hasSquishMarker = JpegSegments.HasSquishMarker(bytes);
 
-        // jpegtran runs in its own process, so the lossless pass overlaps the lossy search.
+        // jpegtran runs in its own process, so the lossless pass overlaps the lossy search. Only the marker flag is
+        // handed over so the whole source file is not kept rooted for the duration of the pass.
         var losslessTask = downscale
             ? Task.FromResult<ImageCandidate?>(null)
-            : LosslessJpegAsync(bytes, blobs, orientation);
+            : LosslessJpegAsync(hasSquishMarker, blobs, orientation);
 
         _context.ReportProgress(30, "Searching lowest visually-lossless quality");
         ImageCandidate? lossy = null;
         try
         {
-            if (JpegSegments.HasSquishMarker(bytes))
+            if (hasSquishMarker)
             {
                 // Already squeezed once: only the lossless pass may touch it, otherwise repeated runs keep eroding quality.
                 _notes.Add("Already optimised by Squish; lossless pass only");
@@ -207,7 +209,7 @@ internal sealed class ImageOptimisationJob : IDisposable
         return PickBest(await losslessTask.ConfigureAwait(false), lossy);
     }
 
-    private async Task<ImageCandidate?> LosslessJpegAsync(byte[] sourceBytes, MetadataBlobs blobs, int orientation)
+    private async Task<ImageCandidate?> LosslessJpegAsync(bool sourceHasSquishMarker, MetadataBlobs blobs, int orientation)
     {
         var recompressed = await _encoders.RecompressJpegLosslessAsync(_source, _token).ConfigureAwait(false);
         if (recompressed is null)
@@ -222,7 +224,7 @@ internal sealed class ImageOptimisationJob : IDisposable
             resolved = resolved with { Exif = JpegSegments.BuildOrientationOnlyExif(orientation) };
         }
 
-        var data = JpegSegments.Rewrite(await File.ReadAllBytesAsync(recompressed.Value.Value, _token).ConfigureAwait(false), resolved, addSquishMarker: JpegSegments.HasSquishMarker(sourceBytes));
+        var data = JpegSegments.Rewrite(await File.ReadAllBytesAsync(recompressed.Value.Value, _token).ConfigureAwait(false), resolved, addSquishMarker: sourceHasSquishMarker);
         await File.WriteAllBytesAsync(recompressed.Value.Value, data, _token).ConfigureAwait(false);
         return new ImageCandidate(recompressed.Value, "jpg", "Lossless JPEG recompression", data.LongLength, false, null);
     }

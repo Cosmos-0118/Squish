@@ -143,10 +143,13 @@ public sealed record VideoOptimiserOptions
     public int QualitySearchMaxProbes { get; init; } = 4;
 
     /// <summary>
-    /// When even the sampled encode would use at least this fraction of the source's video bitrate, the source is
+    /// When the sampled encode would cost at least this multiple of the source's video bitrate, the source is
     /// already efficient and is left alone instead of burning minutes on a result that is not smaller.
+    /// The sample is a short, fast-preset encode and overestimates the real full encode by roughly 1.1-1.7x
+    /// (measured: Big Buck Bunny 1080p sampled at 0.99x the source but encoded at 0.64x), so this is well above 1:
+    /// a ratio near 1 skips sources that would really have shrunk. Hopeless sources sample at 1.7x and up.
     /// </summary>
-    public double QualitySearchSkipRatio { get; init; } = 0.92;
+    public double QualitySearchSkipRatio { get; init; } = 1.5;
 
     /// <summary>The chosen encode may cost at most this fraction of the source's video bitrate (grain protection).</summary>
     public double QualitySearchMaxBitrateRatio { get; init; } = 0.6;

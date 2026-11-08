@@ -10,6 +10,7 @@ namespace Squish.Core.Shared;
 /// </summary>
 internal static class MemoryReclaimer
 {
+    private static readonly TimeSpan FinalizerWait = TimeSpan.FromSeconds(5);
     private static int _running;
 
     /// <summary>Compacts the managed heap and decommits freed regions. Safe to call from any thread; overlapping calls collapse into one.</summary>
@@ -24,6 +25,23 @@ internal static class MemoryReclaimer
         {
             GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
             GC.Collect(GC.MaxGeneration, GCCollectionMode.Aggressive, blocking: true, compacting: true);
+
+            // Finalizable objects (MagickImage, bitmaps, SafeHandles) only reach their finalizer after the first pass;
+            // run them, then collect again so the native memory they release and the LOH regions they pinned are returned.
+            // Bounded wait: a finalizer stuck on a lock must not wedge this method (and with it every later reclaim).
+            if (Task.Run(GC.WaitForPendingFinalizers).Wait(FinalizerWait))
+            {
+                // CompactOnce resets itself after the first collection, so request it again for the second pass.
+                GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
+                GC.Collect(GC.MaxGeneration, GCCollectionMode.Aggressive, blocking: true, compacting: true);
+            }
+            else
+            {
+                Log.Warning("Idle memory reclaim: finalizers did not finish in time; skipping the second pass.");
+            }
+
+            // Finally let Windows page out whatever is now untouched, so Task Manager reflects the idle state.
+            WorkingSetTrimmer.Trim();
         }
         catch (Exception ex)
         {

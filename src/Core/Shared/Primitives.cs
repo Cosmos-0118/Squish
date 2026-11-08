@@ -373,7 +373,7 @@ internal static class SharedDataLoader
     private static IReadOnlyDictionary<string, SizeD> LoadDictionary(string resourceName)
     {
         using var stream = OpenResource(resourceName);
-        var document = JsonDocument.Parse(stream);
+        using var document = JsonDocument.Parse(stream);
         var builder = ImmutableDictionary.CreateBuilder<string, SizeD>(StringComparer.Ordinal);
         foreach (var property in document.RootElement.EnumerateObject())
         {
@@ -385,7 +385,7 @@ internal static class SharedDataLoader
     private static IReadOnlyDictionary<string, IReadOnlyDictionary<string, SizeD>> LoadNestedDictionary(string resourceName)
     {
         using var stream = OpenResource(resourceName);
-        var document = JsonDocument.Parse(stream);
+        using var document = JsonDocument.Parse(stream);
         var builder = ImmutableDictionary.CreateBuilder<string, IReadOnlyDictionary<string, SizeD>>(StringComparer.Ordinal);
         foreach (var category in document.RootElement.EnumerateObject())
         {

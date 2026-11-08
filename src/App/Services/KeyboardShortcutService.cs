@@ -24,79 +24,42 @@ public sealed class KeyboardShortcutService : IDisposable
         SettingsRegistry.UseAggressiveOptimisationGif,
     };
 
-    private readonly IServiceProvider _serviceProvider;
+    private readonly MainWindowManager _mainWindowManager;
     private readonly FloatingHudController _hudController;
     private readonly ILogger<KeyboardShortcutService> _logger;
     private readonly List<HotkeyRegistration> _registrations = new();
-    private bool _isAttached;
     private bool _disposed;
     private int _nextId;
-    private Window? _window;
-    private HwndSource? _source;
+    private HotkeyWindow? _hotkeyWindow;
 
     private sealed record HotkeyRegistration(int Id, GlobalShortcutAction Action);
 
     public KeyboardShortcutService(
-        IServiceProvider serviceProvider,
+        MainWindowManager mainWindowManager,
         FloatingHudController hudController,
         ILogger<KeyboardShortcutService> logger)
     {
-        _serviceProvider = serviceProvider;
+        _mainWindowManager = mainWindowManager;
         _hudController = hudController;
         _logger = logger;
         ShortcutCatalog.Initialize();
         ShortcutCatalog.GlobalShortcutsChanged += OnGlobalShortcutsChanged;
     }
 
-    public void Attach(Window window)
+    /// <summary>
+    /// Registers the global hotkeys against a message-only window, so no WPF window (and no Direct3D device) has to
+    /// exist for them to work. Call on the UI thread.
+    /// </summary>
+    public void Start()
     {
-        if (_disposed || _isAttached)
+        if (_disposed || _hotkeyWindow is not null)
         {
             return;
         }
 
-        _window = window ?? throw new ArgumentNullException(nameof(window));
-        _window.SourceInitialized += OnSourceInitialized;
-        _window.Closed += OnWindowClosed;
-        _isAttached = true;
-
-        InitializeWindowSource();
-    }
-
-    private void OnSourceInitialized(object? sender, EventArgs e)
-    {
-        InitializeWindowSource();
-    }
-
-    private void InitializeWindowSource()
-    {
-        if (_window is null || _source is not null)
-        {
-            return;
-        }
-
-        var helper = new WindowInteropHelper(_window);
-        var handle = helper.Handle;
-        if (handle == IntPtr.Zero)
-        {
-            handle = helper.EnsureHandle();
-        }
-
-        if (handle == IntPtr.Zero)
-        {
-            return;
-        }
-
-        var source = HwndSource.FromHwnd(handle);
-        if (source is null)
-        {
-            return;
-        }
-
-        _source = source;
-        _source.AddHook(WndProc);
-
-        RebuildHotkeys(handle);
+        _hotkeyWindow = new HotkeyWindow();
+        _hotkeyWindow.HotkeyPressed += OnHotkeyPressed;
+        RebuildHotkeys(_hotkeyWindow.Handle);
     }
 
     private void RegisterHotKey(IntPtr handle, GlobalShortcutBinding definition)
@@ -121,20 +84,13 @@ public sealed class KeyboardShortcutService : IDisposable
             ShortcutParser.ToDisplayString(definition.Modifiers, definition.Key));
     }
 
-    private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    private void OnHotkeyPressed(int id)
     {
-        if (msg == NativeMethods.WM_HOTKEY)
+        var registration = _registrations.FirstOrDefault(r => r.Id == id);
+        if (registration is not null)
         {
-            var id = wParam.ToInt32();
-            var registration = _registrations.FirstOrDefault(r => r.Id == id);
-            if (registration is not null)
-            {
-                HandleAction(registration.Action);
-                handled = true;
-            }
+            HandleAction(registration.Action);
         }
-
-        return IntPtr.Zero;
     }
 
     private void HandleAction(GlobalShortcutAction action)
@@ -166,21 +122,7 @@ public sealed class KeyboardShortcutService : IDisposable
     {
         try
         {
-            var mainWindow = _serviceProvider.GetRequiredService<MainWindow>();
-            if (!mainWindow.IsVisible)
-            {
-                mainWindow.Show();
-            }
-
-            if (mainWindow.WindowState == WindowState.Minimized)
-            {
-                mainWindow.WindowState = WindowState.Normal;
-            }
-
-            mainWindow.Activate();
-            mainWindow.Topmost = true;
-            mainWindow.Topmost = false;
-            mainWindow.Focus();
+            _mainWindowManager.Show();
         }
         catch (Exception ex)
         {
@@ -308,11 +250,6 @@ public sealed class KeyboardShortcutService : IDisposable
         return result;
     }
 
-    private void OnWindowClosed(object? sender, EventArgs e)
-    {
-        Dispose();
-    }
-
     private void RebuildHotkeys(IntPtr handle)
     {
         UnregisterHotkeys(handle);
@@ -327,25 +264,19 @@ public sealed class KeyboardShortcutService : IDisposable
 
     private void OnGlobalShortcutsChanged(object? sender, EventArgs e)
     {
-        if (_window is null)
+        if (_hotkeyWindow is null)
         {
             return;
         }
 
         System.Windows.Application.Current?.Dispatcher.BeginInvoke(new Action(() =>
             {
-                if (_window is null)
+                if (_disposed || _hotkeyWindow is null || _hotkeyWindow.Handle == IntPtr.Zero)
                 {
                     return;
                 }
 
-                var handle = new WindowInteropHelper(_window).Handle;
-                if (handle == IntPtr.Zero)
-                {
-                    return;
-                }
-
-                RebuildHotkeys(handle);
+                RebuildHotkeys(_hotkeyWindow.Handle);
             }));
     }
 
@@ -360,19 +291,14 @@ public sealed class KeyboardShortcutService : IDisposable
 
         ShortcutCatalog.GlobalShortcutsChanged -= OnGlobalShortcutsChanged;
 
-        if (_window is not null)
+        if (_hotkeyWindow is not null)
         {
-            _window.SourceInitialized -= OnSourceInitialized;
-            _window.Closed -= OnWindowClosed;
+            _hotkeyWindow.HotkeyPressed -= OnHotkeyPressed;
+            UnregisterHotkeys(_hotkeyWindow.Handle);
+            _hotkeyWindow.Dispose();
+            _hotkeyWindow = null;
         }
 
-        if (_source is not null)
-        {
-            _source.RemoveHook(WndProc);
-        }
-
-        var handle = _window is null ? IntPtr.Zero : new WindowInteropHelper(_window).Handle;
-        UnregisterHotkeys(handle);
         _registrations.Clear();
     }
 
@@ -398,7 +324,6 @@ public sealed class KeyboardShortcutService : IDisposable
 
     private static class NativeMethods
     {
-        public const int WM_HOTKEY = 0x0312;
         public const uint MOD_ALT = 0x0001;
         public const uint MOD_CONTROL = 0x0002;
         public const uint MOD_SHIFT = 0x0004;
