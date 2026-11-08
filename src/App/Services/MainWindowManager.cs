@@ -97,11 +97,19 @@ public sealed class MainWindowManager
     }
 
     private void OnIsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
-        => IdleTrim.MainWindowVisible = _window?.IsVisible == true;
+    {
+        var visible = _window?.IsVisible == true;
+        IdleTrim.MainWindowVisible = visible;
+        if (!visible)
+        {
+            IdleTrim.Schedule();
+        }
+    }
 
     private void OnStateChanged(object? sender, EventArgs e)
     {
-        // Minimising used to hide the window to the tray; with the window destroyed on close, do the same.
+        // Minimising hides the window to the tray (as before) rather than destroying it, so Show Desktop / Win+D keeps
+        // scroll position and view state; only closing the window releases it.
         if (_exiting || sender is not MainWindow window || window.WindowState != WindowState.Minimized)
         {
             return;
@@ -109,7 +117,7 @@ public sealed class MainWindowManager
 
         if (SettingsHost.Get(SettingsRegistry.RunInBackground))
         {
-            window.Close();
+            window.Hide();
         }
     }
 

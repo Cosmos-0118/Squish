@@ -30,7 +30,9 @@ public static class IdleTrim
     /// <summary>Installs the "is a window visible" guard on the shared trimmer. Call once at startup.</summary>
     public static void Configure()
     {
-        WorkingSetTrimmer.ShouldSkip = () => _mainWindowVisible || _hudVisible;
+        // Only the main window blocks trimming: the small HUD can stay up indefinitely (auto-hide off) and must not
+        // keep the post-job working set resident.
+        WorkingSetTrimmer.ShouldSkip = () => _mainWindowVisible;
     }
 
     /// <summary>Trims after <paramref name="delay"/> (default 2 s) if nothing is visible by then. Repeated calls restart the wait.</summary>
@@ -50,7 +52,7 @@ public static class IdleTrim
 
         // A trim a moment ago rate-limited this one; try again once the interval has passed instead of dropping it.
         var wait = WorkingSetTrimmer.RemainingRateLimit();
-        if (wait > TimeSpan.Zero && !_mainWindowVisible && !_hudVisible)
+        if (wait > TimeSpan.Zero && !_mainWindowVisible)
         {
             _timer?.Change(wait + TimeSpan.FromMilliseconds(100), Timeout.InfiniteTimeSpan);
         }
