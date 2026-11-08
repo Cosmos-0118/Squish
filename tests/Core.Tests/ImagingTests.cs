@@ -213,7 +213,8 @@ public sealed class ImagingTests
         foreach (var (start, spanLength) in spans)
         {
             Assert.Equal(expectedStart, start);
-            Assert.InRange(spanLength, 1, size);
+            Assert.InRange(spanLength, 1, size + 16);
+            Assert.True(start == 0 || start % 16 == 0, $"span start {start} is not 16-aligned");
             expectedStart += spanLength;
         }
 

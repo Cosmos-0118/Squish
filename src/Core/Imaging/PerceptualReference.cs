@@ -111,11 +111,14 @@ internal sealed class PerceptualReference
         var count = Math.Max(1, (length + size - 1) / size);
         for (var i = 0; i < count; i++)
         {
-            var start = (int)((long)length * i / count);
-            var end = (int)((long)length * (i + 1) / count);
-            yield return (start, end - start);
+            yield return (Boundary(length, count, i), Boundary(length, count, i + 1) - Boundary(length, count, i));
         }
     }
+
+    // Interior boundaries snap to the nearest 16 px so tiles keep JPEG/AVIF block-grid alignment (as ChooseTiles does);
+    // a span can therefore exceed the nominal size by a few pixels.
+    private static int Boundary(int length, int count, int index)
+        => index <= 0 ? 0 : index >= count ? length : Math.Min(length - 1, (int)(((long)length * index / count + 8) / 16 * 16));
 
     /// <summary>Score of <paramref name="candidate"/> (same dimensions as the reference). Higher is better.</summary>
     public double Score(RasterImage candidate, CancellationToken cancellationToken = default)
