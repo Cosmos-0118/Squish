@@ -17,14 +17,16 @@ public sealed class TrayIconService : IDisposable
     private readonly System.Windows.Forms.NotifyIcon _notifyIcon;
     private readonly System.Windows.Forms.ContextMenuStrip _contextMenu;
     private readonly Icon _trayIcon;
-    private MainWindow? _mainWindow;
+    private readonly MainWindowManager _mainWindowManager;
+    private bool _initialized;
     private bool _exitRequested;
     private bool _disposed;
     private bool _balloonShown;
     private bool _runInBackground;
 
-    public TrayIconService(ILogger<TrayIconService> logger)
+    public TrayIconService(MainWindowManager mainWindowManager, ILogger<TrayIconService> logger)
     {
+        _mainWindowManager = mainWindowManager;
         _logger = logger;
 
         _contextMenu = new System.Windows.Forms.ContextMenuStrip();
@@ -50,86 +52,46 @@ public sealed class TrayIconService : IDisposable
         SettingsHost.SettingChanged += OnSettingChanged;
     }
 
-    public void Initialize(MainWindow mainWindow)
+    /// <summary>Shows the tray icon. The main window is not needed: it is created on demand by <see cref="MainWindowManager"/>.</summary>
+    public void Initialize()
     {
-        ArgumentNullException.ThrowIfNull(mainWindow);
-
         if (_disposed)
         {
             throw new ObjectDisposedException(nameof(TrayIconService));
         }
 
-        if (_mainWindow is not null)
+        if (_initialized)
         {
             return;
         }
 
-        _mainWindow = mainWindow;
-        _mainWindow.Closing += OnMainWindowClosing;
-        _mainWindow.StateChanged += OnMainWindowStateChanged;
+        _initialized = true;
+        _mainWindowManager.ClosedToBackground += OnMainWindowClosedToBackground;
 
         UpdateTrayVisibility();
     }
 
-    public void ShowMainWindow()
+    public void ShowMainWindow() => _mainWindowManager.ShowOnDispatcher();
+
+    /// <summary>The window used to just hide; now it is destroyed, but the user still gets the one-time "still running" hint.</summary>
+    private void OnMainWindowClosedToBackground(object? sender, EventArgs e)
     {
-        if (_mainWindow is null)
+        if (_balloonShown || !_runInBackground || _disposed)
         {
             return;
         }
 
-        _mainWindow.Dispatcher.BeginInvoke(new Action(() =>
+        try
         {
-            if (_mainWindow.Visibility != Visibility.Visible)
-            {
-                _mainWindow.Show();
-            }
-
-            if (_mainWindow.WindowState == WindowState.Minimized)
-            {
-                _mainWindow.WindowState = WindowState.Normal;
-            }
-
-            _mainWindow.Activate();
-        }));
-    }
-
-    private void HideToTray()
-    {
-        if (!_runInBackground)
-        {
-            return;
+            _notifyIcon.BalloonTipTitle = SquishStringCatalog.Get("tray.balloon.title");
+            _notifyIcon.BalloonTipText = SquishStringCatalog.Get("tray.balloon.message");
+            _notifyIcon.ShowBalloonTip(2000);
+            _balloonShown = true;
         }
-
-        if (_mainWindow is null)
+        catch (Exception ex)
         {
-            return;
+            _logger.LogDebug(ex, "Failed to show the tray balloon.");
         }
-
-        _mainWindow.Dispatcher.BeginInvoke(new Action(() =>
-        {
-            try
-            {
-                if (_mainWindow.WindowState != WindowState.Minimized)
-                {
-                    _mainWindow.WindowState = WindowState.Minimized;
-                }
-
-                _mainWindow.Hide();
-
-                if (!_balloonShown)
-                {
-                    _notifyIcon.BalloonTipTitle = SquishStringCatalog.Get("tray.balloon.title");
-                    _notifyIcon.BalloonTipText = SquishStringCatalog.Get("tray.balloon.message");
-                    _notifyIcon.ShowBalloonTip(2000);
-                    _balloonShown = true;
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogDebug(ex, "Failed to hide main window to tray.");
-            }
-        }));
     }
 
     private void ExitApplication()
@@ -140,6 +102,7 @@ public sealed class TrayIconService : IDisposable
         }
 
         _exitRequested = true;
+        _mainWindowManager.NotifyExiting();
         _notifyIcon.Visible = false;
         System.Windows.Application.Current?.Dispatcher.BeginInvoke(new Action(() =>
         {
@@ -154,53 +117,6 @@ public sealed class TrayIconService : IDisposable
         }));
     }
 
-    private void OnMainWindowClosing(object? sender, CancelEventArgs e)
-    {
-        if (_exitRequested)
-        {
-            return;
-        }
-
-        if (!_runInBackground)
-        {
-            _exitRequested = true;
-            _notifyIcon.Visible = false;
-            System.Windows.Application.Current?.Dispatcher.BeginInvoke(new Action(() =>
-            {
-                try
-                {
-                    System.Windows.Application.Current?.Shutdown();
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Failed to shut down application when closing window.");
-                }
-            }));
-            return;
-        }
-
-        e.Cancel = true;
-        HideToTray();
-    }
-
-    private void OnMainWindowStateChanged(object? sender, EventArgs e)
-    {
-        if (_mainWindow is null)
-        {
-            return;
-        }
-
-        if (!_runInBackground || _exitRequested)
-        {
-            return;
-        }
-
-        if (_mainWindow.WindowState == WindowState.Minimized)
-        {
-            HideToTray();
-        }
-    }
-
     public void Dispose()
     {
         if (_disposed)
@@ -211,12 +127,7 @@ public sealed class TrayIconService : IDisposable
         _disposed = true;
 
         SettingsHost.SettingChanged -= OnSettingChanged;
-
-        if (_mainWindow is not null)
-        {
-            _mainWindow.Closing -= OnMainWindowClosing;
-            _mainWindow.StateChanged -= OnMainWindowStateChanged;
-        }
+        _mainWindowManager.ClosedToBackground -= OnMainWindowClosedToBackground;
 
         _notifyIcon.Visible = false;
         _notifyIcon.Dispose();
@@ -226,7 +137,7 @@ public sealed class TrayIconService : IDisposable
 
     private void UpdateTrayVisibility()
     {
-        var shouldShow = _runInBackground && !_disposed && _mainWindow is not null;
+        var shouldShow = _runInBackground && !_disposed && _initialized;
         if (_notifyIcon.Visible == shouldShow)
         {
             return;
@@ -265,7 +176,8 @@ public sealed class TrayIconService : IDisposable
                 return (Icon)SystemIcons.Application.Clone();
             }
 
-            using var icon = new Icon(resource.Stream);
+            using var iconStream = resource.Stream;
+            using var icon = new Icon(iconStream);
             return (Icon)icon.Clone();
         }
         catch (Exception ex)

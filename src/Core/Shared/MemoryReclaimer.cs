@@ -24,6 +24,17 @@ internal static class MemoryReclaimer
         {
             GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
             GC.Collect(GC.MaxGeneration, GCCollectionMode.Aggressive, blocking: true, compacting: true);
+
+            // Finalizable objects (MagickImage, bitmaps, SafeHandles) only reach their finalizer after the first pass;
+            // run them, then collect again so the native memory they release and the LOH regions they pinned are returned.
+            GC.WaitForPendingFinalizers();
+
+            // CompactOnce resets itself after the first collection, so request it again for the second pass.
+            GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
+            GC.Collect(GC.MaxGeneration, GCCollectionMode.Aggressive, blocking: true, compacting: true);
+
+            // Finally let Windows page out whatever is now untouched, so Task Manager reflects the idle state.
+            WorkingSetTrimmer.Trim();
         }
         catch (Exception ex)
         {

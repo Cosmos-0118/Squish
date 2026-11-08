@@ -198,6 +198,28 @@ public sealed class ImagingTests
         });
     }
 
+    [Theory]
+    [InlineData(3840, 1024)]
+    [InlineData(2560, 1024)]
+    [InlineData(2000, 1024)]
+    [InlineData(1025, 1024)]
+    [InlineData(1024, 1024)]
+    [InlineData(5000, 1024)]
+    public void FullCoverageSpansAreContiguousAndNeverExceedTileSize(int length, int size)
+    {
+        var spans = PerceptualReference.Spans(length, size).ToList();
+
+        var expectedStart = 0;
+        foreach (var (start, spanLength) in spans)
+        {
+            Assert.Equal(expectedStart, start);
+            Assert.InRange(spanLength, 1, size);
+            expectedStart += spanLength;
+        }
+
+        Assert.Equal(length, expectedStart);
+    }
+
     [Fact]
     public void FullCoverageReferenceJudgesEveryPixelExactlyOnce()
     {

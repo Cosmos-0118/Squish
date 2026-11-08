@@ -102,14 +102,18 @@ internal sealed class PerceptualReference
         return new PerceptualReference(reference, tiles, wholeImage: false, cachePrepared: reference.PixelCount <= MaxCachedFullCoveragePixels);
     }
 
-    /// <summary>Splits [0, length) into tile-sized spans; a short remainder is merged into the last span.</summary>
-    private static IEnumerable<(int Start, int Length)> Spans(int length, int size)
+    /// <summary>
+    /// Splits [0, length) into the fewest near-equal spans that are no longer than <paramref name="size"/>, so a remainder
+    /// never inflates one tile (merging it into the last span made a 3840x2560 frame's corner tile 2.75 MP instead of ~1 MP).
+    /// </summary>
+    internal static IEnumerable<(int Start, int Length)> Spans(int length, int size)
     {
-        var count = Math.Max(1, length / size);
+        var count = Math.Max(1, (length + size - 1) / size);
         for (var i = 0; i < count; i++)
         {
-            var start = i * size;
-            yield return (start, i == count - 1 ? length - start : size);
+            var start = (int)((long)length * i / count);
+            var end = (int)((long)length * (i + 1) / count);
+            yield return (start, end - start);
         }
     }
 
