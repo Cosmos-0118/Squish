@@ -228,7 +228,10 @@ public sealed class VideoOptimiser : IOptimiser
     /// <summary>True when the sampled encode would not be meaningfully smaller than the source's own video stream.</summary>
     private bool ShouldSkipEfficientSource(VideoOptimiserPlan plan, VideoQualitySearchResult search)
     {
-        if (!plan.RequireSizeReduction || plan.RequiresFilters || plan.PlaybackSpeedFactor.HasValue)
+        // Frame decimation is on by default and is already in the sampled encodes, so only other filters (scaling,
+        // fps caps) make the sample-vs-source bitrate comparison meaningless. Counting decimation here disabled this
+        // early-out for nearly every video, which then spent a full encode on a result it threw away.
+        if (!plan.RequireSizeReduction || plan.RequiresFiltersBeyondDecimation || plan.PlaybackSpeedFactor.HasValue)
         {
             return false;
         }
@@ -244,8 +247,19 @@ public sealed class VideoOptimiser : IOptimiser
         }
 
         var sourceKbps = EstimateSourceBitrateKbps(plan.SourceProbe);
-        return sourceKbps is int source && source > 0 && search.PredictedBitrateKbps >= source * _options.QualitySearchSkipRatio;
+        if (sourceKbps is not int source || source <= 0)
+        {
+            return false;
+        }
+
+        var skip = IsSampledBitrateTooHigh(search.PredictedBitrateKbps, source, _options.QualitySearchSkipRatio);
+        Log.Info($"Efficient-source check for {plan.SourcePath.Name}: sampled {search.PredictedBitrateKbps:0} kbps vs source {source} kbps = {search.PredictedBitrateKbps / source:0.00}x (skip at {_options.QualitySearchSkipRatio:0.00}x): {(skip ? "skipping" : "encoding")}");
+        return skip;
     }
+
+    /// <summary>True when the sampled encode costs at least <paramref name="ratio"/> times the source's bitrate.</summary>
+    internal static bool IsSampledBitrateTooHigh(double sampledKbps, double sourceKbps, double ratio)
+        => sourceKbps > 0 && sampledKbps >= sourceKbps * ratio;
 
     private async Task<OptimisationResult> RunRemuxOptimisationAsync(OptimisationRequest request, VideoOptimiserPlan plan, OptimiserExecutionContext context, CancellationToken cancellationToken)
     {
@@ -1675,6 +1689,16 @@ public sealed record VideoOptimiserPlan(
     RemuxPlan Remux)
 {
     public bool RequiresFilters => Filters.Count > 0;
+
+    /// <summary>
+    /// True when a filter other than frame decimation is applied (scaling, fps change, ...). Decimation only drops
+    /// duplicate frames and is already part of the sampled encodes, so it must not stop a bitrate comparison.
+    /// </summary>
+    public bool RequiresFiltersBeyondDecimation => HasFiltersBeyondDecimation(Filters);
+
+    internal static bool HasFiltersBeyondDecimation(IReadOnlyList<string> filters)
+        => filters.Any(filter => !filter.StartsWith("mpdecimate", StringComparison.Ordinal));
+
     public bool ShouldRemux => Remux.Enabled;
 }
 

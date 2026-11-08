@@ -28,6 +28,7 @@ public partial class App : System.Windows.Application
     private IHost? _host;
     private IDisposable? _sharedLogScope;
     private TrayIconService? _trayIconService;
+    private MainWindowManager? _mainWindowManager;
     private Mutex? _instanceMutex;
 
     protected override void OnStartup(StartupEventArgs e)
@@ -47,10 +48,10 @@ public partial class App : System.Windows.Application
 
         base.OnStartup(e);
         var launchToTray = ShouldLaunchSilently(e.Args);
-        if (launchToTray)
-        {
-            ShutdownMode = ShutdownMode.OnExplicitShutdown;
-        }
+
+        // Windows are created and closed on demand (see MainWindowManager / FloatingHudController), so the app
+        // must not exit when the last one closes: the tray icon and hotkeys keep it alive until Exit.
+        ShutdownMode = ShutdownMode.OnExplicitShutdown;
         SettingsHost.EnsureInitialized();
         ShortcutCatalog.Initialize();
 
@@ -84,14 +85,16 @@ public partial class App : System.Windows.Application
                 services.AddHostedService<Worker>();
 
                 services.AddSingleton<FloatingHudViewModel>();
-                services.AddSingleton<FloatingHudWindow>();
+                services.AddTransient<FloatingHudWindow>();
+                services.AddSingleton<Func<FloatingHudWindow>>(provider => () => provider.GetRequiredService<FloatingHudWindow>());
                 services.AddSingleton<FloatingHudController>();
                 services.AddSingleton<KeyboardShortcutService>();
                 services.AddSingleton<OnboardingViewModel>();
                 services.AddSingleton<CompareViewModel>();
                 services.AddSingleton<SettingsViewModel>();
                 services.AddSingleton<MainWindowViewModel>();
-                services.AddSingleton<MainWindow>();
+                services.AddTransient<MainWindow>();
+                services.AddSingleton<MainWindowManager>();
                 services.AddSingleton<TrayIconService>();
                 services.AddSingleton<ThemeManager>();
                 services.AddSingleton<StartupRegistrationService>();
@@ -109,20 +112,21 @@ public partial class App : System.Windows.Application
         var hudController = _host.Services.GetRequiredService<FloatingHudController>();
         hudController.Initialize();
 
-        var mainWindow = _host.Services.GetRequiredService<MainWindow>();
-        var shortcutService = _host.Services.GetRequiredService<KeyboardShortcutService>();
-        MainWindow = mainWindow;
+        _mainWindowManager = _host.Services.GetRequiredService<MainWindowManager>();
         _trayIconService = _host.Services.GetRequiredService<TrayIconService>();
-        _trayIconService.Initialize(mainWindow);
+        _trayIconService.Initialize();
 
-        // Ensure the main window has a handle so global shortcuts can register even when launching to tray.
-        var handleHelper = new WindowInteropHelper(mainWindow);
-        handleHelper.EnsureHandle();
-        shortcutService.Attach(mainWindow);
+        // Global hotkeys live on a message-only window, so launching to the tray creates no WPF window at all.
+        _host.Services.GetRequiredService<KeyboardShortcutService>().Start();
 
+        IdleTrim.Configure();
         if (!launchToTray)
         {
-            mainWindow.Show();
+            _mainWindowManager.Show();
+        }
+        else
+        {
+            IdleTrim.Schedule(TimeSpan.FromSeconds(5));
         }
     }
 
@@ -130,6 +134,7 @@ public partial class App : System.Windows.Application
     {
         DispatcherUnhandledException -= OnDispatcherUnhandledException;
         AppDomain.CurrentDomain.UnhandledException -= OnUnhandledException;
+        _mainWindowManager?.NotifyExiting();
 
         if (_host is not null)
         {

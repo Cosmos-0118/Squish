@@ -355,7 +355,8 @@ public partial class FloatingHudWindow : Window
 
     private void OnHideClicked(object sender, RoutedEventArgs e)
     {
-        Hide();
+        // Close (not Hide) so the window and its visual tree are released; the controller recreates it on demand.
+        Close();
     }
 
     private void OnSourceInitialized(object? sender, EventArgs e)

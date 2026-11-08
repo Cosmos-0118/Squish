@@ -13,11 +13,10 @@ namespace Squish.App;
 
 public partial class MainWindow : Window
 {
-    private readonly KeyboardShortcutService _shortcutService;
     private readonly MainWindowViewModel _viewModel;
     private static readonly Uri WindowIconUri = new("pack://application:,,,/Squish;component/Assets/Brand/Squish.ico", UriKind.RelativeOrAbsolute);
 
-    public MainWindow(MainWindowViewModel viewModel, KeyboardShortcutService shortcutService)
+    public MainWindow(MainWindowViewModel viewModel)
     {
         InitializeComponent();
         FitToWorkArea();
@@ -25,18 +24,17 @@ public partial class MainWindow : Window
         DataContext = viewModel;
         _viewModel = viewModel;
         ShortcutCatalog.ApplyMainWindowBindings(InputBindings, viewModel);
-        _shortcutService = shortcutService;
-        Loaded += OnLoaded;
         SizeChanged += (_, e) => _viewModel.UpdateLayoutWidth(e.NewSize.Width);
         SourceInitialized += (_, _) => ApplyTitleBarTheme();
         ThemeManager.ThemeApplied += OnThemeApplied;
-        Closed += (_, _) => ThemeManager.ThemeApplied -= OnThemeApplied;
-    }
+        Closed += (_, _) =>
+        {
+            ThemeManager.ThemeApplied -= OnThemeApplied;
+            ShortcutCatalog.ReleaseMainWindowBindings(InputBindings);
 
-    private void OnLoaded(object sender, RoutedEventArgs e)
-    {
-        Loaded -= OnLoaded;
-        _shortcutService.Attach(this);
+            // The view models outlive the window; drop the window from the data context so it can be collected.
+            DataContext = null;
+        };
     }
 
     private void OnThemeApplied(object? sender, EventArgs e) => ApplyTitleBarTheme();
@@ -80,7 +78,8 @@ public partial class MainWindow : Window
                 return;
             }
 
-            using var icon = new Icon(resource.Stream);
+            using var iconStream = resource.Stream;
+            using var icon = new Icon(iconStream);
             Icon = Imaging.CreateBitmapSourceFromHIcon(
                 icon.Handle,
                 Int32Rect.Empty,
