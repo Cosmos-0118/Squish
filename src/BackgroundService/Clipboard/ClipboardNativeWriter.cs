@@ -52,8 +52,7 @@ internal static class ClipboardNativeWriter
             // A PNG is already queued. Paint wants CF_DIB, but a failed DIB encode must not drop the image.
         }
 
-        if (data.GetDataPresent(DataFormats.FileDrop, false) &&
-            data.GetData(DataFormats.FileDrop, false) is string[] files &&
+        if (data.TryGetData(DataFormats.FileDrop, false, out string[]? files) &&
             files.Length > 0)
         {
             payloads.Add((CfHdrop, ToFileDrop(files)));
@@ -71,7 +70,7 @@ internal static class ClipboardNativeWriter
                 continue;
             }
 
-            if (PayloadBytes(data.GetData(format, false)) is not { Length: > 0 } bytes)
+            if (TryGetPayloadBytes(data, format) is not { Length: > 0 } bytes)
             {
                 continue;
             }
@@ -220,28 +219,18 @@ internal static class ClipboardNativeWriter
     private static bool TryGetPng(DataObject data, out byte[] bytes)
     {
         bytes = [];
-        if (!data.GetDataPresent("PNG", false))
+        if (TryGetPayloadBytes(data, "PNG", includeText: false) is { Length: > 0 } png)
         {
-            return false;
+            bytes = png;
+            return true;
         }
 
-        switch (data.GetData("PNG", false))
-        {
-            case byte[] raw when raw.Length > 0:
-                bytes = raw;
-                return true;
-            case MemoryStream stream when stream.Length > 0:
-                bytes = stream.ToArray();
-                return true;
-            default:
-                return false;
-        }
+        return false;
     }
 
     private static byte[]? TryRenderDib(DataObject data)
     {
-        if (!data.GetDataPresent(DataFormats.Bitmap, false) ||
-            data.GetData(DataFormats.Bitmap, false) is not Image image)
+        if (!data.TryGetData(DataFormats.Bitmap, false, out Image? image))
         {
             return null;
         }
@@ -278,31 +267,40 @@ internal static class ClipboardNativeWriter
 
     private static string? TryGetText(DataObject data)
     {
-        if (data.GetDataPresent(DataFormats.UnicodeText, false))
+        foreach (var format in new[] { DataFormats.UnicodeText, DataFormats.Text, DataFormats.StringFormat })
         {
-            return data.GetData(DataFormats.UnicodeText, false) as string;
-        }
-
-        if (data.GetDataPresent(DataFormats.Text, false))
-        {
-            return data.GetData(DataFormats.Text, false) as string;
-        }
-
-        if (data.GetDataPresent(DataFormats.StringFormat, false))
-        {
-            return data.GetData(DataFormats.StringFormat, false) as string;
+            if (data.TryGetData(format, false, out string? text))
+            {
+                return text;
+            }
         }
 
         return null;
     }
 
-    private static byte[]? PayloadBytes(object? value) => value switch
+    /// <summary>
+    /// Reads a raw payload without the obsolete <c>DataObject.GetData</c>. Only the in-memory shapes this writer
+    /// can put on the clipboard are accepted, so nothing gets deserialised.
+    /// </summary>
+    private static byte[]? TryGetPayloadBytes(DataObject data, string format, bool includeText = true)
     {
-        string text when text.Length > 0 => Encoding.Unicode.GetBytes(text + "\0"),
-        byte[] bytes when bytes.Length > 0 => bytes,
-        MemoryStream stream when stream.Length > 0 => stream.ToArray(),
-        _ => null
-    };
+        if (data.TryGetData(format, false, out byte[]? raw) && raw.Length > 0)
+        {
+            return raw;
+        }
+
+        if (data.TryGetData(format, false, out MemoryStream? stream) && stream.Length > 0)
+        {
+            return stream.ToArray();
+        }
+
+        if (includeText && data.TryGetData(format, false, out string? text) && text.Length > 0)
+        {
+            return Encoding.Unicode.GetBytes(text + "\0");
+        }
+
+        return null;
+    }
 
     private static bool IsStandardFormat(string format) =>
         format.Equals(DataFormats.Text, StringComparison.OrdinalIgnoreCase) ||
