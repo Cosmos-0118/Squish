@@ -368,17 +368,21 @@ internal sealed class ImageOptimisationJob : IDisposable
             }
         }
 
+        // All tracks encode the same mosaic (and finally the same frame), so the RGB staging file is written once per raster
+        // for the whole guard instead of once per track and quality probe. Declared after `perceptual`, so it goes first.
+        using var ppmCache = _encoders.CreatePpmStagingCache();
+
         // Every chroma layout is tried with each JPEG encoder; the smallest file that passes wins.
         var entries = new List<(ChromaSubsampling Chroma, string Encoder, Task<EncodedCandidate?> Search)>();
         foreach (var chroma in chromas)
         {
             var layout = chroma;
             entries.Add((layout, mozjpeg ? "mozjpeg" : "built-in encoder", SearchLossyAsync(reference, perceptual, lowest, highest,
-                (image, quality, token) => _encoders.EncodeJpegAsync(image, quality, layout, token), verification: verification)));
+                (image, quality, token) => _encoders.EncodeJpegAsync(image, quality, layout, token, ppmCache), verification: verification)));
             if (_encoders.HasJpegli)
             {
                 entries.Add((layout, "jpegli", SearchLossyAsync(reference, perceptual, lowest, highest,
-                    (image, quality, token) => _encoders.EncodeJpegliAsync(image, quality, layout, token), verification: verification)));
+                    (image, quality, token) => _encoders.EncodeJpegliAsync(image, quality, layout, token, ppmCache), verification: verification)));
             }
         }
 

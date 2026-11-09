@@ -65,15 +65,18 @@ internal sealed class ImageEncoders
 
     public bool HasLosslessJpeg => _tools.Jpegtran is not null;
 
-    public async Task<FilePath?> EncodeJpegAsync(RasterImage raster, int quality, ChromaSubsampling chroma, CancellationToken token)
+    /// <param name="stagingCache">
+    /// When several encodes of the same raster run (the quality probes of every search track), a shared cache writes the
+    /// RGB staging file once instead of once per probe. Without it each call stages and removes its own copy.
+    /// </param>
+    public async Task<FilePath?> EncodeJpegAsync(RasterImage raster, int quality, ChromaSubsampling chroma, CancellationToken token, PpmStagingCache? stagingCache = null)
     {
         quality = Math.Clamp(quality, 1, 100);
         var output = _temp.New("squish-jpg", "jpg");
 
         if (_tools.Cjpeg is { } cjpeg)
         {
-            var staging = _temp.New("squish-stage", "ppm");
-            WritePpm(raster, staging.Value);
+            var staging = StagePpm(raster, stagingCache);
 
             var args = new List<string>
             {
@@ -85,7 +88,7 @@ internal sealed class ImageEncoders
             };
 
             var result = await RunToolAsync(cjpeg, args, Quiet, token).ConfigureAwait(false);
-            _temp.Release(staging);
+            ReleasePpm(staging, stagingCache);
             return Succeeded(result, output) ? output : null;
         }
 
@@ -110,7 +113,7 @@ internal sealed class ImageEncoders
     /// jpegli at a given quality. Adaptive quantisation is off: it spends bits where a human eye is least sensitive,
     /// which SSIMULACRA2 does not reward, and it measured 5-25% smaller at the same score on photographs.
     /// </summary>
-    public async Task<FilePath?> EncodeJpegliAsync(RasterImage raster, int quality, ChromaSubsampling chroma, CancellationToken token)
+    public async Task<FilePath?> EncodeJpegliAsync(RasterImage raster, int quality, ChromaSubsampling chroma, CancellationToken token, PpmStagingCache? stagingCache = null)
     {
         if (_tools.Cjpegli is not { } cjpegli)
         {
@@ -118,8 +121,7 @@ internal sealed class ImageEncoders
         }
 
         var output = _temp.New("squish-jpegli", "jpg");
-        var staging = _temp.New("squish-stage", "ppm");
-        WritePpm(raster, staging.Value);
+        var staging = StagePpm(raster, stagingCache);
 
         var args = new List<string>
         {
@@ -132,7 +134,7 @@ internal sealed class ImageEncoders
         };
 
         var result = await RunToolAsync(cjpegli, args, Quiet, token).ConfigureAwait(false);
-        _temp.Release(staging);
+        ReleasePpm(staging, stagingCache);
         return Succeeded(result, output) ? output : null;
     }
 
@@ -369,6 +371,30 @@ internal sealed class ImageEncoders
 
     // ---- helpers -----------------------------------------------------------------------------------------
 
+    private FilePath StagePpm(RasterImage raster, PpmStagingCache? cache)
+    {
+        if (cache is not null)
+        {
+            return cache.Get(raster);
+        }
+
+        var staging = _temp.New("squish-stage", "ppm");
+        WritePpm(raster, staging.Value);
+        return staging;
+    }
+
+    // A cached staging file belongs to its cache and is shared with the other encodes; only a private one is removed here.
+    private void ReleasePpm(FilePath staging, PpmStagingCache? cache)
+    {
+        if (cache is null)
+        {
+            _temp.Release(staging);
+        }
+    }
+
+    /// <summary>Creates a staging cache whose files live in this encoder set's temp scope.</summary>
+    public PpmStagingCache CreatePpmStagingCache() => new(_temp);
+
     private static bool Succeeded(ProcessResult result, FilePath output)
     {
         if (result.ExitCode != 0)
@@ -418,6 +444,71 @@ internal sealed class ImageEncoders
             }
 
             stream.Write(rowBuffer);
+        }
+    }
+}
+
+/// <summary>
+/// Writes each distinct raster to a binary PPM staging file once, however many encoders and qualities consume it.
+/// The JPEG searches probe the same sampled mosaic (and finally the same full frame) with several encoder and chroma
+/// tracks side by side; staging per probe converted RGBA to RGB and rewrote the file for every one of them. Thread-safe;
+/// the staging files are removed on <see cref="Dispose"/>.
+/// </summary>
+internal sealed class PpmStagingCache : IDisposable
+{
+    private readonly TempFileScope _temp;
+    private readonly object _gate = new();
+    private readonly List<(RasterImage Image, FilePath File)> _entries = new();
+    private int _writes;
+    private bool _disposed;
+
+    public PpmStagingCache(TempFileScope temp) => _temp = temp;
+
+    /// <summary>How many staging files were actually written (for diagnostics and tests).</summary>
+    public int WriteCount => Volatile.Read(ref _writes);
+
+    /// <summary>The staging file for <paramref name="image"/>; the raster must not change while the cache is alive.</summary>
+    public FilePath Get(RasterImage image)
+    {
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            foreach (var (cached, file) in _entries)
+            {
+                if (ReferenceEquals(cached, image))
+                {
+                    return file;
+                }
+            }
+
+            // Held across the write on purpose: a second track asking for the same raster waits for this file instead of
+            // writing its own copy.
+            var staging = _temp.New("squish-stage", "ppm");
+            ImageEncoders.WritePpm(image, staging.Value);
+            _writes++;
+            _entries.Add((image, staging));
+            return staging;
+        }
+    }
+
+    public void Dispose()
+    {
+        List<(RasterImage Image, FilePath File)> entries;
+        lock (_gate)
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            entries = new List<(RasterImage Image, FilePath File)>(_entries);
+            _entries.Clear();
+        }
+
+        foreach (var (_, file) in entries)
+        {
+            _temp.Release(file);
         }
     }
 }

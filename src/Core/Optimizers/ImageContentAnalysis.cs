@@ -20,19 +20,40 @@ internal readonly record struct ImageContentProfile(
     bool HasAlpha)
 {
     public bool IsPhotographic => Kind == ImageContentKind.Photograph;
+
+    /// <summary>Share of sampled pixels covered by the 48 most common exact 24-bit colours.</summary>
+    public double TopColorCoverage { get; init; }
+
+    /// <summary>Same, after dropping the low 3 bits of every channel (see <see cref="ImageContentAnalyzer"/>).</summary>
+    public double QuantizedTopColorCoverage { get; init; }
 }
 
 /// <summary>
 /// Cheap content classifier (photo vs. flat graphic vs. text document) driving codec and chroma-subsampling
 /// choices. It samples at most ~256x256 points so it stays negligible next to the encode itself.
 /// </summary>
+/// <remarks>
+/// "A handful of colours cover nearly every pixel" is judged twice: on exact 24-bit colours and on colours quantised to
+/// 5 bits per channel. Real screenshots rarely have a handful of <em>exact</em> colours: window tints carry a dither
+/// or noise texture, shadows are smooth ramps and sub-pixel text anti-aliasing adds a long tail of near-identical
+/// shades, so the exact test alone sends a flat UI capture down the photograph path (JPEG candidates, no lossless
+/// WebP, 4:2:0). Merging shades that differ by less than 8 levels recovers those, while a photograph spreads over
+/// far more than 48 of the 32768 buckets.
+/// </remarks>
 internal static class ImageContentAnalyzer
 {
     private const double DocumentWhitespaceThreshold = 0.52;
     private const double GraphicUniqueColorThreshold = 0.18;
     private const double GraphicEdgeThreshold = 0.12;
     private const double GraphicTopColorCoverage = 0.90;
+
+    // Merging shades makes coverage easier to reach, so the quantised test asks for more - and, to keep smooth low-contrast
+    // photographs (a noisy sky gradient reaches ~0.88) out, only counts when the picture has hard edges: text, panels, lines.
+    private const double GraphicQuantizedTopColorCoverage = 0.93;
+    private const double GraphicQuantizedMinEdgeDensity = 0.02;
     private const int TopColorCount = 48;
+    private const int QuantizeShift = 3;
+    private const int QuantizedBuckets = 1 << (3 * (8 - QuantizeShift));
 
     public static ImageContentProfile Analyse(RasterImage image, bool hasAlpha)
     {
@@ -44,6 +65,7 @@ internal static class ImageContentAnalyzer
         var stepY = Math.Max(1, height / 256);
 
         var colorHistogram = new Dictionary<int, int>();
+        var quantizedHistogram = new int[QuantizedBuckets];
         double edgeCount = 0;
         double whitespaceCount = 0;
         double luminanceSum = 0;
@@ -78,6 +100,7 @@ internal static class ImageContentAnalyzer
                 var packed = (pixels[index] << 16) | (pixels[index + 1] << 8) | pixels[index + 2];
                 colorHistogram.TryGetValue(packed, out var seen);
                 colorHistogram[packed] = seen + 1;
+                quantizedHistogram[Quantize(pixels[index], pixels[index + 1], pixels[index + 2])]++;
                 samples++;
             }
         }
@@ -89,16 +112,21 @@ internal static class ImageContentAnalyzer
 
         var uniqueColorRatio = colorHistogram.Count / samples;
         var topCoverage = TopColorCoverage(colorHistogram, samples);
+        var quantizedCoverage = TopQuantizedCoverage(quantizedHistogram, samples);
         var edgeDensity = edgeCount / samples;
         var whitespaceRatio = whitespaceCount / samples;
         var meanLuminance = luminanceSum / samples;
         var luminanceVariance = Math.Max(0, luminanceSqSum / samples - meanLuminance * meanLuminance);
 
-        var kind = DetermineKind(edgeDensity, uniqueColorRatio, topCoverage, whitespaceRatio, luminanceVariance, hasAlpha);
-        return new ImageContentProfile(kind, edgeDensity, uniqueColorRatio, luminanceVariance, whitespaceRatio, hasAlpha);
+        var kind = DetermineKind(edgeDensity, uniqueColorRatio, topCoverage, quantizedCoverage, whitespaceRatio, luminanceVariance, hasAlpha);
+        return new ImageContentProfile(kind, edgeDensity, uniqueColorRatio, luminanceVariance, whitespaceRatio, hasAlpha)
+        {
+            TopColorCoverage = topCoverage,
+            QuantizedTopColorCoverage = quantizedCoverage
+        };
     }
 
-    private static ImageContentKind DetermineKind(double edgeDensity, double uniqueColorRatio, double topCoverage, double whitespaceRatio, double luminanceVariance, bool hasAlpha)
+    internal static ImageContentKind DetermineKind(double edgeDensity, double uniqueColorRatio, double topCoverage, double quantizedCoverage, double whitespaceRatio, double luminanceVariance, bool hasAlpha)
     {
         if (whitespaceRatio >= DocumentWhitespaceThreshold && edgeDensity < 0.25)
         {
@@ -106,7 +134,8 @@ internal static class ImageContentAnalyzer
         }
 
         // Flat-colour artwork, UI screenshots and icons: a handful of colours cover nearly every pixel.
-        if (topCoverage >= GraphicTopColorCoverage)
+        if (topCoverage >= GraphicTopColorCoverage
+            || (quantizedCoverage >= GraphicQuantizedTopColorCoverage && edgeDensity >= GraphicQuantizedMinEdgeDensity))
         {
             return ImageContentKind.Graphic;
         }
@@ -139,6 +168,39 @@ internal static class ImageContentAnalyzer
         for (var i = 0; i < TopColorCount; i++)
         {
             covered += counts[counts.Length - 1 - i];
+        }
+
+        return covered / samples;
+    }
+
+    private static int Quantize(byte r, byte g, byte b)
+        => ((r >> QuantizeShift) << (2 * (8 - QuantizeShift))) | ((g >> QuantizeShift) << (8 - QuantizeShift)) | (b >> QuantizeShift);
+
+    private static double TopQuantizedCoverage(int[] histogram, double samples)
+    {
+        // Partial selection of the TopColorCount largest buckets: one pass, no sort of 32768 entries.
+        Span<int> top = stackalloc int[TopColorCount];
+        foreach (var count in histogram)
+        {
+            if (count <= top[0])
+            {
+                continue;
+            }
+
+            // top[0] is the smallest kept count; replace it and sift it back into place.
+            top[0] = count;
+            var i = 0;
+            while (i + 1 < top.Length && top[i] > top[i + 1])
+            {
+                (top[i], top[i + 1]) = (top[i + 1], top[i]);
+                i++;
+            }
+        }
+
+        double covered = 0;
+        foreach (var count in top)
+        {
+            covered += count;
         }
 
         return covered / samples;
