@@ -19,12 +19,20 @@ internal sealed record FolderWatchConfig(
     int MaxImageSizeMb,
     int MaxVideoSizeMb,
     int MaxImageJobs,
-    int MaxVideoJobs)
+    int MaxVideoJobs,
+    bool AutoPdfs = false,
+    bool AutoDocuments = false,
+    IReadOnlyList<string>? PdfDirectories = null,
+    IReadOnlyList<string>? DocumentDirectories = null,
+    int MaxDocumentSizeMb = 0,
+    int MaxDocumentJobs = 0)
 {
     public bool IsEnabled(ItemType type) => type switch
     {
         ItemType.Image => AutoImages,
         ItemType.Video => AutoVideos,
+        ItemType.Pdf => AutoPdfs,
+        ItemType.Document => AutoDocuments,
         _ => false
     };
 
@@ -51,6 +59,7 @@ internal sealed record FolderWatchConfig(
         {
             ItemType.Image => MaxImageSizeMb <= 0 || sizeMb <= MaxImageSizeMb,
             ItemType.Video => MaxVideoSizeMb <= 0 || sizeMb <= MaxVideoSizeMb,
+            ItemType.Pdf or ItemType.Document => MaxDocumentSizeMb <= 0 || sizeMb <= MaxDocumentSizeMb,
             _ => false
         };
     }
@@ -60,11 +69,12 @@ internal sealed record FolderWatchConfig(
     {
         ItemType.Image => MaxImageJobs,
         ItemType.Video => MaxVideoJobs,
+        ItemType.Pdf or ItemType.Document => MaxDocumentJobs,
         _ => 0
     };
 
     public IReadOnlyList<WatchRootSpec> BuildPlan() =>
-        WatchPlan.Build(Paused, AutoImages, AutoVideos, ImageDirectories, VideoDirectories);
+        WatchPlan.Build(Paused, AutoImages, AutoVideos, ImageDirectories, VideoDirectories, AutoPdfs, AutoDocuments, PdfDirectories, DocumentDirectories);
 }
 
 /// <summary>Where the folder watcher gets its configuration from; swapped for a fake in tests and benchmarks.</summary>
@@ -113,7 +123,13 @@ internal sealed class SettingsFolderWatchSettings : IFolderWatchSettings, IDispo
         MaxImageSizeMb: SettingsHost.Get(SettingsRegistry.MaxImageSizeMb),
         MaxVideoSizeMb: SettingsHost.Get(SettingsRegistry.MaxVideoSizeMb),
         MaxImageJobs: SettingsHost.Get(SettingsRegistry.MaxImageFileCount),
-        MaxVideoJobs: SettingsHost.Get(SettingsRegistry.MaxVideoFileCount));
+        MaxVideoJobs: SettingsHost.Get(SettingsRegistry.MaxVideoFileCount),
+        AutoPdfs: SettingsHost.Get(SettingsRegistry.EnableAutomaticPdfOptimisations),
+        AutoDocuments: SettingsHost.Get(SettingsRegistry.EnableAutomaticDocumentOptimisations),
+        PdfDirectories: (SettingsHost.Get(SettingsRegistry.PdfDirs) ?? Array.Empty<string>()).ToArray(),
+        DocumentDirectories: (SettingsHost.Get(SettingsRegistry.DocumentDirs) ?? Array.Empty<string>()).ToArray(),
+        MaxDocumentSizeMb: SettingsHost.Get(SettingsRegistry.MaxDocumentSizeMb),
+        MaxDocumentJobs: SettingsHost.Get(SettingsRegistry.MaxDocumentFileCount));
 
     private void OnSettingChanged(object? sender, SettingChangedEventArgs e)
     {
@@ -129,6 +145,12 @@ internal sealed class SettingsFolderWatchSettings : IFolderWatchSettings, IDispo
     private static bool IsWatcherSetting(string name) =>
         string.Equals(name, SettingsRegistry.ImageDirs.Name, StringComparison.Ordinal) ||
         string.Equals(name, SettingsRegistry.VideoDirs.Name, StringComparison.Ordinal) ||
+        string.Equals(name, SettingsRegistry.PdfDirs.Name, StringComparison.Ordinal) ||
+        string.Equals(name, SettingsRegistry.DocumentDirs.Name, StringComparison.Ordinal) ||
+        string.Equals(name, SettingsRegistry.EnableAutomaticPdfOptimisations.Name, StringComparison.Ordinal) ||
+        string.Equals(name, SettingsRegistry.EnableAutomaticDocumentOptimisations.Name, StringComparison.Ordinal) ||
+        string.Equals(name, SettingsRegistry.MaxDocumentSizeMb.Name, StringComparison.Ordinal) ||
+        string.Equals(name, SettingsRegistry.MaxDocumentFileCount.Name, StringComparison.Ordinal) ||
         string.Equals(name, SettingsRegistry.EnableAutomaticImageOptimisations.Name, StringComparison.Ordinal) ||
         string.Equals(name, SettingsRegistry.EnableAutomaticVideoOptimisations.Name, StringComparison.Ordinal) ||
         string.Equals(name, SettingsRegistry.PauseAutomaticOptimisations.Name, StringComparison.Ordinal) ||

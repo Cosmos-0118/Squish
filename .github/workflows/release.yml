@@ -48,10 +48,16 @@ jobs:
 
       # Tools are staged before the tests, as in ci, so the encoder tests run for real instead of skipping.
       - name: Cache third-party tools
+        id: tools-cache
         uses: actions/cache@v6
         with:
           path: tools
-          key: tools-${{ runner.os }}-${{ hashFiles('tools/tools-manifest.json', 'scripts/fetch-tools.ps1') }}
+          key: tools-${{ runner.os }}-${{ hashFiles('tools/tools-manifest.json', 'scripts/fetch-tools.ps1', 'scripts/ffmpeg-slim/*') }}
+
+      # ffmpeg is compiled, not downloaded. MSYS2 is only set up when the cache above missed (a changed manifest or recipe).
+      - name: Prepare the ffmpeg build
+        if: steps.tools-cache.outputs.cache-hit != 'true'
+        uses: ./.github/actions/prepare-ffmpeg-build
 
       - name: Stage third-party tools
         shell: pwsh

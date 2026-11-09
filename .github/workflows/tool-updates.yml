@@ -1,6 +1,6 @@
 name: tool-updates
 
-# Weekly check for new encoder releases (ffmpeg, mozjpeg, jpegli, oxipng, libwebp, libavif, pngquant, gifsicle).
+# Weekly check for new encoder releases (mozjpeg, jpegli, oxipng, libwebp, libavif, pngquant, gifsicle).
 # Versions stay pinned in tools/tools-manifest.json: this only proposes updates. When something is newer it pins the
 # new download's SHA256, runs the tests against the new encoders and opens a pull request for review.
 #
@@ -50,6 +50,11 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
+
+      # ffmpeg is compiled here (no cache in this workflow), so the new tools need MSYS2 as well.
+      - name: Prepare the ffmpeg build
+        if: steps.check.outputs.updated == 'true'
+        uses: ./.github/actions/prepare-ffmpeg-build
 
       - name: Stage the updated tools
         if: steps.check.outputs.updated == 'true'

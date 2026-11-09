@@ -9,7 +9,9 @@ using System.Threading.Channels;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Linq;
+using Squish.Core.Documents;
 using Squish.Core.Optimizers;
+using Squish.Core.Pdf;
 using Squish.Core.Settings;
 using Squish.Core.Shared;
 
@@ -179,7 +181,9 @@ internal sealed class WatchCommandHandler
             new IOptimiser[]
             {
                 new ImageOptimiser(imageOptions),
-                new VideoOptimiser(videoOptions)
+                new VideoOptimiser(videoOptions),
+                new PdfOptimiser(PdfOptimiserOptionsFactory.FromSettings()),
+                new DocumentOptimiser(DocumentOptimiserOptionsFactory.FromSettings())
             },
             Math.Max(1, Environment.ProcessorCount / 2));
 
@@ -540,6 +544,18 @@ internal sealed class WatchCommandHandler
             return true;
         }
 
+        if (MediaFormats.IsPdf(path))
+        {
+            type = ItemType.Pdf;
+            return true;
+        }
+
+        if (MediaFormats.IsDocument(path))
+        {
+            type = ItemType.Document;
+            return true;
+        }
+
         type = ItemType.Unknown;
         return false;
     }
@@ -571,6 +587,8 @@ internal sealed class WatchCommandHandler
             metadata["watch.aggressive"] = true;
             metadata[OptimisationMetadata.ImageAggressive] = true;
             metadata[OptimisationMetadata.VideoAggressive] = true;
+            metadata[OptimisationMetadata.PdfAggressive] = true;
+            metadata[OptimisationMetadata.DocumentAggressive] = true;
         }
 
         if (_options.RemoveAudio)

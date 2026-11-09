@@ -12,6 +12,7 @@ changes are applied.
 | jpegli      | https://github.com/libjxl/libjxl         | BSD 3-Clause                                  | `cjpegli.exe` from libjxl's official `jxl-x64-windows-static.zip` release (v0.11.1).  |
 | libwebp     | https://developers.google.com/speed/webp | BSD 3-Clause                                  | Use Google's official `libwebp-1.4.0-windows-x64` distribution.                       |
 | libavif     | https://github.com/AOMediaCodec/libavif  | BSD 2-Clause                                  | Alliance for Open Media's `windows-artifacts.zip` provides `avifenc.exe`.             |
+| qpdf        | https://github.com/qpdf/qpdf             | Apache-2.0                                    | `qpdf.exe` + `qpdf30.dll` from the official `qpdf-12.4.2-msvc64.zip` release.         |
 
 Each entry below reproduces the text required by the upstream license.
 
@@ -52,3 +53,14 @@ libavif is licensed under the BSD 2-Clause license by the Alliance for Open Medi
 Releases (including `windows-artifacts.zip`) are available at
 <https://github.com/AOMediaCodec/libavif>. Redistributions must retain the
 copyright notice and license text.
+
+---
+
+## qpdf — Apache License 2.0
+
+qpdf is copyright (c) 2005-2021 Jay Berkenbilt, 2022-2026 Jay Berkenbilt and Manfred Holger,
+and is licensed under the Apache License, Version 2.0 (full text in `Apache-2.0.txt`). Only the
+unmodified `qpdf.exe` and `qpdf30.dll` from the official release are redistributed; Squish runs
+`qpdf.exe` as a separate process. Source: <https://github.com/qpdf/qpdf>. qpdf's own `NOTICE.md`
+documents the small public-domain / permissively licensed components it embeds (Rijndael, sphlib
+SHA-2).

@@ -45,6 +45,7 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
     private volatile bool _disposed;
     private int _activeImages;
     private int _activeVideos;
+    private int _activeDocuments;
 
     private long _hits;
     private long _submitted;
@@ -438,7 +439,13 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
                _optimisedFiles.WasFingerprintRecentlyOptimised(fingerprint);
     }
 
-    private TimeSpan QuietPeriod(ItemType type) => type == ItemType.Video ? _options.VideoQuietPeriod : _options.ImageQuietPeriod;
+    private TimeSpan QuietPeriod(ItemType type) => type switch
+    {
+        ItemType.Video => _options.VideoQuietPeriod,
+        // Office and PDF writers save in bursts (temp file, rename, lock file); wait for the dust to settle.
+        ItemType.Pdf or ItemType.Document => _options.DocumentQuietPeriod,
+        _ => _options.ImageQuietPeriod
+    };
 
     private bool TryReserveSlot(ItemType type, int limit)
     {
@@ -482,6 +489,11 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
         if (type == ItemType.Video)
         {
             return ref _activeVideos;
+        }
+
+        if (type is ItemType.Pdf or ItemType.Document)
+        {
+            return ref _activeDocuments;
         }
 
         return ref _activeImages;
@@ -596,7 +608,7 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
     private void OnWatcherHit(string root, string path, WatchTypes types, bool renamed)
     {
         Interlocked.Increment(ref _hits);
-        var type = types == WatchTypes.Video ? ItemType.Video : ItemType.Image;
+        var type = WatchPlan.ItemTypeFor(types);
         var quiet = renamed ? _options.RenameQuietPeriod : QuietPeriod(type);
         _queue.Touch(path, new WatchHit(type, root), quiet);
     }
@@ -789,7 +801,7 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
                 {
                     token.ThrowIfCancellationRequested();
 
-                    var itemType = type == WatchTypes.Video ? ItemType.Video : ItemType.Image;
+                    var itemType = WatchPlan.ItemTypeFor(type);
                     _queue.Touch(path, new WatchHit(itemType, root), QuietPeriod(itemType));
                     if (++found >= _options.MaxScanResults)
                     {
@@ -859,6 +871,8 @@ internal sealed record FolderWatchOptions
     public TimeSpan ImageQuietPeriod { get; init; } = TimeSpan.FromMilliseconds(120);
 
     public TimeSpan VideoQuietPeriod { get; init; } = TimeSpan.FromMilliseconds(500);
+
+    public TimeSpan DocumentQuietPeriod { get; init; } = TimeSpan.FromMilliseconds(1500);
 
     /// <summary>A rename-into-place means the writer already finished, so the debounce can be much shorter.</summary>
     public TimeSpan RenameQuietPeriod { get; init; } = TimeSpan.FromMilliseconds(80);

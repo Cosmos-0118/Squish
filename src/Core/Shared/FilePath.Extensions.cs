@@ -73,6 +73,10 @@ public readonly partial record struct FilePath
 
     public bool IsVideo => MediaFormats.IsVideo(this);
 
+    public bool IsPdf => MediaFormats.IsPdf(this);
+
+    public bool IsDocument => MediaFormats.IsDocument(this);
+
 
     public FilePath TempFile(string? ext = null, bool addUniqueId = false)
     {

@@ -18,6 +18,8 @@ var builder = Host.CreateApplicationBuilder(args);
 builder.Logging.AddSharedFileLogger("background-service", LogLevel.Information);
 
 builder.Services.AddSingleton<IOptimiser>(_ => new SettingsBackedImageOptimiser(ImageOptimiserOptionsFactory.FromSettings));
+builder.Services.AddSingleton<IOptimiser>(_ => new SettingsBackedPdfOptimiser(PdfOptimiserOptionsFactory.FromSettings));
+builder.Services.AddSingleton<IOptimiser>(_ => new SettingsBackedDocumentOptimiser(DocumentOptimiserOptionsFactory.FromSettings));
 builder.Services.AddSingleton<IOptimiser>(_ =>
 {
     // Hardware is probed once; the user's settings are re-read on every request.

@@ -17,6 +17,12 @@ internal static class MediaExtensionFilter
     private static readonly FrozenSet<string>.AlternateLookup<ReadOnlySpan<char>> VideoLookup =
         MediaFormats.VideoExtensionNames.ToFrozenSet(StringComparer.OrdinalIgnoreCase).GetAlternateLookup<ReadOnlySpan<char>>();
 
+    private static readonly FrozenSet<string>.AlternateLookup<ReadOnlySpan<char>> PdfLookup =
+        MediaFormats.PdfExtensionNames.ToFrozenSet(StringComparer.OrdinalIgnoreCase).GetAlternateLookup<ReadOnlySpan<char>>();
+
+    private static readonly FrozenSet<string>.AlternateLookup<ReadOnlySpan<char>> DocumentLookup =
+        MediaFormats.DocumentExtensionNames.ToFrozenSet(StringComparer.OrdinalIgnoreCase).GetAlternateLookup<ReadOnlySpan<char>>();
+
     public static WatchTypes Classify(ReadOnlySpan<char> path)
     {
         var extension = Path.GetExtension(path);
@@ -31,6 +37,16 @@ internal static class MediaExtensionFilter
             return WatchTypes.Image;
         }
 
-        return VideoLookup.Contains(extension) ? WatchTypes.Video : WatchTypes.None;
+        if (VideoLookup.Contains(extension))
+        {
+            return WatchTypes.Video;
+        }
+
+        if (PdfLookup.Contains(extension))
+        {
+            return WatchTypes.Pdf;
+        }
+
+        return DocumentLookup.Contains(extension) ? WatchTypes.Document : WatchTypes.None;
     }
 }

@@ -5,5 +5,8 @@ internal sealed record SquishFileType(string Name, SettingKey<string[]> Director
     public static readonly SquishFileType Images = new("images", SettingsRegistry.ImageDirs);
     public static readonly SquishFileType Videos = new("videos", SettingsRegistry.VideoDirs);
 
-    public static IReadOnlyList<SquishFileType> All { get; } = new[] { Images, Videos };
+    public static readonly SquishFileType Pdfs = new("pdfs", SettingsRegistry.PdfDirs);
+    public static readonly SquishFileType Documents = new("documents", SettingsRegistry.DocumentDirs);
+
+    public static IReadOnlyList<SquishFileType> All { get; } = new[] { Images, Videos, Pdfs, Documents };
 }

@@ -70,6 +70,9 @@ public class FilePathTests
     [InlineData("clip.clop", true)]
     [InlineData("squished-photo.jpg", false)]
     [InlineData("photo.jpg", false)]
+    [InlineData("~$budget.xlsx", true)]
+    [InlineData("~$Report.docx", true)]
+    [InlineData("budget~$.xlsx", false)]
     public void SquishFileGuards_RecognisesCurrentAndLegacyOutputNames(string name, bool expected)
     {
         var path = FilePath.From(Path.Combine(Path.GetTempPath(), name));

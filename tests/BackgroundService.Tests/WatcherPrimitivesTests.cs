@@ -1,5 +1,6 @@
 using Squish.BackgroundService;
 using Squish.BackgroundService.Automation;
+using Squish.Core.Optimizers;
 using Squish.Core.Shared;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -62,12 +63,67 @@ public sealed class WatchPlanTests
     }
 }
 
+public sealed class DocumentWatchPlanTests
+{
+    private static string P(params string[] parts) => Path.Combine(Path.GetTempPath(), "squish-plan", Path.Combine(parts));
+
+    [Fact]
+    public void PdfAndDocumentFoldersAreWatchedOnlyWhenEnabled()
+    {
+        var off = WatchPlan.Build(false, false, false, Array.Empty<string>(), Array.Empty<string>(), false, false, new[] { P("pdf") }, new[] { P("docs") });
+        var on = WatchPlan.Build(false, false, false, Array.Empty<string>(), Array.Empty<string>(), true, true, new[] { P("pdf") }, new[] { P("docs") });
+
+        Assert.Empty(off);
+        Assert.Equal(new[] { WatchTypes.Pdf, WatchTypes.Document }.OrderBy(t => (int)t), on.Select(r => r.Types).OrderBy(t => (int)t));
+    }
+
+    [Fact]
+    public void ASharedFolderIsOneWatchWithEveryType()
+    {
+        var plan = WatchPlan.Build(false, true, false, new[] { P("all") }, Array.Empty<string>(), true, true, new[] { P("all") }, new[] { P("all") });
+
+        var spec = Assert.Single(plan);
+        Assert.Equal(WatchTypes.Image | WatchTypes.Pdf | WatchTypes.Document, spec.Types);
+    }
+
+    [Theory]
+    [InlineData(1, ItemType.Image)]
+    [InlineData(2, ItemType.Video)]
+    [InlineData(4, ItemType.Pdf)]
+    [InlineData(8, ItemType.Document)]
+    public void MapsWatchTypesToItemTypes(int types, ItemType expected)
+    {
+        Assert.Equal(expected, WatchPlan.ItemTypeFor((WatchTypes)types));
+        Assert.Equal((WatchTypes)types, WatchPlan.TypesFor(expected));
+    }
+
+    [Fact]
+    public void FolderConfigHonoursPerTypeSwitchesAndSizeLimits()
+    {
+        var config = new FolderWatchConfig(false, true, false, Array.Empty<string>(), Array.Empty<string>(),
+            new HashSet<string>(), new HashSet<string>(), 50, 500, 4, 1,
+            AutoPdfs: true, AutoDocuments: false, MaxDocumentSizeMb: 10, MaxDocumentJobs: 2);
+
+        Assert.True(config.IsEnabled(ItemType.Pdf));
+        Assert.False(config.IsEnabled(ItemType.Document));
+        Assert.True(config.WithinSizeLimit(ItemType.Pdf, 9L * 1024 * 1024));
+        Assert.False(config.WithinSizeLimit(ItemType.Document, 11L * 1024 * 1024));
+        Assert.Equal(2, config.JobLimit(ItemType.Pdf));
+    }
+}
+
 public sealed class MediaExtensionFilterTests
 {
     [Theory]
     [InlineData(@"C:\x\photo.JPG", 1)]
     [InlineData(@"C:\x\clip.mp4", 2)]
-    [InlineData(@"C:\x\doc.pdf", 0)]
+    [InlineData(@"C:\x\doc.pdf", 4)]
+    [InlineData(@"C:\x\Budget.XLSX", 8)]
+    [InlineData(@"C:\x\deck.pptx", 8)]
+    [InlineData(@"C:\x\notes.odt", 8)]
+    [InlineData(@"C:\x\book.epub", 8)]
+    [InlineData(@"C:\x\legacy.doc", 0)]
+    [InlineData(@"C:\x\legacy.xls", 0)]
     [InlineData(@"C:\x\archive.crdownload", 0)]
     [InlineData(@"C:\x\noext", 0)]
     [InlineData(@"C:\x\trailingdot.", 0)]

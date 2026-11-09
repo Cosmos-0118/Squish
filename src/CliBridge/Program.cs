@@ -5,7 +5,9 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
+using Squish.Core.Documents;
 using Squish.Core.Optimizers;
+using Squish.Core.Pdf;
 using Squish.Core.Settings;
 using Squish.Core.Shared;
 using Squish.Core.Shared.Logging;
@@ -183,7 +185,9 @@ internal sealed class OptimiseCommandHandler
             new IOptimiser[]
             {
                 new ImageOptimiser(imageOptions),
-                new VideoOptimiser(videoOptions)
+                new VideoOptimiser(videoOptions),
+                new PdfOptimiser(PdfOptimiserOptionsFactory.FromSettings()),
+                new DocumentOptimiser(DocumentOptimiserOptionsFactory.FromSettings())
             },
             Math.Max(1, Environment.ProcessorCount / 2));
 
@@ -272,6 +276,14 @@ internal sealed class OptimiseCommandHandler
         else if (type == ItemType.Image && _options.Aggressive)
         {
             metadata[OptimisationMetadata.ImageAggressive] = true;
+        }
+        else if (type == ItemType.Pdf && _options.Aggressive)
+        {
+            metadata[OptimisationMetadata.PdfAggressive] = true;
+        }
+        else if (type == ItemType.Document && _options.Aggressive)
+        {
+            metadata[OptimisationMetadata.DocumentAggressive] = true;
         }
 
         // Same output rules as the app: replace-in-place, delete-after-conversion, always re-encode.
@@ -427,6 +439,16 @@ internal sealed class TargetResolver
             return ItemType.Video;
         }
 
+        if (MediaFormats.IsPdf(extension))
+        {
+            return ItemType.Pdf;
+        }
+
+        if (MediaFormats.IsDocument(extension))
+        {
+            return ItemType.Document;
+        }
+
         return null;
     }
 
@@ -531,6 +553,21 @@ internal sealed class TypeFilter
             case "video":
             case "videos":
                 foreach (var ext in MediaFormats.VideoExtensionNames)
+                {
+                    yield return ext;
+                }
+                yield break;
+            case "pdf":
+            case "pdfs":
+                foreach (var ext in MediaFormats.PdfExtensionNames)
+                {
+                    yield return ext;
+                }
+                yield break;
+            case "document":
+            case "documents":
+            case "office":
+                foreach (var ext in MediaFormats.DocumentExtensionNames)
                 {
                     yield return ext;
                 }

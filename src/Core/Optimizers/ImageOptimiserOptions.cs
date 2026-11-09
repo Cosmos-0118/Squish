@@ -37,6 +37,12 @@ public sealed record ImageOptimiserOptions
     /// <summary>Highest quality the search will try; above this a re-encode is rarely worth it.</summary>
     public int MaximumLossyQuality { get; init; } = 95;
 
+    /// <summary>
+    /// A photographic PNG is only converted to JPEG (when its format is listed in <see cref="FormatsToConvertToJpeg"/>) from this
+    /// many pixels up: small pictures are not worth losing a lossless original over. Embedded-picture callers (PDF) lower it.
+    /// </summary>
+    public long JpegConversionMinimumPixels { get; init; } = 1_000_000;
+
     public bool DownscaleRetina { get; init; }
 
     public int RetinaLongEdgePixels { get; init; } = 3840;
