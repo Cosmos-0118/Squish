@@ -23,6 +23,7 @@ public static class ImageOptimiserOptionsFactory
         {
             MetadataPolicy = metadataPolicy,
             DownscaleRetina = SettingsHost.Get(SettingsRegistry.DownscaleRetinaImages),
+            PreserveDates = SettingsHost.Get(SettingsRegistry.PreserveDates),
             FormatsToConvertToJpeg = Normalise(SettingsHost.Get(SettingsRegistry.FormatsToConvertToJpeg), "heic", "heif"),
             FormatsToConvertToPng = Normalise(SettingsHost.Get(SettingsRegistry.FormatsToConvertToPng)),
             AdvancedCodecs = defaults.AdvancedCodecs with

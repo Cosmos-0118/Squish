@@ -593,13 +593,18 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
             }
         }
 
-        // A single image still has to be the picture, so paste targets that only accept a bitmap keep working.
+        // A single copied bitmap (screenshot, "Copy image") has to stay the picture, so paste targets that only accept
+        // a bitmap keep working. A file copied in Explorer has to stay a file: writing only a bitmap would remove
+        // CF_HDROP and Ctrl+V into a folder would stop working.
         // Several files are one file drop: Win+V then has one entry, and paste drops every optimised file.
         if (images == 1 && videos == 0)
         {
             var image = ready.First(entry => entry.Item.IsImage);
-            await CopyImageToClipboardAsync(image.Path, image.Item).ConfigureAwait(false);
-            return;
+            if (image.Item.Origin != ClipboardOrigin.FileDrop)
+            {
+                await CopyImageToClipboardAsync(image.Path, image.Item).ConfigureAwait(false);
+                return;
+            }
         }
 
         await CopyFilesToClipboardAsync(ready.Select(entry => entry.Path).ToArray(), representative).ConfigureAwait(false);
@@ -668,7 +673,9 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
         try
         {
             // Read the bytes before touching the STA thread so the clipboard thread only does clipboard work.
-            var imageBytes = await File.ReadAllBytesAsync(path.Value).ConfigureAwait(false);
+            var fileBytes = await File.ReadAllBytesAsync(path.Value).ConfigureAwait(false);
+            // GDI+ cannot decode WebP/AVIF/HEIC (an allowed output format); hand it a PNG of the same pixels instead.
+            var imageBytes = Squish.Core.Imaging.ClipboardImageConverter.ToGdiCompatibleBytes(path.Value, fileBytes, out _);
             var copyPath = _copyImageFilePath;
             var includePng = imageBytes.Length >= PngSignature.Length && imageBytes.AsSpan(0, PngSignature.Length).SequenceEqual(PngSignature);
 

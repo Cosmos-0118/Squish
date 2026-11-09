@@ -839,6 +839,74 @@ public sealed class ImageOptimiserTests
     }
 
     [Fact]
+    public async Task OutputNameDoesNotMangleAnAlreadySquishNamedSource()
+    {
+        var plain = TestImages.SaveJpeg(TestImages.PhotoLikeRgba(Width, Height, seed: 4), Width, Height, 97);
+        var source = plain.Parent.Append($"{plain.Stem}.squish.jpg");
+        File.Move(plain.Value, source.Value);
+        var expected = plain.Parent.Append($"{plain.Stem}.squish.jpg");
+        try
+        {
+            var result = await RunAsync(new ImageOptimiser(BuiltIn), source);
+
+            Assert.Equal(OptimisationStatus.Succeeded, result.Status);
+            // photo.squish.jpg -> photo.squish.jpg, never photo.s.squish.jpg.
+            Assert.Equal(expected.Value, result.OutputPath?.Value);
+        }
+        finally
+        {
+            TestImages.TryDelete(source, plain.Parent.Append($"{plain.Stem}.s.squish.jpg"));
+        }
+    }
+
+    [Fact]
+    public async Task KeepsOriginalTimestampsWhenPreserveDatesIsOn()
+    {
+        var source = TestImages.SaveJpeg(TestImages.PhotoLikeRgba(Width, Height, seed: 2), Width, Height, 97);
+        var stamp = new DateTime(2020, 5, 17, 10, 30, 0, DateTimeKind.Utc);
+        File.SetLastWriteTimeUtc(source.Value, stamp);
+        File.SetCreationTimeUtc(source.Value, stamp);
+        try
+        {
+            var options = BuiltIn with { PreserveDates = true };
+            var result = await RunAsync(new ImageOptimiser(options), source, ReplaceInPlace());
+
+            Assert.Equal(OptimisationStatus.Succeeded, result.Status);
+            Assert.Equal(source.Value, result.OutputPath?.Value);
+            Assert.Equal(stamp, File.GetLastWriteTimeUtc(source.Value));
+            Assert.Equal(stamp, File.GetCreationTimeUtc(source.Value));
+        }
+        finally
+        {
+            TestImages.TryDelete(source);
+        }
+    }
+
+    [Fact]
+    public void ClipboardConverterTurnsWebpIntoPngAndLeavesJpegAlone()
+    {
+        var pixels = TestImages.PhotoLikeRgba(64, 48, seed: 3);
+        var webp = TestImages.Save(pixels, 64, 48, "webp", image => image.Quality = 80);
+        var jpeg = TestImages.SaveJpeg(pixels, 64, 48, 90);
+        try
+        {
+            var webpBytes = File.ReadAllBytes(webp.Value);
+            var converted = ClipboardImageConverter.ToGdiCompatibleBytes(webp.Value, webpBytes, out var wasConverted);
+            Assert.True(wasConverted);
+            Assert.Equal(new byte[] { 0x89, 0x50, 0x4E, 0x47 }, converted.Take(4).ToArray());
+
+            var jpegBytes = File.ReadAllBytes(jpeg.Value);
+            var untouched = ClipboardImageConverter.ToGdiCompatibleBytes(jpeg.Value, jpegBytes, out wasConverted);
+            Assert.False(wasConverted);
+            Assert.Same(jpegBytes, untouched);
+        }
+        finally
+        {
+            TestImages.TryDelete(webp, jpeg);
+        }
+    }
+
+    [Fact]
     public async Task ConversionKeepsOriginalWhenDeleteFlagNotSet()
     {
         var source = TestImages.Save(TestImages.PhotoLikeRgba(Width, Height, seed: 8), Width, Height, "bmp", image => image.Alpha(AlphaAction.Off));
