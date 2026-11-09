@@ -95,6 +95,22 @@
       }
     },
     {
+      "name": "qpdf",
+      "version": "12.4.2",
+      "url": "https://github.com/qpdf/qpdf/releases/download/v12.4.2/qpdf-12.4.2-msvc64.zip",
+      "sha256": "db87077e683630c1217e0e8f9a20a9749d952ab676e881c3689187763a5de25d",
+      "archiveType": "zip",
+      "destination": "qpdf",
+      "include": [
+        "qpdf.exe",
+        "qpdf30.dll"
+      ],
+      "updateSource": {
+        "type": "github-release",
+        "repo": "qpdf/qpdf"
+      }
+    },
+    {
       "name": "pngquant",
       "version": "2.18.0",
       "urls": [
