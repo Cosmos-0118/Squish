@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading;
@@ -15,25 +17,31 @@ using ImageMagick;
 
 namespace Squish.Core.Pdf;
 
-internal sealed record PdfImagePassResult(int ImagesChanged, long BytesSaved, bool Changed);
+/// <param name="Output">The rewritten file, or null when nothing needed to change.</param>
+internal sealed record PdfImagePassResult(int ImagesChanged, long BytesSaved, string? Output);
 
 /// <summary>
 /// Rewrites the embedded pictures of a PDF through qpdf's JSON interface, leaving every other object alone:
 /// <list type="bullet">
 /// <item>DCT (JPEG) pictures: lossless Huffman/progressive recompression, then a perceptually guarded re-encode, downsampled when
 /// the picture is drawn at a much higher resolution than the target.</item>
-/// <item>8-bit RGB/Gray Flate pictures: converted to JPEG when the content is photographic and the guard accepts it.</item>
+/// <item>8-bit RGB/Gray Flate pictures: converted to JPEG when the content is photographic and the guard accepts it; otherwise
+/// (screenshots, charts, logos) re-encoded as an optimised PNG whose IDAT stream is carried into the PDF as-is
+/// (<c>/FlateDecode</c> with <c>/Predictor 15</c>, or an <c>/Indexed</c> palette after quantisation).</item>
+/// <item>8-bit soft masks: shrunk with their picture and stored with PNG row filters, still lossless.</item>
 /// <item>Everything else (1-bit scans, CCITT, JBIG2, JPX, CMYK, indexed, masks with colour keys, inverted /Decode) is untouched.</item>
 /// </list>
+/// Identical pictures (same bytes, same dictionary, same placement size) are optimised once and share the result.
 /// </summary>
 internal sealed class PdfImagePass
 {
-    private const int ExportBatchSize = 40;
+    private const int ExportBatchSize = 64;
     private const int MaxTrackedStreams = 6000;
     private const int MaxFormDepth = 6;
     private const long MaxImageBytes = 256L * 1024 * 1024;
 
     private readonly QpdfRunner _qpdf;
+    private readonly PdfObjectMap _structure;
     private readonly PdfOptimiserOptions _options;
     private readonly bool _aggressive;
     private readonly string _workDirectory;
@@ -42,16 +50,19 @@ internal sealed class PdfImagePass
     private readonly TempFileScope _temp = new();
     private readonly ImageEncoders _encoders;
 
-    private PdfObjectMap _structure = null!;
     private string _inputPdf = string.Empty;
+    private HashSet<int> _reachable = new();
     private readonly HashSet<int> _maskImages = new();
+    private readonly Dictionary<int, List<int>> _softMaskParents = new();
     private readonly Dictionary<int, string> _exportedFiles = new();
     private readonly Dictionary<int, JsonElement> _exportedDicts = new();
     private readonly List<JsonDocument> _exportDocuments = new();
+    private readonly ConcurrentDictionary<string, Lazy<Task<ImageEncoding?>>> _shared = new(StringComparer.Ordinal);
 
-    public PdfImagePass(QpdfRunner qpdf, PdfOptimiserOptions options, bool aggressive, string workDirectory, OptimiserExecutionContext context, CancellationToken token)
+    public PdfImagePass(QpdfRunner qpdf, PdfObjectMap structure, PdfOptimiserOptions options, bool aggressive, string workDirectory, OptimiserExecutionContext context, CancellationToken token)
     {
         _qpdf = qpdf;
+        _structure = structure;
         _options = options;
         _aggressive = aggressive;
         _workDirectory = workDirectory;
@@ -62,11 +73,19 @@ internal sealed class PdfImagePass
 
     private int TargetDpi => _aggressive ? _options.AggressiveTargetDpi : _options.TargetDpi;
 
-    public async Task<PdfImagePassResult> RunAsync(string inputPdf, string outputPdf, bool linearize)
+    private int Workers => Math.Clamp(Environment.ProcessorCount / 2, 1, 3);
+
+    // Several workers help with many small pictures; a few big scans must not be decoded side by side (about 1 GB each).
+    private readonly PixelBudget _budget = new(12);
+
+    /// <param name="inputPdf">The file <see cref="PdfObjectMap"/> was exported from; the update is applied to it directly.</param>
+    /// <param name="extraArguments">Transformations every rewrite shares (metadata removal).</param>
+    /// <param name="predictorsInSource">Whether the source already has predictor-coded streams.</param>
+    public async Task<PdfImagePassResult> RunAsync(string inputPdf, string outputBase, bool linearize, IReadOnlyList<string> extraArguments, bool predictorsInSource)
     {
         try
         {
-            return await RunCoreAsync(inputPdf, outputPdf, linearize).ConfigureAwait(false);
+            return await RunCoreAsync(inputPdf, outputBase, linearize, extraArguments, predictorsInSource).ConfigureAwait(false);
         }
         finally
         {
@@ -75,66 +94,53 @@ internal sealed class PdfImagePass
                 document.Dispose();
             }
 
-            _structure?.Dispose();
             _temp.Dispose();
         }
     }
 
-    private async Task<PdfImagePassResult> RunCoreAsync(string inputPdf, string outputPdf, bool linearize)
+    private async Task<PdfImagePassResult> RunCoreAsync(string inputPdf, string outputBase, bool linearize, IReadOnlyList<string> extraArguments, bool predictorsInSource)
     {
         _inputPdf = inputPdf;
-        var structurePath = Path.Combine(_workDirectory, "structure.json");
-        var export = await _qpdf.RunAsync(
-            [inputPdf, structurePath, "--json-output", "--json-stream-data=none"], _token).ConfigureAwait(false);
-        if (!QpdfRunner.Succeeded(export))
-        {
-            return new PdfImagePassResult(0, 0, false);
-        }
+        _reachable = _structure.ReachableIds();
 
-        _structure = PdfObjectMap.Load(structurePath);
-
-        var images = _structure.Ids.Where(IsImage).ToList();
+        var images = _reachable.Where(IsImage).OrderBy(id => id).ToList();
         CollectMaskImages(images);
         var updates = new JsonObject();
-
-        var changed = 0;
-        long saved = 0;
+        var results = new ConcurrentDictionary<int, ImageUpdate>();
 
         if (images.Count > 0 && _options.OptimiseImages)
         {
             var usage = await FindImageUsageAsync(images).ConfigureAwait(false);
-            var done = 0;
-            foreach (var batch in images.Chunk(ExportBatchSize))
-            {
-                _token.ThrowIfCancellationRequested();
-                await ExportAsync(batch, $"images{done}").ConfigureAwait(false);
-                foreach (var id in batch)
-                {
-                    _token.ThrowIfCancellationRequested();
-                    _context.ReportProgress(30 + 55.0 * done / images.Count, $"Optimising picture {done + 1} of {images.Count}");
-                    done++;
-                    var result = await TryOptimiseImageAsync(id, usage.GetValueOrDefault(id)).ConfigureAwait(false);
-                    if (result is { } update)
-                    {
-                        updates[$"obj:{id} 0 R"] = update.Node;
-                        changed++;
-                        saved += update.Saved;
-                    }
-                }
-            }
+            // Masks are decoded by the mask pass, once; exporting them here as well would only decode them twice.
+            await OptimiseImagesAsync(images.Where(id => !_maskImages.Contains(id)).ToList(), usage, results).ConfigureAwait(false);
+            await OptimiseMasksAsync(results).ConfigureAwait(false);
+        }
+
+        var changed = 0;
+        long saved = 0;
+        var injectedPredictors = false;
+        foreach (var (id, update) in results.OrderBy(r => r.Key))
+        {
+            updates[$"obj:{id} 0 R"] = update.Node;
+            changed++;
+            saved += update.Saved;
+            injectedPredictors |= update.UsesPredictor;
         }
 
         if (_options.StripMetadata)
         {
             foreach (var (key, node) in BuildMetadataUpdates())
             {
-                updates[key] = node;
+                if (!updates.ContainsKey(key))
+                {
+                    updates[key] = node;
+                }
             }
         }
 
         if (updates.Count == 0)
         {
-            return new PdfImagePassResult(0, 0, false);
+            return new PdfImagePassResult(0, 0, null);
         }
 
         var header = new JsonObject
@@ -147,16 +153,16 @@ internal sealed class PdfImagePass
         var updatePath = Path.Combine(_workDirectory, "update.json");
         await File.WriteAllTextAsync(updatePath, document.ToJsonString(), _token).ConfigureAwait(false);
 
-        var args = new List<string> { inputPdf, outputPdf, $"--update-from-json={updatePath}" };
-        args.AddRange(QpdfRunner.WriteOptions(linearize));
-        var update2 = await _qpdf.RunAsync(args, _token).ConfigureAwait(false);
-        if (!QpdfRunner.Succeeded(update2) || !File.Exists(outputPdf))
+        var arguments = new List<string> { $"--update-from-json={updatePath}" };
+        arguments.AddRange(extraArguments);
+        var output = await _qpdf.WriteBestAsync(inputPdf, outputBase, arguments, linearize, predictorsInSource || injectedPredictors, _token).ConfigureAwait(false);
+        if (output is null)
         {
-            Log.Warning($"qpdf could not apply the picture updates: {update2.StandardError}");
-            return new PdfImagePassResult(0, 0, false);
+            Log.Warning("qpdf could not apply the picture updates");
+            return new PdfImagePassResult(0, 0, null);
         }
 
-        return new PdfImagePassResult(changed, saved, true);
+        return new PdfImagePassResult(changed, saved, output);
     }
 
     // ------------------------------------------------------------------------------------------------------
@@ -178,6 +184,16 @@ internal sealed class PdfImagePass
                 if (dict.TryGetProperty(key, out var target) && PdfObjectMap.TryGetRef(target, out var maskId))
                 {
                     _maskImages.Add(maskId);
+                    if (key == "/SMask")
+                    {
+                        if (!_softMaskParents.TryGetValue(maskId, out var parents))
+                        {
+                            parents = new List<int>();
+                            _softMaskParents[maskId] = parents;
+                        }
+
+                        parents.Add(id);
+                    }
                 }
             }
         }
@@ -210,7 +226,7 @@ internal sealed class PdfImagePass
         try
         {
             var pages = CollectPages();
-            var forms = _structure.Ids.Where(id => _structure.IsStream(id) && _structure.ValueOf(id) is { } d && PdfObjectMap.Name(d, "/Subtype") == "/Form").ToList();
+            var forms = _reachable.Where(id => _structure.IsStream(id) && _structure.ValueOf(id) is { } d && PdfObjectMap.Name(d, "/Subtype") == "/Form").ToList();
             var streamIds = new HashSet<int>(forms);
             foreach (var page in pages)
             {
@@ -226,12 +242,10 @@ internal sealed class PdfImagePass
                 return usage;
             }
 
-            var done = 0;
-            foreach (var batch in streamIds.Chunk(ExportBatchSize * 5))
+            if (streamIds.Count > 0)
             {
-                _token.ThrowIfCancellationRequested();
-                await ExportAsync(batch, $"content{done}").ConfigureAwait(false);
-                done += batch.Length;
+                // One qpdf run for every content stream and form: the selectors go through an argument file.
+                await ExportAsync(streamIds.ToArray(), "content").ConfigureAwait(false);
             }
 
             var visitedOwners = new HashSet<int>();
@@ -246,7 +260,9 @@ internal sealed class PdfImagePass
                 }
 
                 visitedOwners.Add(page.ResourceOwner);
-                ScanContent(stream.ToArray(), PdfMatrix.Identity, page.Resources, page.ResourceOwner, usage, visitedOwners, 0, new HashSet<int>());
+                // /UserUnit scales default user space (1/72 inch by default): a placement of 100 units is 100 * UserUnit points.
+                var start = new PdfMatrix(page.UserUnit, 0, 0, page.UserUnit, 0, 0);
+                ScanContent(stream.ToArray(), start, page.Resources, page.ResourceOwner, usage, visitedOwners, 0, new HashSet<int>());
             }
 
             // Anything that references an image from a resource dictionary this scan never walked makes its size unknowable.
@@ -267,7 +283,7 @@ internal sealed class PdfImagePass
         return usage;
     }
 
-    private sealed record PageInfo(List<int> ContentIds, JsonElement? Resources, int ResourceOwner);
+    private sealed record PageInfo(List<int> ContentIds, JsonElement? Resources, int ResourceOwner, double UserUnit);
 
     private List<PageInfo> CollectPages()
     {
@@ -326,7 +342,8 @@ internal sealed class PdfImagePass
                 CollectContentIds(contentElement, contents);
             }
 
-            pages.Add(new PageInfo(contents, resources, owner));
+            var userUnit = PdfObjectMap.Number(node, "/UserUnit") is { } unit && unit > 0 && double.IsFinite(unit) ? unit : 1.0;
+            pages.Add(new PageInfo(contents, resources, owner, userUnit));
         }
 
         Walk(pagesId, null, pagesId);
@@ -432,10 +449,10 @@ internal sealed class PdfImagePass
         });
     }
 
-    /// <summary>(object holding a resource dictionary, object it points to) for every /XObject entry in the file.</summary>
+    /// <summary>(object holding a resource dictionary, object it points to) for every /XObject entry in the live objects of the file.</summary>
     private IEnumerable<(int Owner, int Target)> FindResourceReferences()
     {
-        foreach (var id in _structure.Ids)
+        foreach (var id in _reachable)
         {
             if (_structure.ValueOf(id) is not { } value)
             {
@@ -502,12 +519,13 @@ internal sealed class PdfImagePass
     {
         var jsonPath = Path.Combine(_workDirectory, $"export-{tag}-{ids[0]}.json");
         var prefix = Path.Combine(_workDirectory, $"stream-{tag}-");
+        var selectors = await QpdfRunner.WriteArgumentFileAsync(
+            Path.Combine(_workDirectory, $"objects-{tag}-{ids[0]}.txt"), ids.Select(id => $"--json-object={id}"), _token).ConfigureAwait(false);
         var args = new List<string>
         {
             _inputPdf, jsonPath, "--json-output", "--json-stream-data=file",
-            $"--json-stream-prefix={prefix}", "--decode-level=generalized"
+            $"--json-stream-prefix={prefix}", "--decode-level=generalized", selectors
         };
-        args.AddRange(ids.Select(id => $"--json-object={id}"));
 
         var result = await _qpdf.RunAsync(args, _token).ConfigureAwait(false);
         if (!QpdfRunner.Succeeded(result) || !File.Exists(jsonPath))
@@ -541,11 +559,73 @@ internal sealed class PdfImagePass
             ? File.ReadAllBytes(path)
             : throw new FormatException($"Stream {id} was not exported.");
 
+    /// <summary>Decoded pictures can be large; drop them as soon as a batch is done.</summary>
+    private void ForgetExports(IEnumerable<int> ids)
+    {
+        foreach (var id in ids)
+        {
+            if (_exportedFiles.Remove(id, out var path))
+            {
+                try
+                {
+                    File.Delete(path);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    // best effort; the work directory is removed at the end
+                }
+            }
+
+            _exportedDicts.Remove(id);
+        }
+    }
+
     // ------------------------------------------------------------------------------------------------------
     // One picture
     // ------------------------------------------------------------------------------------------------------
 
-    private readonly record struct ImageUpdate(JsonNode Node, long Saved);
+    private enum EncodingKind
+    {
+        Jpeg,
+        Png
+    }
+
+    /// <summary>What a picture becomes: shareable between identical pictures because it holds no per-object state.</summary>
+    private sealed record ImageEncoding(
+        EncodingKind Kind,
+        FilePath File,
+        long Size,
+        int Width,
+        int Height,
+        string Description,
+        long ReferenceSize,
+        PngPdfStream? Png = null,
+        string? ColorSpaceJson = null);
+
+    private readonly record struct ImageUpdate(JsonNode Node, long Saved, bool UsesPredictor, int OldWidth, int OldHeight, int NewWidth, int NewHeight);
+
+    private async Task OptimiseImagesAsync(List<int> images, Dictionary<int, ImageUsage> usage, ConcurrentDictionary<int, ImageUpdate> results)
+    {
+        var done = 0;
+        var batchNumber = 0;
+        foreach (var batch in images.Chunk(ExportBatchSize))
+        {
+            _token.ThrowIfCancellationRequested();
+            await ExportAsync(batch, $"images{batchNumber++}").ConfigureAwait(false);
+            await Parallel.ForEachAsync(batch, new ParallelOptions { MaxDegreeOfParallelism = Workers, CancellationToken = _token }, async (id, _) =>
+            {
+                var number = Interlocked.Increment(ref done);
+                _context.ReportProgress(30 + 50.0 * number / images.Count, $"Optimising picture {number} of {images.Count}");
+                if (await TryOptimiseImageAsync(id, usage.GetValueOrDefault(id)).ConfigureAwait(false) is { } update)
+                {
+                    results[id] = update;
+                }
+            }).ConfigureAwait(false);
+
+            // Soft masks are needed again by the mask pass, which exports them on its own.
+            ForgetExports(batch);
+        }
+    }
 
     private async Task<ImageUpdate?> TryOptimiseImageAsync(int id, ImageUsage? usage)
     {
@@ -567,53 +647,102 @@ internal sealed class PdfImagePass
 
         var width = PdfObjectMap.Int(dict, "/Width");
         var height = PdfObjectMap.Int(dict, "/Height");
-        if (width is not > 0 || height is not > 0 || IsSkippable(dict))
+        if (width is not > 0 || height is not > 0)
         {
             return null;
         }
 
         var components = ColourComponents(dict);
-        if (components is null)
+        if (components is null || IsSkippable(dict, components.Value))
         {
             return null;
         }
 
-        var filter = PdfObjectMap.Name(dict, "/Filter");
+        var filter = PdfObjectMap.SingleFilter(dict);
+        var isJpeg = filter == "/DCTDecode";
+        var isRaw = !PdfObjectMap.HasFilter(dict) && PdfObjectMap.Int(dict, "/BitsPerComponent") == 8 && length == (long)width.Value * height.Value * components.Value;
+        if (!isJpeg && !isRaw)
+        {
+            return null;
+        }
+
         try
         {
-            if (filter == "/DCTDecode")
+            var scale = ScaleFor(usage, width.Value, height.Value);
+            var key = await ShareKeyAsync(dict, file, scale).ConfigureAwait(false);
+            var reference = ReferenceSize(id, length);
+            var pixels = (long)width.Value * height.Value;
+            var shared = _shared.GetOrAdd(key, _ => new Lazy<Task<ImageEncoding?>>(async () =>
             {
-                return await OptimiseJpegAsync(id, dict, file, length, width.Value, height.Value, components.Value, usage).ConfigureAwait(false);
-            }
-
-            if (filter is null && PdfObjectMap.Int(dict, "/BitsPerComponent") == 8 && length == (long)width.Value * height.Value * components.Value)
-            {
-                return await OptimiseRawBitmapAsync(id, dict, file, length, width.Value, height.Value, components.Value, usage).ConfigureAwait(false);
-            }
+                using var lease = await _budget.AcquireAsync(pixels, _token).ConfigureAwait(false);
+                return isJpeg
+                    ? await OptimiseJpegAsync(id, dict, file, length, width.Value, height.Value, components.Value, scale, usage).ConfigureAwait(false)
+                    : await OptimiseRawBitmapAsync(dict, file, reference, width.Value, height.Value, components.Value, scale).ConfigureAwait(false);
+            }));
+            var encoding = await shared.Value.ConfigureAwait(false);
+            return encoding is null ? null : BuildUpdate(dict, encoding, width.Value, height.Value);
         }
         catch (Exception ex) when (ex is MagickException or IOException or InvalidDataException or NotSupportedException or InvalidOperationException)
         {
             Log.Warning($"PDF picture {id} left unchanged: {ex.Message}");
+            return null;
         }
+    }
 
-        return null;
+    /// <summary>Same bytes, same way of reading them, same placement size: the same result.</summary>
+    private async Task<string> ShareKeyAsync(JsonElement dict, string file, double? scale)
+    {
+        await using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, FileOptions.SequentialScan | FileOptions.Asynchronous);
+        var hash = Convert.ToHexString(await SHA256.HashDataAsync(stream, _token).ConfigureAwait(false));
+        static string Raw(JsonElement d, string name) => d.TryGetProperty(name, out var v) ? v.GetRawText() : string.Empty;
+        return string.Join('|', hash, Raw(dict, "/Width"), Raw(dict, "/Height"), Raw(dict, "/ColorSpace"), Raw(dict, "/Filter"),
+            Raw(dict, "/DecodeParms"), Raw(dict, "/BitsPerComponent"), scale?.ToString("R", CultureInfo.InvariantCulture) ?? "-");
+    }
+
+    private long ReferenceSize(int id, long decodedLength)
+    {
+        // The Flate original is compressed on disk; that is what a replacement has to beat, not the decoded size.
+        var stored = _structure.ValueOf(id) is { } original ? PdfObjectMap.Int(original, "/Length") ?? 0 : 0;
+        return stored > 0 ? stored : decodedLength / 2;
     }
 
     /// <summary>Image masks, colour-key masks, inverted decode arrays and 1-bit data are not touched.</summary>
-    private static bool IsSkippable(JsonElement dict)
+    private static bool IsSkippable(JsonElement dict, int components)
     {
         if (dict.TryGetProperty("/ImageMask", out var mask) && mask.ValueKind == JsonValueKind.True)
         {
             return true;
         }
 
-        if (dict.TryGetProperty("/Decode", out _))
+        if (dict.TryGetProperty("/Decode", out var decode) && !IsIdentityDecode(decode, components))
         {
             return true;
         }
 
         // A /Mask array is a colour key: it only works with the exact original samples.
         return dict.TryGetProperty("/Mask", out var m) && m.ValueKind == JsonValueKind.Array;
+    }
+
+    /// <summary>Many producers spell out the default: [0 1] for one component, [0 1 0 1 0 1] for three.</summary>
+    internal static bool IsIdentityDecode(JsonElement decode, int components)
+    {
+        if (decode.ValueKind != JsonValueKind.Array || decode.GetArrayLength() != components * 2)
+        {
+            return false;
+        }
+
+        var index = 0;
+        foreach (var item in decode.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Number || item.GetDouble() != (index % 2 == 0 ? 0d : 1d))
+            {
+                return false;
+            }
+
+            index++;
+        }
+
+        return true;
     }
 
     private int? ColourComponents(JsonElement dict)
@@ -623,25 +752,56 @@ internal sealed class PdfImagePass
             return null;
         }
 
-        var resolved = _structure.Deref(space) ?? space;
+        return ComponentsOf(_structure.Deref(space) ?? space, 0);
+    }
+
+    private int? ComponentsOf(JsonElement resolved, int depth)
+    {
+        if (depth > 2)
+        {
+            return null;
+        }
+
         if (resolved.ValueKind == JsonValueKind.String)
         {
             return resolved.GetString() switch
             {
-                "/DeviceGray" => 1,
-                "/DeviceRGB" => 3,
+                "/DeviceGray" or "/CalGray" => 1,
+                "/DeviceRGB" or "/CalRGB" => 3,
                 _ => null
             };
         }
 
-        if (resolved.ValueKind == JsonValueKind.Array && resolved.GetArrayLength() == 2 && resolved[0].GetString() == "/ICCBased"
-            && PdfObjectMap.TryGetRef(resolved[1], out var profileId) && _structure.ValueOf(profileId) is { } profile
-            && PdfObjectMap.Int(profile, "/N") is 1 or 3)
+        if (resolved.ValueKind != JsonValueKind.Array)
         {
-            return PdfObjectMap.Int(profile, "/N");
+            return null;
         }
 
-        return null;
+        // [/DeviceRGB] means the same as /DeviceRGB.
+        if (resolved.GetArrayLength() == 1)
+        {
+            return ComponentsOf(resolved[0], depth + 1);
+        }
+
+        if (resolved.GetArrayLength() != 2 || resolved[0].ValueKind != JsonValueKind.String)
+        {
+            return null;
+        }
+
+        // macOS Quartz writes [/CalRGB << ... >>] and [/CalGray << ... >>]; the samples are read the same way, only the
+        // interpretation of the values differs, and that part of the dictionary is kept.
+        switch (resolved[0].GetString())
+        {
+            case "/CalGray":
+                return 1;
+            case "/CalRGB":
+                return 3;
+            case "/ICCBased" when PdfObjectMap.TryGetRef(resolved[1], out var profileId) && _structure.ValueOf(profileId) is { } profile
+                                  && PdfObjectMap.Int(profile, "/N") is 1 or 3:
+                return PdfObjectMap.Int(profile, "/N");
+            default:
+                return null;
+        }
     }
 
     private double? ScaleFor(ImageUsage? usage, int width, int height)
@@ -668,14 +828,52 @@ internal sealed class PdfImagePass
         return scale <= _options.MinimumDownscaleFactor ? scale : null;
     }
 
-    private async Task<ImageUpdate?> OptimiseJpegAsync(int id, JsonElement dict, string file, long length, int width, int height, int components, ImageUsage? usage)
+    /// <summary>
+    /// /DecodeParms on a JPEG normally only carries /ColorTransform. The value 1 on a three-component picture is the default
+    /// (YCbCr), which is how every re-encode writes it, so spelling it out must not disqualify the picture.
+    /// </summary>
+    internal static bool JpegDecodeParmsAreDefault(JsonElement dict, JpegInfo jpeg)
     {
-        if (dict.TryGetProperty("/DecodeParms", out _))
+        if (!dict.TryGetProperty("/DecodeParms", out var parms))
         {
-            // ColorTransform and friends change how the samples are read; a re-encode would have to reproduce them.
-            return null;
+            return true;
         }
 
+        bool Check(JsonElement item)
+        {
+            switch (item.ValueKind)
+            {
+                case JsonValueKind.Null:
+                    return true;
+                case JsonValueKind.Object:
+                    foreach (var property in item.EnumerateObject())
+                    {
+                        if (property.Name != "/ColorTransform" || property.Value.ValueKind != JsonValueKind.Number)
+                        {
+                            return false;
+                        }
+
+                        var transform = property.Value.GetInt32();
+                        var standard = jpeg.Components == 3 ? transform == 1 && jpeg.AdobeTransform != 0 : jpeg.Components == 1;
+                        if (!standard)
+                        {
+                            return false;
+                        }
+                    }
+
+                    return true;
+                case JsonValueKind.Array:
+                    return item.GetArrayLength() <= 1 && item.EnumerateArray().All(Check);
+                default:
+                    return false;
+            }
+        }
+
+        return Check(parms);
+    }
+
+    private async Task<ImageEncoding?> OptimiseJpegAsync(int id, JsonElement dict, string file, long length, int width, int height, int components, double? scale, ImageUsage? usage)
+    {
         var bytes = await File.ReadAllBytesAsync(file, _token).ConfigureAwait(false);
         var info = JpegInfo.TryRead(bytes);
         if (info is not { } jpeg || jpeg.Components != components || jpeg.Components is not (1 or 3))
@@ -683,10 +881,16 @@ internal sealed class PdfImagePass
             return null;
         }
 
+        // Anything beyond an explicit default changes how the samples are read; a re-encode would have to reproduce it.
+        if (!JpegDecodeParmsAreDefault(dict, jpeg))
+        {
+            return null;
+        }
+
         var staged = _temp.New("squish-pdfimg", "jpg");
         await File.WriteAllBytesAsync(staged.Value, bytes, _token).ConfigureAwait(false);
 
-        ImageCandidateFile best = new(staged, length, jpeg.Width, jpeg.Height, "unchanged");
+        var best = new ImageEncoding(EncodingKind.Jpeg, staged, length, jpeg.Width, jpeg.Height, "unchanged", length);
 
         // 1. Lossless Huffman / progressive recompression: identical pixels.
         if (await _encoders.RecompressJpegLosslessAsync(staged, _token).ConfigureAwait(false) is { } lossless)
@@ -695,7 +899,7 @@ internal sealed class PdfImagePass
             var reread = JpegInfo.TryRead(await File.ReadAllBytesAsync(lossless.Value, _token).ConfigureAwait(false));
             if (size < best.Size && reread is { } r && r.Components == components && r.Width == jpeg.Width && r.Height == jpeg.Height)
             {
-                best = new ImageCandidateFile(lossless, size, jpeg.Width, jpeg.Height, "lossless");
+                best = best with { File = lossless, Size = size, Description = "lossless" };
             }
         }
 
@@ -704,27 +908,21 @@ internal sealed class PdfImagePass
         var rawRgbCoded = jpeg.Components == 3 && jpeg.AdobeTransform == 0;
         if (orientation == 1 && !rawRgbCoded)
         {
-            var scale = ScaleFor(usage, width, height);
             // The pipeline replaces its input in place, so it gets its own copy and the lossless candidate stays intact.
             var lossyInput = _temp.New("squish-pdfimg-lossy", "jpg");
             File.Copy(staged.Value, lossyInput.Value, overwrite: true);
             var lossy = await RunPipelineAsync(lossyInput, convertPng: false, scale, jpeg.Width, jpeg.Height, components, minPixels: 0).ConfigureAwait(false);
-            if (lossy is { } candidate && candidate.Size < best.Size)
+            if (lossy is { Kind: EncodingKind.Jpeg } candidate && candidate.Size < best.Size)
             {
-                best = candidate with { Description = scale is null ? "re-encoded" : "downsampled" };
+                best = candidate with { ReferenceSize = length, Description = scale is null ? "re-encoded" : "downsampled" };
             }
         }
 
         Log.Debug($"PDF picture {id}: {jpeg.Width}x{jpeg.Height}, best {best.Description} {best.Size} of {length} bytes, usage {(usage is null ? "none" : usage.Unknown ? "unknown" : usage.Placements.Count + " placements")}");
-        if (best.Description == "unchanged" || best.Size >= length * 0.97)
-        {
-            return null;
-        }
-
-        return BuildUpdate(dict, best, length);
+        return best.Description == "unchanged" || best.Size >= length * 0.97 ? null : best;
     }
 
-    private async Task<ImageUpdate?> OptimiseRawBitmapAsync(int id, JsonElement dict, string file, long length, int width, int height, int components, ImageUsage? usage)
+    private async Task<ImageEncoding?> OptimiseRawBitmapAsync(JsonElement dict, string file, long reference, int width, int height, int components, double? scale)
     {
         if ((long)width * height < 20_000)
         {
@@ -733,35 +931,105 @@ internal sealed class PdfImagePass
 
         var staged = _temp.New("squish-pdfbmp", "png");
         var raw = await File.ReadAllBytesAsync(file, _token).ConfigureAwait(false);
-        await Task.Run(() =>
-        {
-            ImageIO.EnsureConfigured();
-            var settings = new PixelReadSettings((uint)width, (uint)height, StorageType.Char, components == 3 ? "RGB" : "I");
-            using var image = new MagickImage();
-            image.ReadPixels(raw, settings);
-            image.Settings.SetDefine(MagickFormat.Png, "compression-level", "1");
-            image.Format = MagickFormat.Png;
-            image.Write(staged.Value);
-        }, _token).ConfigureAwait(false);
+        await Task.Run(() => WriteRawAsPng(raw, width, height, components, staged), _token).ConfigureAwait(false);
 
-        var scale = ScaleFor(usage, width, height);
         var converted = await RunPipelineAsync(staged, convertPng: true, scale, width, height, components, minPixels: 20_000).ConfigureAwait(false);
-
-        // The Flate original is already deflated by the structural pass; the JPEG has to clearly beat it to be worth the loss.
-        var flateSize = _structure.ValueOf(id) is { } original ? PdfObjectMap.Int(original, "/Length") ?? 0 : 0;
-        var reference = flateSize > 0 ? flateSize : length / 2;
-        if (converted is not { } candidate || candidate.Size >= reference * 0.9)
+        if (converted is not { } candidate)
         {
             return null;
         }
 
-        return BuildUpdate(dict, candidate with { Description = "photographic bitmap converted to JPEG" }, reference);
+        if (candidate.Kind == EncodingKind.Jpeg)
+        {
+            // The Flate original is already deflated; the JPEG has to clearly beat it to be worth the loss.
+            return candidate.Size >= reference * 0.9
+                ? null
+                : candidate with { ReferenceSize = reference, Description = "photographic bitmap converted to JPEG" };
+        }
+
+        // Screenshots, charts and logos stay lossless (or palette-quantised under the perceptual guard) as PNG scanlines.
+        if (candidate.Png is not { } png || MapPngColour(dict, png, components) is not { } colour)
+        {
+            return null;
+        }
+
+        return candidate.Size >= reference * 0.95
+            ? null
+            : candidate with { ReferenceSize = reference, ColorSpaceJson = colour, Description = "bitmap re-encoded as PNG scanlines" };
     }
 
-    private sealed record ImageCandidateFile(FilePath File, long Size, int Width, int Height, string Description);
+    private static void WriteRawAsPng(byte[] raw, int width, int height, int components, FilePath destination)
+    {
+        ImageIO.EnsureConfigured();
+        var settings = new PixelReadSettings((uint)width, (uint)height, StorageType.Char, components == 3 ? "RGB" : "I");
+        using var image = new MagickImage();
+        image.ReadPixels(raw, settings);
+        image.Settings.SetDefine(MagickFormat.Png, "compression-level", "1");
+        image.Format = MagickFormat.Png;
+        image.Write(destination.Value);
+    }
 
-    /// <summary>Runs the shared image pipeline on a staged picture and returns the JPEG it ships, or null when nothing acceptable came out.</summary>
-    private async Task<ImageCandidateFile?> RunPipelineAsync(FilePath staged, bool convertPng, double? scale, int width, int height, int components, long minPixels)
+    private static string NormaliseSpaceJson(JsonElement space)
+        => space.ValueKind == JsonValueKind.Array && space.GetArrayLength() == 1 && space[0].ValueKind == JsonValueKind.String
+            ? space[0].GetRawText()
+            : space.GetRawText();
+
+    /// <summary>
+    /// The /ColorSpace entry a PNG result needs, as JSON, or null when the PNG cannot stand in for the original picture. The
+    /// pixel values are not colour-managed here, so the original space (an ICC profile, say) stays the one that interprets them;
+    /// a palette becomes an /Indexed space on top of it.
+    /// </summary>
+    internal static string? MapPngColour(JsonElement dict, PngPdfStream png, int components)
+    {
+        if (!dict.TryGetProperty("/ColorSpace", out var space))
+        {
+            return null;
+        }
+
+        var original = NormaliseSpaceJson(space);
+        switch (png.ColorType)
+        {
+            case 2:
+                return components == 3 ? original : null;
+
+            case 0:
+                if (components == 1)
+                {
+                    return original;
+                }
+
+                // Lossless colour-to-grey reduction (R = G = B) is only a pure re-labelling for a device colour space.
+                return components == 3 && original == "\"/DeviceRGB\"" ? "\"/DeviceGray\"" : null;
+
+            case 3 when png.Palette is { Length: > 0 } palette:
+                var entries = palette.Length / 3;
+                byte[] lookup = palette;
+                if (components == 1)
+                {
+                    lookup = new byte[entries];
+                    for (var i = 0; i < entries; i++)
+                    {
+                        if (palette[i * 3] != palette[i * 3 + 1] || palette[i * 3] != palette[i * 3 + 2])
+                        {
+                            return null;
+                        }
+
+                        lookup[i] = palette[i * 3];
+                    }
+                }
+
+                return $"[\"/Indexed\",{original},{entries - 1},\"b:{Convert.ToHexString(lookup)}\"]";
+
+            default:
+                return null;
+        }
+    }
+
+    /// <summary>
+    /// Runs the shared image pipeline on a staged picture and returns what it ships: a JPEG, or (when
+    /// <paramref name="convertPng"/> is set) a PNG whose scanlines can be carried into the PDF. Null when nothing acceptable came out.
+    /// </summary>
+    private async Task<ImageEncoding?> RunPipelineAsync(FilePath staged, bool convertPng, double? scale, int width, int height, int components, long minPixels)
     {
         var baseline = _options.ImageOptions;
         var longEdge = scale is { } s ? (int)Math.Ceiling(Math.Max(width, height) * s) : 0;
@@ -796,6 +1064,11 @@ internal sealed class PdfImagePass
         }
 
         var extension = (output.Extension ?? string.Empty).ToLowerInvariant();
+        if (extension == "png" && convertPng)
+        {
+            return await ReadPngCandidateAsync(output).ConfigureAwait(false);
+        }
+
         if (extension is not ("jpg" or "jpeg"))
         {
             return null;
@@ -829,7 +1102,27 @@ internal sealed class PdfImagePass
             jpeg = greyInfo;
         }
 
-        return jpeg.Components == components ? new ImageCandidateFile(current, data.LongLength, jpeg.Width, jpeg.Height, "re-encoded") : null;
+        return jpeg.Components == components
+            ? new ImageEncoding(EncodingKind.Jpeg, current, data.LongLength, jpeg.Width, jpeg.Height, "re-encoded", data.LongLength)
+            : null;
+    }
+
+    /// <summary>
+    /// Pulls the zlib scanline data (and palette) out of an optimised PNG. The pixel data is not touched, so what oxipng or
+    /// pngquant decided is exactly what the PDF gets - no second deflate pass.
+    /// </summary>
+    private async Task<ImageEncoding?> ReadPngCandidateAsync(FilePath png)
+    {
+        var bytes = await File.ReadAllBytesAsync(png.Value, _token).ConfigureAwait(false);
+        if (PngPdfStream.TryRead(bytes) is not { } stream)
+        {
+            return null;
+        }
+
+        var data = _temp.New("squish-pdfidat", "bin");
+        await File.WriteAllBytesAsync(data.Value, stream.Idat, _token).ConfigureAwait(false);
+        var size = stream.Idat.LongLength + (stream.Palette?.LongLength ?? 0);
+        return new ImageEncoding(EncodingKind.Png, data, size, stream.Width, stream.Height, "PNG", size, stream);
     }
 
     private async Task<FilePath?> ToGreyscaleAsync(FilePath source)
@@ -845,45 +1138,232 @@ internal sealed class PdfImagePass
         return result.ExitCode == 0 && File.Exists(output.Value) ? output : null;
     }
 
-    private ImageUpdate BuildUpdate(JsonElement dict, ImageCandidateFile best, long originalSize)
+    private ImageUpdate? BuildUpdate(JsonElement dict, ImageEncoding best, int oldWidth, int oldHeight)
     {
         var node = JsonNode.Parse(dict.GetRawText())!.AsObject();
-        node["/Filter"] = "/DCTDecode";
-        node.Remove("/DecodeParms");
         node.Remove("/Length");
-        node["/BitsPerComponent"] = 8;
+        node.Remove("/Decode");
+        if (_options.StripMetadata)
+        {
+            node.Remove("/Metadata");
+            node.Remove("/PieceInfo");
+        }
+
         node["/Width"] = best.Width;
         node["/Height"] = best.Height;
 
+        if (best.Kind == EncodingKind.Jpeg)
+        {
+            node["/Filter"] = "/DCTDecode";
+            node.Remove("/DecodeParms");
+            node["/BitsPerComponent"] = 8;
+        }
+        else
+        {
+            node["/Filter"] = "/FlateDecode";
+            var png = best.Png!;
+            node["/DecodeParms"] = new JsonObject
+            {
+                ["/Predictor"] = 15,
+                ["/Colors"] = png.Colors,
+                ["/BitsPerComponent"] = png.BitDepth,
+                ["/Columns"] = best.Width
+            };
+            node["/BitsPerComponent"] = png.BitDepth;
+            node["/ColorSpace"] = JsonNode.Parse(best.ColorSpaceJson!);
+        }
+
         // The temp scope disposes with the pass, which is after the update has been applied.
         var stream = new JsonObject { ["dict"] = node, ["datafile"] = best.File.Value };
-        return new ImageUpdate(new JsonObject { ["stream"] = stream }, originalSize - best.Size);
+        return new ImageUpdate(new JsonObject { ["stream"] = stream }, best.ReferenceSize - best.Size, best.Kind == EncodingKind.Png, oldWidth, oldHeight, best.Width, best.Height);
+    }
+
+    // ------------------------------------------------------------------------------------------------------
+    // Soft masks
+    // ------------------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// 8-bit soft masks stay lossless (JPEG ringing would show as halos on the alpha edge) but are shrunk to match their picture
+    /// and stored with PNG row filters. A mask kept at 3000x2000 beside a picture reduced to 440x293 would otherwise outweigh it.
+    /// </summary>
+    private async Task OptimiseMasksAsync(ConcurrentDictionary<int, ImageUpdate> results)
+    {
+        // A mask shared by several pictures would have to suit all of them; leave those alone.
+        var masks = _softMaskParents.Where(m => m.Value.Count == 1 && _reachable.Contains(m.Key) && !results.ContainsKey(m.Key))
+            .Select(m => m.Key).OrderBy(id => id).ToList();
+        var batchNumber = 0;
+        foreach (var batch in masks.Chunk(ExportBatchSize))
+        {
+            _token.ThrowIfCancellationRequested();
+            await ExportAsync(batch, $"masks{batchNumber++}").ConfigureAwait(false);
+            await Parallel.ForEachAsync(batch, new ParallelOptions { MaxDegreeOfParallelism = Workers, CancellationToken = _token }, async (id, _) =>
+            {
+                try
+                {
+                    ImageUpdate? parent = results.TryGetValue(_softMaskParents[id][0], out var parentUpdate) ? parentUpdate : null;
+                    if (await TryOptimiseMaskAsync(id, parent).ConfigureAwait(false) is { } update)
+                    {
+                        results[id] = update;
+                    }
+                }
+                catch (Exception ex) when (ex is MagickException or IOException or InvalidDataException or NotSupportedException or InvalidOperationException)
+                {
+                    Log.Warning($"PDF mask {id} left unchanged: {ex.Message}");
+                }
+            }).ConfigureAwait(false);
+
+            ForgetExports(batch);
+        }
+    }
+
+    private async Task<ImageUpdate?> TryOptimiseMaskAsync(int id, ImageUpdate? parent)
+    {
+        if (!_exportedDicts.TryGetValue(id, out var dict) || !_exportedFiles.TryGetValue(id, out var file) || !File.Exists(file))
+        {
+            return null;
+        }
+
+        var width = PdfObjectMap.Int(dict, "/Width");
+        var height = PdfObjectMap.Int(dict, "/Height");
+        var length = new FileInfo(file).Length;
+        if (width is not > 0 || height is not > 0 || length < _options.MinimumImageBytes || length > MaxImageBytes)
+        {
+            return null;
+        }
+
+        // /Matte is premultiplied against the picture and requires the same size; a stencil is 1-bit and not handled here.
+        if (PdfObjectMap.HasFilter(dict) || dict.TryGetProperty("/Matte", out _) || PdfObjectMap.Int(dict, "/BitsPerComponent") != 8
+            || length != (long)width.Value * height.Value || !IsPlainGrey(dict))
+        {
+            return null;
+        }
+
+        var newWidth = width.Value;
+        var newHeight = height.Value;
+        if (parent is { } p && p.NewWidth < p.OldWidth && p.NewHeight < p.OldHeight)
+        {
+            newWidth = Math.Max(1, (int)Math.Round(width.Value * (double)p.NewWidth / p.OldWidth));
+            newHeight = Math.Max(1, (int)Math.Round(height.Value * (double)p.NewHeight / p.OldHeight));
+        }
+
+        using var lease = await _budget.AcquireAsync((long)width.Value * height.Value, _token).ConfigureAwait(false);
+        var raw = await File.ReadAllBytesAsync(file, _token).ConfigureAwait(false);
+        var staged = _temp.New("squish-pdfmask", "png");
+        await Task.Run(() =>
+        {
+            ImageIO.EnsureConfigured();
+            using var image = new MagickImage();
+            image.ReadPixels(raw, new PixelReadSettings((uint)width.Value, (uint)height.Value, StorageType.Char, "I"));
+            if (newWidth != width.Value || newHeight != height.Value)
+            {
+                image.FilterType = FilterType.Lanczos;
+                image.Resize((uint)newWidth, (uint)newHeight);
+            }
+
+            image.ColorType = ColorType.Grayscale;
+            image.Depth = 8;
+            image.Settings.SetDefine(MagickFormat.Png, "compression-level", "9");
+            image.Settings.SetDefine(MagickFormat.Png, "compression-filter", "5");
+            image.Format = MagickFormat.Png;
+            image.Write(staged.Value);
+        }, _token).ConfigureAwait(false);
+
+        var best = staged;
+        if (await _encoders.OptimisePngLosslessAsync(staged, 4, zopfli: false, "all", _token).ConfigureAwait(false) is { } optimised
+            && new FileInfo(optimised.Value).Length < new FileInfo(best.Value).Length)
+        {
+            best = optimised;
+        }
+
+        // Only greyscale scanlines can stand in for a /DeviceGray mask; a palette or RGB result is not what a mask expects.
+        if (PngPdfStream.TryRead(await File.ReadAllBytesAsync(best.Value, _token).ConfigureAwait(false)) is not { ColorType: 0 } png)
+        {
+            return null;
+        }
+
+        var reference = ReferenceSize(id, length);
+        if (png.Idat.LongLength >= reference * 0.9)
+        {
+            return null;
+        }
+
+        var data = _temp.New("squish-pdfmaskdata", "bin");
+        await File.WriteAllBytesAsync(data.Value, png.Idat, _token).ConfigureAwait(false);
+
+        var node = JsonNode.Parse(dict.GetRawText())!.AsObject();
+        node.Remove("/Length");
+        node.Remove("/Decode");
+        node["/Width"] = png.Width;
+        node["/Height"] = png.Height;
+        node["/BitsPerComponent"] = png.BitDepth;
+        node["/Filter"] = "/FlateDecode";
+        node["/DecodeParms"] = new JsonObject
+        {
+            ["/Predictor"] = 15,
+            ["/Colors"] = 1,
+            ["/BitsPerComponent"] = png.BitDepth,
+            ["/Columns"] = png.Width
+        };
+
+        var stream = new JsonObject { ["dict"] = node, ["datafile"] = data.Value };
+        return new ImageUpdate(new JsonObject { ["stream"] = stream }, reference - png.Idat.LongLength, true, width.Value, height.Value, png.Width, png.Height);
+    }
+
+    private static bool IsPlainGrey(JsonElement dict)
+    {
+        if (PdfObjectMap.Name(dict, "/ColorSpace") != "/DeviceGray")
+        {
+            return false;
+        }
+
+        return !dict.TryGetProperty("/Decode", out var decode) || IsIdentityDecode(decode, 1);
     }
 
     // ------------------------------------------------------------------------------------------------------
     // Metadata that lives in object dictionaries
     // ------------------------------------------------------------------------------------------------------
 
-    /// <summary>Page thumbnails (/Thumb) and application-private data (/PieceInfo) on pages and the catalog.</summary>
+    /// <summary>
+    /// Page thumbnails (/Thumb) and application-private data (/PieceInfo) on pages and the catalog; /PieceInfo and per-object
+    /// XMP (/Metadata) on form and picture XObjects, where Illustrator, InDesign and Photoshop leave their private copies.
+    /// </summary>
     private IEnumerable<(string Key, JsonNode Node)> BuildMetadataUpdates()
     {
-        foreach (var id in _structure.Ids)
+        foreach (var id in _reachable)
         {
-            if (_structure.IsStream(id) || _structure.ValueOf(id) is not { ValueKind: JsonValueKind.Object } value)
+            if (!_structure.IsStream(id))
+            {
+                if (_structure.ValueOf(id) is not { ValueKind: JsonValueKind.Object } value)
+                {
+                    continue;
+                }
+
+                var type = PdfObjectMap.Name(value, "/Type");
+                if (type is not ("/Page" or "/Catalog") || (!value.TryGetProperty("/Thumb", out _) && !value.TryGetProperty("/PieceInfo", out _)))
+                {
+                    continue;
+                }
+
+                var node = JsonNode.Parse(value.GetRawText())!.AsObject();
+                node.Remove("/Thumb");
+                node.Remove("/PieceInfo");
+                yield return ($"obj:{id} 0 R", new JsonObject { ["value"] = node });
+                continue;
+            }
+
+            if (_structure.ValueOf(id) is not { ValueKind: JsonValueKind.Object } dict
+                || PdfObjectMap.Name(dict, "/Subtype") is not ("/Form" or "/Image")
+                || (!dict.TryGetProperty("/PieceInfo", out _) && !dict.TryGetProperty("/Metadata", out _)))
             {
                 continue;
             }
 
-            var type = PdfObjectMap.Name(value, "/Type");
-            if (type is not ("/Page" or "/Catalog") || (!value.TryGetProperty("/Thumb", out _) && !value.TryGetProperty("/PieceInfo", out _)))
-            {
-                continue;
-            }
-
-            var node = JsonNode.Parse(value.GetRawText())!.AsObject();
-            node.Remove("/Thumb");
-            node.Remove("/PieceInfo");
-            yield return ($"obj:{id} 0 R", new JsonObject { ["value"] = node });
+            // A dictionary-only stream update keeps the stream data as it is.
+            var streamDict = JsonNode.Parse(dict.GetRawText())!.AsObject();
+            streamDict.Remove("/PieceInfo");
+            streamDict.Remove("/Metadata");
+            streamDict.Remove("/Length");
+            yield return ($"obj:{id} 0 R", new JsonObject { ["stream"] = new JsonObject { ["dict"] = streamDict } });
         }
     }
 }

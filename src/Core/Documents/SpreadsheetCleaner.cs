@@ -131,19 +131,73 @@ internal sealed class SpreadsheetCleaner : XmlPartRewriter
     private readonly SpreadsheetStyles _styles;
     private readonly bool _aggressive;
     private readonly int _cutoffRow;
-    private readonly string? _dimensionOverride;
+    private readonly bool _deferDimension;
     private readonly List<(int Min, int Max, int Style)> _columnStyles = new();
     private int _sheetDataDepth = -1;
+    private double _defaultRowHeight = 15;
+    private bool _placeholderWritten;
 
-    public SpreadsheetCleaner(SpreadsheetStyles styles, bool aggressive, int cutoffRow, string? dimensionOverride)
+    /// <summary>
+    /// Written in place of the <c>dimension</c> reference while rewriting: what survives is only known once the whole sheet
+    /// has been read, so the caller swaps the real value in afterwards (see <see cref="SpliceDimension"/>).
+    /// </summary>
+    public const string DimensionPlaceholder = "@@SQUISH-DIMENSION@@";
+
+    /// <param name="deferDimension">Write <see cref="DimensionPlaceholder"/> as the dimension and remember the original.</param>
+    public SpreadsheetCleaner(SpreadsheetStyles styles, bool aggressive, int cutoffRow, bool deferDimension)
     {
         _styles = styles;
         _aggressive = aggressive;
         _cutoffRow = cutoffRow;
-        _dimensionOverride = dimensionOverride;
+        _deferDimension = deferDimension;
     }
 
     public SheetCleanStats Stats { get; } = new();
+
+    /// <summary>The <c>dimension</c> reference of the source sheet, when it has one.</summary>
+    public string? OriginalDimension { get; private set; }
+
+    /// <summary>
+    /// What the dimension should say now: the data that is left when anything was dropped, otherwise exactly what the source said.
+    /// </summary>
+    public string? FinalDimension => Stats.AnyDropped && Stats.DimensionRef is { } computed ? computed : OriginalDimension;
+
+    /// <summary>
+    /// Copies <paramref name="rewritten"/> to <paramref name="destination"/> with the dimension placeholder replaced by the
+    /// final value. The element sits before the sheet data, so only a small prefix of the output has to be searched.
+    /// </summary>
+    public void SpliceDimension(Stream rewritten, Stream destination)
+    {
+        rewritten.Position = 0;
+        var needle = System.Text.Encoding.ASCII.GetBytes(DimensionPlaceholder);
+        var window = new byte[(int)Math.Min(rewritten.Length, 256 * 1024)];
+        var read = rewritten.ReadAtLeast(window, window.Length, throwOnEndOfStream: false);
+        var at = window.AsSpan(0, read).IndexOf(needle);
+        if (at < 0)
+        {
+            if (_placeholderWritten)
+            {
+                // The marker went out but cannot be found: shipping it would corrupt the sheet. The caller keeps the original part.
+                throw new InvalidOperationException("Dimension placeholder not found in the rewritten sheet.");
+            }
+
+            // No dimension element in this sheet: nothing to swap.
+            rewritten.Position = 0;
+            rewritten.CopyTo(destination);
+            return;
+        }
+
+        if (FinalDimension is not { } dimension)
+        {
+            throw new InvalidOperationException("Dimension placeholder without a value.");
+        }
+
+        destination.Write(window, 0, at);
+        destination.Write(System.Text.Encoding.UTF8.GetBytes(System.Security.SecurityElement.Escape(dimension)));
+        var tail = at + needle.Length;
+        destination.Write(window, tail, read - tail);
+        rewritten.CopyTo(destination);
+    }
 
     // ---- pass 1: where does real data end? ---------------------------------------------------------------
 
@@ -179,13 +233,9 @@ internal sealed class SpreadsheetCleaner : XmlPartRewriter
 
                     break;
                 case "mergeCell":
-                    var reference = reader.GetAttribute("ref");
-                    var colon = reference?.IndexOf(':', StringComparison.Ordinal) ?? -1;
-                    if (reference is not null && colon > 0 && TryParseCellRef(reference[(colon + 1)..], out _, out var mergedRow))
-                    {
-                        scan.LastMergedRow = Math.Max(scan.LastMergedRow, mergedRow);
-                    }
-
+                case "autoFilter":
+                    // A range can be written from either corner (A20:C1); the lower row decides.
+                    scan.LastMergedRow = Math.Max(scan.LastMergedRow, LastRowOf(reader.GetAttribute("ref")));
                     break;
             }
         }
@@ -213,9 +263,19 @@ internal sealed class SpreadsheetCleaner : XmlPartRewriter
                 RecordColumnStyle(reader);
                 return false;
 
-            case "dimension" when _dimensionOverride is not null:
+            case "sheetFormatPr":
+                if (double.TryParse(reader.GetAttribute("defaultRowHeight"), NumberStyles.Float, CultureInfo.InvariantCulture, out var defaultHeight) && defaultHeight > 0)
+                {
+                    _defaultRowHeight = defaultHeight;
+                }
+
+                return false;
+
+            case "dimension" when _deferDimension && _sheetDataDepth < 0:
+                OriginalDimension = reader.GetAttribute("ref");
+                _placeholderWritten = true;
                 writer.WriteStartElement(reader.Prefix, "dimension", reader.NamespaceURI);
-                writer.WriteAttributeString("ref", _dimensionOverride);
+                writer.WriteAttributeString("ref", DimensionPlaceholder);
                 writer.WriteEndElement();
                 SkipElement(reader);
                 return true;
@@ -266,7 +326,8 @@ internal sealed class SpreadsheetCleaner : XmlPartRewriter
     {
         var attributes = CaptureAttributes(reader);
         reader.MoveToElement();
-        if (!HasMeaningfulRowAttributes(attributes))
+        _ = int.TryParse(Find(attributes, "r"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var emptyRowNumber);
+        if (!RowAttributesMatter(attributes, _aggressive && emptyRowNumber > _cutoffRow))
         {
             Stats.DroppedRows++;
             return;
@@ -349,7 +410,7 @@ internal sealed class SpreadsheetCleaner : XmlPartRewriter
         {
             writer.WriteEndElement();
         }
-        else if (HasMeaningfulRowAttributes(attributes))
+        else if (RowAttributesMatter(attributes, pastData))
         {
             WriteRowStart(writer, prefix, localName, ns, attributes);
             writer.WriteEndElement();
@@ -423,17 +484,62 @@ internal sealed class SpreadsheetCleaner : XmlPartRewriter
         }
     }
 
-    private static bool HasMeaningfulRowAttributes(List<(string Prefix, string Local, string Ns, string Value)> attributes)
+    /// <summary>
+    /// Whether an otherwise empty row still says something. A row-level format (number format, font, fill) is what a cell typed
+    /// into that row will look like, so any non-default row style is kept - even one that draws nothing today - and so are hidden,
+    /// grouped and resized rows. What goes is a row that only restates defaults (<c>s="0"</c>, the sheet's own height). Below
+    /// all data, aggressive mode drops the rest too: row styles and custom heights, as it already does for formatted blank cells.
+    /// This is what clears the million <c>&lt;row r="500000" s="2" customFormat="1"/&gt;</c> left by a "format the whole sheet".
+    /// </summary>
+    private bool RowAttributesMatter(List<(string Prefix, string Local, string Ns, string Value)> attributes, bool pastData)
     {
+        var customFormat = IsTrue(Find(attributes, "customFormat"));
+        var styleCarries = !pastData && customFormat
+                           && int.TryParse(Find(attributes, "s"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var rowStyle)
+                           && rowStyle != 0;
+        var heightMatters = !pastData && IsTrue(Find(attributes, "customHeight"))
+                            && double.TryParse(Find(attributes, "ht"), NumberStyles.Float, CultureInfo.InvariantCulture, out var height)
+                            && Math.Abs(height - _defaultRowHeight) > 0.01;
+
         foreach (var (_, local, _, _) in attributes)
         {
-            if (local is not ("r" or "spans" or "dyDescent" or "xmlns"))
+            switch (local)
             {
-                return true;
+                case "r" or "spans" or "dyDescent" or "xmlns":
+                    break;
+                // A style index only applies with customFormat; ht without customHeight is a cached auto height.
+                case "s" or "customFormat" or "ht" or "customHeight":
+                    break;
+                default:
+                    // hidden, outlineLevel, collapsed, thickTop, thickBot, ph: behaviour or layout that must stay.
+                    return true;
             }
         }
 
-        return false;
+        return styleCarries || heightMatters;
+    }
+
+    /// <summary>The highest row any corner of a range ("A1:C20", "C20:A1", "B7") refers to; 0 when there is none to read.</summary>
+    private static int LastRowOf(string? reference)
+    {
+        if (string.IsNullOrEmpty(reference))
+        {
+            return 0;
+        }
+
+        var highest = 0;
+        foreach (var range in reference.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            foreach (var corner in range.Split(':'))
+            {
+                if (TryParseCellRef(corner, out _, out var row))
+                {
+                    highest = Math.Max(highest, row);
+                }
+            }
+        }
+
+        return highest;
     }
 
     private static string? Find(List<(string Prefix, string Local, string Ns, string Value)> attributes, string local)

@@ -48,7 +48,7 @@ Oversized screenshots, 12 MB PNG exports and phone videos add up fast, and compr
 | **Drag and drop** | Drop files or whole folders into the window, or use *Browse files*. Results are tracked live. |
 | **Floating HUD** | A compact panel shows each file's before and after size and the percentage saved, in light or dark. |
 | **Images** | JPEG, PNG, GIF, WebP, AVIF, HEIC, BMP and TIFF. Lossless passes first, then a perceptually guarded lossy pass. Optional WebP and AVIF output. |
-| **PDF** | Structure recompressed with qpdf, then pictures re-encoded under the same perceptual guard and downsampled when drawn at more than 220 dpi (150 dpi in aggressive mode). Text, fonts, forms and bookmarks are never touched; signed and encrypted PDFs are left alone. Folder watching is opt-in. |
+| **PDF** | Structure recompressed with qpdf in a single rewrite, with pictures re-encoded under the same perceptual guard and downsampled when drawn at more than 220 dpi (150 dpi in aggressive mode). Text, fonts, forms and bookmarks are never touched; signed and encrypted PDFs are left alone. Folder watching is opt-in. |
 | **Documents** | Word, Excel, PowerPoint, OpenDocument and EPUB files: embedded pictures optimised in place, XML minified, spreadsheet bloat (phantom cells, calcChain) removed, properties scrubbed, repacked at maximum deflate. Entirely in-process; legacy `.doc/.xls/.ppt`, signed and encrypted files are skipped. Folder watching is opt-in. |
 | **Video** | MP4, MOV, MKV, WebM and more. SVT-AV1 by default with x265 fallback, hardware encoders (AMD, NVIDIA, Intel) available. Frame rate, audio and 10-bit colour are preserved. |
 | **Privacy by default** | EXIF, GPS, XMP and IPTC metadata are stripped. Colour profiles and orientation are kept so images still look right. |
@@ -155,7 +155,7 @@ flowchart LR
 
 - **Images:** decode safely, run a lossless pass (`jpegtran`, `oxipng`), then search for the lowest quality that still meets a perceptual target using [SSIMULACRA2](docs/optimisation-pipeline.md). Encoders include mozjpeg, jpegli, pngquant, gifsicle, WebP and AVIF. A file is never replaced by a larger one.
 - **Video:** ffmpeg with a quality search over sampled footage, a bitrate cap for grainy sources, frame rate and audio preserved, `+faststart` for MP4.
-- **PDF:** a qpdf structural pass (maximum deflate, object streams, garbage collection), then picture re-encoding and downsampling through qpdf's JSON interface. See [the pipeline notes](docs/optimisation-pipeline.md#pdf).
+- **PDF:** one qpdf rewrite (maximum deflate, object streams, garbage collection) that also carries the picture re-encoding and downsampling done through qpdf's JSON interface. See [the pipeline notes](docs/optimisation-pipeline.md#pdf).
 - **Documents:** in-process rewrite of the ZIP package: pictures through the image pipeline, minified XML, Excel bloat removal, metadata scrub. See [the pipeline notes](docs/optimisation-pipeline.md#documents-office-opendocument-epub).
 - **Markers:** optimised files are tagged (NTFS alternate data stream) so they are never compressed twice.
 

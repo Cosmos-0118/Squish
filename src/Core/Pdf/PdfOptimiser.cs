@@ -13,10 +13,11 @@ namespace Squish.Core.Pdf;
 /// <summary>
 /// PDF optimiser built on qpdf (Apache-2.0, bundled as <c>qpdf.exe</c> + <c>qpdf30.dll</c>):
 /// <list type="number">
-/// <item>structural pass - maximum deflate, objects packed into object streams, unreferenced objects collected, optional removal of
+/// <item>structure - maximum deflate, objects packed into object streams, unreferenced objects collected, optional removal of
 /// the information dictionary / XMP / thumbnails;</item>
-/// <item>picture pass - JPEG and photographic bitmap re-encoding under the same perceptual guard as stand-alone images, with
-/// downsampling of pictures drawn at a much higher resolution than needed (see <see cref="PdfImagePass"/>).</item>
+/// <item>pictures - JPEG and bitmap re-encoding under the same perceptual guard as stand-alone images, with downsampling of
+/// pictures drawn at a much higher resolution than needed (see <see cref="PdfImagePass"/>).</item>
+/// Both land in a single qpdf rewrite of the source.
 /// </list>
 /// Text, fonts, forms, annotations and bookmarks are never rewritten. Signed and encrypted files are left alone.
 /// </summary>
@@ -135,41 +136,53 @@ internal sealed class PdfOptimisationJob
     {
         var linearize = head.Contains("/Linearized", StringComparison.Ordinal);
 
-        // 1. Structure.
-        _context.ReportProgress(10, "Recompressing PDF structure");
-        var structural = Path.Combine(workDirectory, "structural.pdf");
-        var args = new List<string> { _source.Value, structural };
-        args.AddRange(QpdfRunner.WriteOptions(linearize));
-        if (_options.StripMetadata)
+        // 1. Read the structure once. Everything below works from the source file directly: a separate "structural" rewrite
+        // first would deflate every stream at maximum effort only for the picture pass to unpack and deflate it all again.
+        _context.ReportProgress(10, "Reading PDF structure");
+        var structurePath = Path.Combine(workDirectory, "structure.json");
+        var export = await qpdf.RunAsync([_source.Value, structurePath, "--json-output", "--json-stream-data=none"], _token).ConfigureAwait(false);
+        if (!QpdfRunner.Succeeded(export) || !File.Exists(structurePath))
         {
-            args.Add("--remove-info");
-            args.Add("--remove-metadata");
-        }
-
-        var rewritten = await qpdf.RunAsync(args, _token).ConfigureAwait(false);
-        if (!QpdfRunner.Succeeded(rewritten) || !File.Exists(structural))
-        {
-            Log.Warning($"qpdf could not rewrite {_source.Value}: {rewritten.StandardError}");
+            Log.Warning($"qpdf could not read {_source.Value}: {export.StandardError}");
             return Untouched(started, "Could not read this PDF; left untouched");
         }
 
-        var best = structural;
+        using var structure = PdfObjectMap.Load(structurePath);
+        var predictors = structure.HasPredictorStreams();
+        var shared = new List<string>();
+        if (_options.StripMetadata)
+        {
+            shared.Add("--remove-info");
+            shared.Add("--remove-metadata");
+        }
+
+        string? best = null;
         var notes = new List<string> { "recompressed structure" };
 
-        // 2. Pictures.
+        // 2. Pictures (and the metadata that lives in object dictionaries), applied in the one rewrite.
         if (_options.OptimiseImages)
         {
             _context.ReportProgress(25, "Optimising pictures");
-            var withImages = Path.Combine(workDirectory, "images.pdf");
-            var pass = new PdfImagePass(qpdf, _options, _aggressive, workDirectory, _context, _token);
-            var result = await pass.RunAsync(structural, withImages, linearize).ConfigureAwait(false);
-            if (result.Changed && File.Exists(withImages) && new FileInfo(withImages).Length < new FileInfo(best).Length)
+            var pass = new PdfImagePass(qpdf, structure, _options, _aggressive, workDirectory, _context, _token);
+            var result = await pass.RunAsync(_source.Value, Path.Combine(workDirectory, "images"), linearize, shared, predictors).ConfigureAwait(false);
+            if (result.Output is { } output)
             {
-                best = withImages;
+                best = output;
                 if (result.ImagesChanged > 0)
                 {
                     notes.Add($"optimised {result.ImagesChanged} picture{(result.ImagesChanged == 1 ? string.Empty : "s")}");
                 }
+            }
+        }
+
+        // Nothing to change in the objects (or pictures are off): only the structure is rewritten.
+        if (best is null)
+        {
+            _context.ReportProgress(60, "Recompressing PDF structure");
+            best = await qpdf.WriteBestAsync(_source.Value, Path.Combine(workDirectory, "structural"), shared, linearize, predictors, _token).ConfigureAwait(false);
+            if (best is null)
+            {
+                return Untouched(started, "Could not read this PDF; left untouched");
             }
         }
 
@@ -195,7 +208,7 @@ internal sealed class PdfOptimisationJob
         destination.EnsureParentDirectoryExists();
 
         var times = _options.PreserveDates ? ReadTimestamps(_source) : null;
-        File.Copy(best, destination.Value, overwrite: true);
+        SafeFileWriter.CopyOver(best, destination.Value);
         if (times is { } t)
         {
             RestoreTimestamps(destination, t);

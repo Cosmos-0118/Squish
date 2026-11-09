@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
@@ -104,13 +105,32 @@ internal sealed class DocumentOptimisationJob : IDisposable
             var names = new HashSet<string>(archive.Entries.Select(e => e.FullName), StringComparer.Ordinal);
             var removed = PlanRemovals(format, names);
 
+            // Media nothing points to, and copies of media: dead weight that costs no quality to remove.
+            var mediaPlan = format == DocumentFormat.Ooxml ? OoxmlMediaPlanner.Plan(archive) : MediaPlan.Empty;
+            var unreferencedBytes = 0L;
+            foreach (var name in mediaPlan.Unreferenced)
+            {
+                removed.Add(name);
+                unreferencedBytes += archive.GetEntry(name)?.CompressedLength ?? 0;
+            }
+
+            if (mediaPlan.Unreferenced.Count > 0)
+            {
+                _notes.Add($"removed {mediaPlan.Unreferenced.Count} unused media file{(mediaPlan.Unreferenced.Count == 1 ? string.Empty : "s")} (saved {unreferencedBytes.HumanSize()})");
+            }
+
+            if (mediaPlan.Duplicates.Count > 0)
+            {
+                _notes.Add($"merged {mediaPlan.Duplicates.Count} duplicate media file{(mediaPlan.Duplicates.Count == 1 ? string.Empty : "s")}");
+            }
+
             _context.ReportProgress(8, "Optimising embedded pictures");
             var media = _options.OptimiseImages
-                ? await OptimiseMediaAsync(archive, format, names).ConfigureAwait(false)
+                ? await OptimiseMediaAsync(archive, format, names, mediaPlan, removed).ConfigureAwait(false)
                 : new Dictionary<string, MediaOutcome>(StringComparer.Ordinal);
 
             _context.ReportProgress(70, "Repacking document");
-            rewrittenParts = WritePackage(archive, format, names, removed, media, output);
+            rewrittenParts = WritePackage(archive, format, names, removed, mediaPlan.Duplicates, media, output);
         }
 
         _context.ReportProgress(90, "Checking result");
@@ -134,7 +154,7 @@ internal sealed class DocumentOptimisationJob : IDisposable
         destination.EnsureParentDirectoryExists();
 
         var times = _options.PreserveDates ? ReadTimestamps(_source) : null;
-        File.Copy(output.Value, destination.Value, overwrite: true);
+        SafeFileWriter.CopyOver(output.Value, destination.Value);
         if (times is { } t)
         {
             RestoreTimestamps(destination, t);
@@ -207,11 +227,14 @@ internal sealed class DocumentOptimisationJob : IDisposable
         };
     }
 
-    private async Task<Dictionary<string, MediaOutcome>> OptimiseMediaAsync(ZipArchive archive, DocumentFormat format, HashSet<string> names)
+    private async Task<Dictionary<string, MediaOutcome>> OptimiseMediaAsync(ZipArchive archive, DocumentFormat format, HashSet<string> names, MediaPlan plan, HashSet<string> removed)
     {
         var outcomes = new Dictionary<string, MediaOutcome>(StringComparer.Ordinal);
+
+        // Duplicates are not optimised on their own: the part they were merged into carries all their references.
         var candidates = archive.Entries
-            .Where(e => IsMediaEntry(format, e.FullName) && e.Length >= _options.MinimumImageBytes && e.Length <= 256L * 1024 * 1024)
+            .Where(e => IsMediaEntry(format, e.FullName) && !removed.Contains(e.FullName) && !plan.Duplicates.ContainsKey(e.FullName)
+                        && e.Length >= _options.MinimumImageBytes && e.Length <= 256L * 1024 * 1024)
             .ToList();
         if (candidates.Count == 0)
         {
@@ -238,13 +261,16 @@ internal sealed class DocumentOptimisationJob : IDisposable
             using (var sha = IncrementalHash.CreateHash(HashAlgorithmName.SHA256))
             {
                 var buffer = new byte[81920];
+                var crc = 0u;
                 int read;
                 while ((read = await input.ReadAsync(buffer, _token).ConfigureAwait(false)) > 0)
                 {
                     sha.AppendData(buffer, 0, read);
+                    crc = ZipEntryChecksum.Update(crc, buffer.AsSpan(0, read));
                     await file.WriteAsync(buffer.AsMemory(0, read), _token).ConfigureAwait(false);
                 }
 
+                ZipEntryChecksum.Verify(entry, crc);
                 hash = Convert.ToHexString(sha.GetHashAndReset());
             }
 
@@ -261,42 +287,64 @@ internal sealed class DocumentOptimisationJob : IDisposable
             members.Add((entry, staged));
         }
 
-        Dictionary<string, ImageDisplayNeed> needs = new(StringComparer.Ordinal);
-        if (_aggressive && format == DocumentFormat.Ooxml)
+        // A merged duplicate is another place the same picture is shown: its references count towards the size it needs.
+        var aliases = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        foreach (var (duplicate, keeper) in plan.Duplicates)
         {
-            needs = OoxmlImageUsage.Analyse(archive, new HashSet<string>(candidates.Select(c => c.FullName), StringComparer.Ordinal));
+            if (!aliases.TryGetValue(keeper, out var list))
+            {
+                list = new List<string>();
+                aliases[keeper] = list;
+            }
+
+            list.Add(duplicate);
         }
 
-        var usedNames = new HashSet<string>(names, StringComparer.Ordinal);
-        var done = 0;
-        var imageSaved = 0L;
-        foreach (var members in groups.Values)
+        Dictionary<string, ImageDisplayNeed> needs = new(StringComparer.Ordinal);
+        if (format == DocumentFormat.Ooxml)
         {
-            _token.ThrowIfCancellationRequested();
+            var analysed = new HashSet<string>(candidates.Select(c => c.FullName), StringComparer.Ordinal);
+            analysed.UnionWith(plan.Duplicates.Keys);
+            needs = OoxmlImageUsage.Analyse(archive, analysed);
+        }
+
+        var ordered = groups.Values.ToList();
+        var results = new GroupResult?[ordered.Count];
+        var done = 0;
+        var workers = Math.Clamp(Environment.ProcessorCount / 2, 1, 3);
+        var budget = new PixelBudget(12);
+        await Parallel.ForEachAsync(Enumerable.Range(0, ordered.Count), new ParallelOptions { MaxDegreeOfParallelism = workers, CancellationToken = _token }, async (index, _) =>
+        {
+            var members = ordered[index];
             var stagedFile = members[0].Staged;
             var originalLength = new FileInfo(stagedFile.Value).Length;
-            var originalExtension = PackagePaths.ExtensionOf(members[0].Entry.FullName);
 
-            var longEdge = _aggressive && format == DocumentFormat.Ooxml
-                ? TargetLongEdge(stagedFile, members.Select(m => m.Entry.FullName), needs)
-                : 0;
+            var names2 = members.SelectMany(m => aliases.TryGetValue(m.Entry.FullName, out var extra) ? extra.Prepend(m.Entry.FullName) : [m.Entry.FullName]);
+            var longEdge = format == DocumentFormat.Ooxml ? TargetLongEdge(stagedFile, names2, needs) : 0;
 
+            var probe = ImageIO.Probe(stagedFile.Value);
+            using var lease = await budget.AcquireAsync(probe is null ? 1 : (long)probe.Width * probe.Height, _token).ConfigureAwait(false);
             var result = await RunImagePipelineAsync(stagedFile, format, longEdge).ConfigureAwait(false);
-            done++;
-            _context.ReportProgress(8 + 60.0 * done / groups.Count, $"Optimised picture {done} of {groups.Count}");
-            if (result is null)
+            var count = Interlocked.Increment(ref done);
+            _context.ReportProgress(8 + 60.0 * count / ordered.Count, $"Optimised picture {count} of {ordered.Count}");
+            if (result is { } outputFile)
+            {
+                results[index] = new GroupResult(outputFile, originalLength, new FileInfo(outputFile.Value).Length);
+            }
+        }).ConfigureAwait(false);
+
+        var usedNames = new HashSet<string>(names, StringComparer.Ordinal);
+        var imageSaved = 0L;
+        for (var index = 0; index < ordered.Count; index++)
+        {
+            if (results[index] is not { } group || group.NewLength >= group.OriginalLength)
             {
                 continue;
             }
 
-            var outputFile = result.Value;
-            var newLength = new FileInfo(outputFile.Value).Length;
-            if (newLength >= originalLength)
-            {
-                continue;
-            }
-
-            var newExtension = (outputFile.Extension ?? originalExtension).ToLowerInvariant();
+            var members = ordered[index];
+            var originalExtension = PackagePaths.ExtensionOf(members[0].Entry.FullName);
+            var newExtension = (group.Output.Extension ?? originalExtension).ToLowerInvariant();
             var sameFormat = SameImageFormat(originalExtension, newExtension);
             if (!sameFormat && format != DocumentFormat.Ooxml)
             {
@@ -312,8 +360,8 @@ internal sealed class DocumentOptimisationJob : IDisposable
                     newName = UniqueName(PackagePaths.WithExtension(entry.FullName, newExtension), usedNames);
                 }
 
-                outcomes[entry.FullName] = new MediaOutcome(newName, outputFile, newLength);
-                imageSaved += originalLength - newLength;
+                outcomes[entry.FullName] = new MediaOutcome(newName, group.Output, group.NewLength);
+                imageSaved += group.OriginalLength - group.NewLength;
             }
         }
 
@@ -328,6 +376,8 @@ internal sealed class DocumentOptimisationJob : IDisposable
 
         return outcomes;
     }
+
+    private sealed record GroupResult(FilePath Output, long OriginalLength, long NewLength);
 
     /// <summary>Maps to a literal so no archive-supplied text ever reaches a file system path.</summary>
     private static string CanonicalExtension(string extension) => extension switch
@@ -381,11 +431,11 @@ internal sealed class DocumentOptimisationJob : IDisposable
             return 0;
         }
 
-        var dpi = Math.Max(72, _options.AggressiveTargetDpi);
+        var dpi = Math.Max(72, _aggressive ? _options.AggressiveTargetDpi : _options.TargetDpi);
         var scale = Math.Max(needWidth * dpi / probe.Width, needHeight * dpi / probe.Height);
 
         // Only worth a lossy resample when the picture is shown at well under its pixel density.
-        if (scale > 0.67)
+        if (scale > (_aggressive ? 0.67 : _options.MinimumDownscaleFactor))
         {
             return 0;
         }
@@ -443,10 +493,21 @@ internal sealed class DocumentOptimisationJob : IDisposable
         DocumentFormat format,
         HashSet<string> names,
         HashSet<string> removed,
+        IReadOnlyDictionary<string, string> duplicates,
         Dictionary<string, MediaOutcome> media,
         FilePath outputPath)
     {
         var renamed = media.Where(m => m.Key != m.Value.NewEntryName).ToDictionary(m => m.Key, m => m.Value.NewEntryName, StringComparer.Ordinal);
+
+        // A merged copy is not "removed" as far as relationships go (they must survive, pointing at the part that stays), but
+        // it takes its content-type override with it.
+        var contentTypeRemovals = new HashSet<string>(removed, StringComparer.Ordinal);
+        foreach (var (duplicate, keeper) in duplicates)
+        {
+            renamed[duplicate] = media.TryGetValue(keeper, out var kept) ? kept.NewEntryName : keeper;
+            contentTypeRemovals.Add(duplicate);
+        }
+
         var missingDefaults = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         if (format == DocumentFormat.Ooxml && renamed.Count > 0 && archive.GetEntry(PackagePaths.ContentTypesPart) is { } contentTypesEntry)
         {
@@ -471,11 +532,13 @@ internal sealed class DocumentOptimisationJob : IDisposable
         using var outputStream = new FileStream(outputPath.Value, FileMode.Create, FileAccess.ReadWrite, FileShare.None);
         using var output = new ZipArchive(outputStream, ZipArchiveMode.Create, leaveOpen: true);
 
-        foreach (var entry in archive.Entries.ToList())
+        // ODF and EPUB readers sniff the first entry: "mimetype" has to lead even if the source did not put it there.
+        var entries = archive.Entries.OrderBy(e => format != DocumentFormat.Ooxml && e.FullName == "mimetype" ? 0 : 1).ToList();
+        foreach (var entry in entries)
         {
             _token.ThrowIfCancellationRequested();
             var name = entry.FullName;
-            if (removed.Contains(name))
+            if (removed.Contains(name) || duplicates.ContainsKey(name))
             {
                 continue;
             }
@@ -505,7 +568,7 @@ internal sealed class DocumentOptimisationJob : IDisposable
                 continue;
             }
 
-            var transform = SelectTransform(format, entry, removed, renamed, missingDefaults, ref styles, archive, out var isSheet);
+            var transform = SelectTransform(format, entry, removed, contentTypeRemovals, renamed, missingDefaults, ref styles, archive, out var isSheet);
             if (transform is null)
             {
                 CopyRaw(entry, output, name, level);
@@ -561,6 +624,7 @@ internal sealed class DocumentOptimisationJob : IDisposable
         DocumentFormat format,
         ZipArchiveEntry entry,
         HashSet<string> removed,
+        HashSet<string> contentTypeRemovals,
         Dictionary<string, string> renamed,
         Dictionary<string, string> missingDefaults,
         ref SpreadsheetStyles? styles,
@@ -575,7 +639,7 @@ internal sealed class DocumentOptimisationJob : IDisposable
             case DocumentFormat.Ooxml:
                 if (name == PackagePaths.ContentTypesPart)
                 {
-                    return (open, dest) => { using var s = open(); new ContentTypesRewriter(removed, missingDefaults).Rewrite(s, dest); };
+                    return (open, dest) => { using var s = open(); new ContentTypesRewriter(contentTypeRemovals, missingDefaults).Rewrite(s, dest); };
                 }
 
                 if (PackagePaths.IsRelationshipsPart(name))
@@ -600,7 +664,8 @@ internal sealed class DocumentOptimisationJob : IDisposable
                     isSheet = true;
                     styles ??= LoadStyles(archive);
                     var captured = styles;
-                    return (open, dest) => CleanSheet(open, dest, captured);
+                    var size = entry.Length;
+                    return (open, dest) => CleanSheet(open, dest, captured, size);
                 }
 
                 if ((name.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)) && !name.StartsWith("customXml/", StringComparison.OrdinalIgnoreCase))
@@ -660,7 +725,7 @@ internal sealed class DocumentOptimisationJob : IDisposable
         }
     }
 
-    private void CleanSheet(Func<Stream> open, Stream destination, SpreadsheetStyles styles)
+    private void CleanSheet(Func<Stream> open, Stream destination, SpreadsheetStyles styles, long sizeHint)
     {
         var cutoff = int.MaxValue;
         if (_aggressive)
@@ -674,26 +739,21 @@ internal sealed class DocumentOptimisationJob : IDisposable
                 return;
             }
 
-            cutoff = Math.Max(scan.LastContentRow, scan.LastMergedRow);
+            // A sheet with no content at all is a blank template: its formatting is the content, nothing is "below the data".
+            var lastRow = Math.Max(scan.LastContentRow, scan.LastMergedRow);
+            cutoff = lastRow == 0 ? int.MaxValue : lastRow;
         }
 
-        // First a dry run to learn what survives (and so what the dimension must say), then the real pass.
-        var dry = new SpreadsheetCleaner(styles, _aggressive, cutoff, null);
-        using (var dryStream = open())
+        // One pass: the dimension is not known until the whole sheet was read, so a placeholder is written and swapped for the
+        // real value afterwards. (The buffer is the part's own scratch space; the cost is one copy, not another parse.)
+        var cleaner = new SpreadsheetCleaner(styles, _aggressive, cutoff, deferDimension: true);
+        using var rewritten = CreateBuffer(sizeHint);
+        using (var input = open())
         {
-            dry.Rewrite(dryStream, Stream.Null);
+            cleaner.Rewrite(input, rewritten);
         }
 
-        if (!dry.Stats.AnyDropped)
-        {
-            using var plain = open();
-            new XmlPartRewriter().Rewrite(plain, destination);
-            return;
-        }
-
-        var cleaner = new SpreadsheetCleaner(styles, _aggressive, cutoff, dry.Stats.DimensionRef);
-        using var input = open();
-        cleaner.Rewrite(input, destination);
+        cleaner.SpliceDimension(rewritten, destination);
     }
 
     /// <summary>Runs a rewrite into a buffer first so a part that fails half way can still be copied untouched.</summary>
@@ -735,7 +795,16 @@ internal sealed class DocumentOptimisationJob : IDisposable
         created.LastWriteTime = source.LastWriteTime;
         using var input = source.Open();
         using var destination = created.Open();
-        input.CopyTo(destination);
+        var buffer = new byte[81920];
+        var crc = 0u;
+        int read;
+        while ((read = input.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            crc = ZipEntryChecksum.Update(crc, buffer.AsSpan(0, read));
+            destination.Write(buffer, 0, read);
+        }
+
+        ZipEntryChecksum.Verify(source, crc);
     }
 
     // The analyzer follows MediaOutcome as a whole and sees the entry name beside the path. The path is a work file this job
