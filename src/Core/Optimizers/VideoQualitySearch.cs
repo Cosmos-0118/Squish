@@ -390,27 +390,37 @@ internal sealed class FfmpegVideoQualitySearch : IVideoQualitySearch
         process.BeginErrorReadLine();
         var header = new byte[26];
         var read = 0;
-        while (read < header.Length)
-        {
-            var n = await process.StandardOutput.BaseStream.ReadAsync(header.AsMemory(read), token).ConfigureAwait(false);
-            if (n == 0)
-            {
-                break;
-            }
-
-            read += n;
-        }
-
         try
         {
-            if (!process.HasExited)
+            while (read < header.Length)
             {
-                process.Kill(entireProcessTree: true);
+                var n = await process.StandardOutput.BaseStream.ReadAsync(header.AsMemory(read), token).ConfigureAwait(false);
+                if (n == 0)
+                {
+                    break;
+                }
+
+                read += n;
             }
         }
-        catch (InvalidOperationException)
+        finally
         {
-            // already exited
+            // Only the header is needed; always stop ffmpeg, including when the read is cancelled or throws.
+            try
+            {
+                if (!process.HasExited)
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+            }
+            catch (InvalidOperationException)
+            {
+                // already exited
+            }
+            catch (System.ComponentModel.Win32Exception)
+            {
+                // process is already terminating
+            }
         }
 
         if (read < header.Length || header[0] != (byte)'B' || header[1] != (byte)'M')

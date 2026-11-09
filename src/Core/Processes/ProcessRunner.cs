@@ -41,6 +41,31 @@ public static class ProcessRunner
         return resolved;
     }
 
+    private static async Task WaitForTerminationAsync(Process process)
+    {
+        try
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+        }
+        catch
+        {
+            // already exited or inaccessible
+        }
+
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await process.WaitForExitAsync(timeout.Token).ConfigureAwait(false);
+        }
+        catch
+        {
+            // best effort
+        }
+    }
+
     private static async Task<ProcessResult> RunInternalAsync(string command, IReadOnlyList<string> args, ProcessRunnerOptions options, CancellationToken cancellationToken)
     {
         var executable = ResolveExecutable(command);
@@ -116,7 +141,18 @@ public static class ProcessRunner
             }
         });
 
-        await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Make sure the child is really gone (and its file handles released) before the caller's
+            // cleanup runs; otherwise File.Delete on a partial output can fail on Windows.
+            await WaitForTerminationAsync(process).ConfigureAwait(false);
+            throw;
+        }
+
         await Task.WhenAll(stdoutCompletion.Task, stderrCompletion.Task).ConfigureAwait(false);
 
         var result = new ProcessResult(command, args, process.ExitCode, stdout.ToString().TrimEnd(), stderr.ToString().TrimEnd());

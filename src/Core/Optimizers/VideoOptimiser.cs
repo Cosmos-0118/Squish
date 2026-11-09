@@ -1918,6 +1918,7 @@ internal sealed class ExternalVideoToolchain : IVideoToolchain
             finally
             {
                 TryDelete(firstPassOutput);
+                CleanupPassLogs(passLogBase);
             }
         }
 
@@ -2345,7 +2346,38 @@ internal sealed class ExternalVideoToolchain : IVideoToolchain
             }
         });
 
-        await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Wait for the killed child to release its file handles before callers delete temp outputs.
+            try
+            {
+                if (!process.HasExited)
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+            }
+            catch
+            {
+                // already exited
+            }
+
+            try
+            {
+                using var exitTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                await process.WaitForExitAsync(exitTimeout.Token).ConfigureAwait(false);
+            }
+            catch
+            {
+                // best effort
+            }
+
+            throw;
+        }
+
         await Task.WhenAll(stdoutCompletion.Task, stderrCompletion.Task).ConfigureAwait(false);
 
         if (process.ExitCode != 0)
