@@ -12,6 +12,9 @@ runs:
       with:
         msystem: UCRT64
         update: true
+        # The finished ffmpeg is cached by stage-ffmpeg and this only runs on a miss, so the action's own package cache
+        # buys nothing. It also warns ("Unable to reserve cache") when two cold jobs install at the same time.
+        cache: false
 
     # The package list is the single source of truth, so local setup and CI cannot drift apart.
     - name: Install the codec toolchain packages

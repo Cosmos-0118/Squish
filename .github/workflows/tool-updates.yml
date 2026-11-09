@@ -51,15 +51,15 @@ jobs:
         with:
           global-json-file: global.json
 
-      # ffmpeg is compiled here (no cache in this workflow), so the new tools need MSYS2 as well.
-      - name: Prepare the ffmpeg build
+      # ffmpeg is compiled, not downloaded, and has its own cache, so a bumped encoder never recompiles it.
+      - name: Stage ffmpeg
         if: steps.check.outputs.updated == 'true'
-        uses: ./.github/actions/prepare-ffmpeg-build
+        uses: ./.github/actions/stage-ffmpeg
 
       - name: Stage the updated tools
         if: steps.check.outputs.updated == 'true'
         shell: pwsh
-        run: ./scripts/fetch-tools.ps1
+        run: ./scripts/fetch-tools.ps1 -Exclude ffmpeg
 
       # Only Core.Tests drives the real encoders; the other projects cannot notice a different ffmpeg or mozjpeg.
       - name: Build and test against the new encoders

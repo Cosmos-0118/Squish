@@ -96,24 +96,25 @@ jobs:
       - name: Build
         run: dotnet build ${{ matrix.project }} --configuration Release --no-restore
 
-      # Only the projects whose tests exercise the real encoders pay for downloading them.
+      # Only the projects whose tests exercise the real encoders pay for the tools.
+      - name: Stage ffmpeg
+        if: matrix.tools
+        uses: ./.github/actions/stage-ffmpeg
+
       - name: Cache third-party tools
-        id: tools-cache
         if: matrix.tools
         uses: actions/cache@v6
         with:
-          path: tools
-          key: tools-${{ runner.os }}-${{ hashFiles('tools/tools-manifest.json', 'scripts/fetch-tools.ps1', 'scripts/ffmpeg-slim/*') }}
-
-      # ffmpeg is compiled, not downloaded. MSYS2 is only set up when the cache above missed (a changed manifest or recipe).
-      - name: Prepare the ffmpeg build
-        if: matrix.tools && steps.tools-cache.outputs.cache-hit != 'true'
-        uses: ./.github/actions/prepare-ffmpeg-build
+          # ffmpeg has its own cache (stage-ffmpeg), so it is left out here.
+          path: |
+            tools
+            !tools/ffmpeg
+          key: tools-${{ runner.os }}-${{ hashFiles('tools/tools-manifest.json', 'scripts/fetch-tools.ps1') }}
 
       - name: Stage third-party tools
         if: matrix.tools
         shell: pwsh
-        run: ./scripts/fetch-tools.ps1
+        run: ./scripts/fetch-tools.ps1 -Exclude ffmpeg
 
       - name: Test
         shell: pwsh
@@ -159,21 +160,21 @@ jobs:
           restore-keys: |
             nuget-${{ runner.os }}-
 
+      - name: Stage ffmpeg
+        uses: ./.github/actions/stage-ffmpeg
+
       - name: Cache third-party tools
-        id: tools-cache
         uses: actions/cache@v6
         with:
-          path: tools
-          key: tools-${{ runner.os }}-${{ hashFiles('tools/tools-manifest.json', 'scripts/fetch-tools.ps1', 'scripts/ffmpeg-slim/*') }}
-
-      # ffmpeg is compiled, not downloaded. MSYS2 is only set up when the cache above missed (a changed manifest or recipe).
-      - name: Prepare the ffmpeg build
-        if: steps.tools-cache.outputs.cache-hit != 'true'
-        uses: ./.github/actions/prepare-ffmpeg-build
+          # ffmpeg has its own cache (stage-ffmpeg), so it is left out here.
+          path: |
+            tools
+            !tools/ffmpeg
+          key: tools-${{ runner.os }}-${{ hashFiles('tools/tools-manifest.json', 'scripts/fetch-tools.ps1') }}
 
       - name: Stage third-party tools
         shell: pwsh
-        run: ./scripts/fetch-tools.ps1
+        run: ./scripts/fetch-tools.ps1 -Exclude ffmpeg
 
       # Publishes app, CLI and Explorer integration, then fails if any piece of the layout is missing.
       - name: Publish and validate layout

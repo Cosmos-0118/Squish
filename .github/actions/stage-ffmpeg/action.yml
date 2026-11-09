@@ -1,0 +1,48 @@
+name: Stage ffmpeg
+description: >
+  Puts the slim, compiled ffmpeg into tools/ffmpeg. It has its own cache, keyed only on the ffmpeg version and the
+  build recipe (scripts/ffmpeg-slim, scripts/fetch-tools.ps1), so changing any other tool never recompiles it. On a miss
+  it sets up MSYS2, builds with scripts/fetch-tools.ps1 and saves the cache straight away, so a later failure in the
+  same job (a flaky download of another tool, a failing test) does not throw the build away. Needs the repository checked out.
+
+runs:
+  using: composite
+  steps:
+    - name: Work out the ffmpeg version
+      id: ver
+      shell: pwsh
+      run: |
+        $ffmpeg = (Get-Content -Raw tools/tools-manifest.json | ConvertFrom-Json).tools | Where-Object name -eq 'ffmpeg'
+        "version=$($ffmpeg.version)-$($ffmpeg.build.tag)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+    - name: Restore the compiled ffmpeg
+      id: cache
+      uses: actions/cache/restore@v6
+      with:
+        path: tools/ffmpeg
+        key: ffmpeg-${{ runner.os }}-${{ steps.ver.outputs.version }}-${{ hashFiles('scripts/ffmpeg-slim/*', 'scripts/fetch-tools.ps1') }}
+
+    - name: Prepare the ffmpeg build
+      if: steps.cache.outputs.cache-hit != 'true'
+      uses: ./.github/actions/prepare-ffmpeg-build
+
+    - name: Compile ffmpeg
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: pwsh
+      run: ./scripts/fetch-tools.ps1 -Name ffmpeg
+
+    # Saved here, not at the end of the job. If another job saved the same key meanwhile, this is a harmless no-op.
+    - name: Save the compiled ffmpeg
+      if: steps.cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v6
+      with:
+        path: tools/ffmpeg
+        key: ${{ steps.cache.outputs.cache-primary-key }}
+
+    - name: Check ffmpeg is in place
+      shell: pwsh
+      run: |
+        foreach ($f in 'ffmpeg.exe', 'ffprobe.exe', '.toolinfo.json') {
+          if (-not (Test-Path "tools/ffmpeg/$f")) { throw "tools/ffmpeg/$f is missing after staging ffmpeg." }
+        }
+        & tools/ffmpeg/ffmpeg.exe -hide_banner -version | Select-Object -First 1

@@ -40,12 +40,20 @@ rebuilds; otherwise a staged `tools/ffmpeg` is reused like any other tool.
 
 ### In CI
 
-`ci`, `release` and `tool-updates` restore the `tools` cache first (its key includes the manifest, `fetch-tools.ps1`
-and `scripts/ffmpeg-slim/*`). Only on a cache miss do they run `.github/actions/prepare-ffmpeg-build`, which installs
-MSYS2 and the packages in `scripts/ffmpeg-slim/msys2-packages.txt`, and then `fetch-tools.ps1` builds ffmpeg together
-with the other tools. Nothing is uploaded or hosted anywhere, and the tests run against the exact binaries that get
-released. A GitHub cache entry is evicted after 7 days without use, so a rebuild with newer MSYS2 packages can happen on
-any run; the tests catch a breaking change before it ships.
+`ci`, `release` and `tool-updates` stage ffmpeg with `.github/actions/stage-ffmpeg`, which has its **own cache**, keyed only
+on the ffmpeg version, `build.tag` and the recipe (`scripts/ffmpeg-slim/*`, `scripts/fetch-tools.ps1`). The other tools use a
+separate cache and `fetch-tools.ps1 -Exclude ffmpeg`, so bumping mozjpeg or any other tool never recompiles ffmpeg.
+
+On a miss the action installs MSYS2 and the packages in `scripts/ffmpeg-slim/msys2-packages.txt`, compiles ffmpeg through
+`fetch-tools.ps1`, and **saves the cache immediately**, so a later failure in the same job (a flaky download, a failing test)
+does not lose the build. Nothing is uploaded or hosted anywhere, and the tests run against the exact binaries that get released.
+
+Cost: a cold compile takes about 13 minutes on a hosted runner (MSYS2 setup about 2, configure and compile about 10.5);
+a warm run restores 74 MB in seconds. It happens once per FFmpeg version or recipe change on each branch that needs it:
+a pull request that changes the recipe builds it, and after the merge `main` builds it once more, because pull request
+caches are not visible to `main`. The weekly full `ci` run on `main` reads the cache, which keeps GitHub from evicting it
+after 7 days without use; if it is evicted anyway, the next run rebuilds with MSYS2's current packages and the tests
+catch a breaking change before it ships.
 
 ### Locally
 
