@@ -18,7 +18,7 @@ cd Squish
 
 ## Restore external tools (one-time)
 
-Squish depends on packaged binaries (ffmpeg, mozjpeg, oxipng, etc.). Pull them with the helper script:
+Squish depends on packaged binaries (ffmpeg, mozjpeg, oxipng, etc.). Pull them with the helper script (ffmpeg is compiled with MSYS2 instead of downloaded, see `docs/ffmpeg-slim-build.md`; add `-Exclude ffmpeg` to skip it):
 
 ```pwsh
 ./scripts/fetch-tools.ps1

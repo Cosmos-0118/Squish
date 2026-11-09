@@ -132,7 +132,8 @@ function Get-Classification([string]$File, [hashtable]$Projects) {
     if ($f -iin 'scripts/publish-layout.ps1', 'installer/SQUISH_LICENSE.txt', 'docs/windows-deps.md', 'docs/cli.md', 'docs/automation-samples.md') {
         return @{ Kind = 'publish'; Why = "$f is part of the publish layout" }
     }
-    if ($f -iin 'tools/tools-manifest.json', 'scripts/fetch-tools.ps1') { return @{ Kind = 'tools'; Why = "$f changed" } }
+    # The ffmpeg recipe and the action that sets up its toolchain decide what gets built, so they count as tool inputs.
+    if (($f -iin 'tools/tools-manifest.json', 'scripts/fetch-tools.ps1') -or $f -imatch '^(scripts/ffmpeg-slim|\.github/actions/prepare-ffmpeg-build)/') { return @{ Kind = 'tools'; Why = "$f changed" } }
     if ($f -imatch '^tools/') { return @{ Kind = 'publish'; Why = "$f is shipped with the tools" } }
 
     # Source: owned by the project whose directory contains it (deepest match wins).

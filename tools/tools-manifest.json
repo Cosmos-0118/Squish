@@ -3,20 +3,12 @@
     {
       "name": "ffmpeg",
       "version": "9.0.2",
-      "url": "https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-9.0.2-full_build-shared.7z",
-      "sha256": "4d2060a8b34a940aa47d785142055bb92a63053781e55f2ace4546edd519a8f5",
-      "archiveType": "7zip",
+      "archiveType": "msys2-build",
       "destination": "ffmpeg",
-      "include": [
-        "ffmpeg.exe",
-        "ffprobe.exe",
-        "*.dll",
-        "LICENSE"
-      ],
-      "updateSource": {
-        "type": "text",
-        "url": "https://www.gyan.dev/ffmpeg/builds/release-version",
-        "notes": "https://www.gyan.dev/ffmpeg/builds/#release-builds"
+      "build": {
+        "script": "scripts/ffmpeg-slim/build-local.sh",
+        "tag": "n9.0.2",
+        "notes": "Compiled from the FFmpeg source tag with MSYS2 instead of downloaded: every public build links in speech recognition, extra AV1/VVC encoders and network/disc stacks Squish never uses (about 230 MB of DLLs, against about 74 MB here). No updateSource: bump version and tag together by hand, see docs/ffmpeg-slim-build.md."
       }
     },
     {

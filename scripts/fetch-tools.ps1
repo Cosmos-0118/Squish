@@ -302,6 +302,91 @@ if (-not (Test-Path -LiteralPath $ManifestPath)) {
     throw "Manifest not found: $ManifestPath"
 }
 
+function Get-RecipeHash([string]$ScriptPath) {
+    # Fingerprint of a build recipe: every file next to its script (the script, its package list, ...).
+    $parts = Get-ChildItem -LiteralPath (Split-Path -Parent $ScriptPath) -File | Sort-Object Name |
+        ForEach-Object { "$($_.Name):$(Get-Checksum -Path $_.FullName)" }
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes(($parts -join "`n"))
+    return [System.BitConverter]::ToString([System.Security.Cryptography.SHA256]::HashData($bytes)).Replace('-', '').ToLowerInvariant()
+}
+
+function ConvertTo-MsysPath([string]$Path) {
+    $full = [System.IO.Path]::GetFullPath($Path)
+    return '/' + $full.Substring(0, 1).ToLowerInvariant() + ($full.Substring(2) -replace '\\', '/')
+}
+
+function Install-BuiltTool {
+    # Tools compiled here instead of downloaded ("archiveType": "msys2-build"). ffmpeg is built because every public
+    # build links in far more than Squish uses (speech recognition, extra AV1/VVC encoders, network and disc stacks):
+    # 230 MB of DLLs against about 74 MB for the build in scripts/ffmpeg-slim.
+    param(
+        [Parameter(Mandatory = $true)] $Tool,
+        [Parameter(Mandatory = $true)] [string]$Destination,
+        [Parameter(Mandatory = $true)] [string]$MetaFile
+    )
+
+    $recipeScript = Join-Path $RepoRoot $Tool.build.script
+    if (-not (Test-Path -LiteralPath $recipeScript)) { throw "Build script for $($Tool.name) not found: $recipeScript" }
+    $recipe = Get-RecipeHash -ScriptPath $recipeScript
+    Write-Host "==> $($Tool.name) v$($Tool.version) (built from source: $($Tool.build.script))" -ForegroundColor Cyan
+    Write-Host "    Destination: $Destination"
+
+    $current = $null
+    if (Test-Path -LiteralPath $MetaFile) {
+        try { $current = Get-Content -Raw -LiteralPath $MetaFile | ConvertFrom-Json } catch { Write-Warning "    Unable to read existing metadata: $_" }
+    }
+    if ($ListOnly) {
+        if ($current) { Write-Host "    Installed version: $($current.version) (built $($current.fetchedAt))" } else { Write-Host "    Not built yet." }
+        return
+    }
+    if (-not $Force -and $current -and $current.version -eq $Tool.version -and
+        $current.PSObject.Properties['recipe'] -and $current.recipe -eq $recipe) {
+        Write-Host "    Already built from this recipe. Use -Force to rebuild." -ForegroundColor Yellow
+        return
+    }
+
+    $msysRoot = if ($env:MSYS2_ROOT) { $env:MSYS2_ROOT } else { 'C:\msys64' }
+    $bash = Join-Path $msysRoot 'usr\bin\bash.exe'
+    if (-not (Test-Path -LiteralPath $bash) -and (Test-Path -LiteralPath (Join-Path $msysRoot 'msys64\usr\bin\bash.exe'))) {
+        # Some installers report the folder that contains msys64 instead of msys64 itself.
+        $bash = Join-Path $msysRoot 'msys64\usr\bin\bash.exe'
+    }
+    if (-not (Test-Path -LiteralPath $bash)) {
+        throw "$($Tool.name) is built with MSYS2, but '$bash' was not found. Install MSYS2 (https://www.msys2.org), upgrade it with 'pacman -Syu', install the packages in $(Split-Path -Parent $Tool.build.script)/msys2-packages.txt, and set MSYS2_ROOT if it is not in C:\msys64. Or skip it with -Exclude $($Tool.name) and point SQUISH_FFMPEG / SQUISH_FFPROBE at your own ffmpeg."
+    }
+
+    $tempDir = New-TemporaryDirectory
+    try {
+        $stage = Join-Path $tempDir 'stage'
+        $work = Join-Path $tempDir 'work'
+        $env:MSYSTEM = 'UCRT64'
+        $env:CHERE_INVOKING = '1'
+        $command = "bash '$(ConvertTo-MsysPath $recipeScript)' '$($Tool.build.tag)' '$(ConvertTo-MsysPath $work)' '$(ConvertTo-MsysPath $stage)'"
+        Write-Host "    Building $($Tool.name) $($Tool.build.tag); this takes a while the first time..."
+        & $bash -lc $command
+        if ($LASTEXITCODE -ne 0) { throw "Building $($Tool.name) failed with code $LASTEXITCODE" }
+        foreach ($required in 'ffmpeg.exe', 'ffprobe.exe') {
+            if (-not (Test-Path -LiteralPath (Join-Path $stage $required))) { throw "The $($Tool.name) build did not produce $required." }
+        }
+
+        if (Test-Path -LiteralPath $Destination) { Remove-Item -Recurse -Force -LiteralPath $Destination }
+        New-Item -ItemType Directory -Path $Destination -Force | Out-Null
+        Copy-Item -Path (Join-Path $stage '*') -Destination $Destination -Recurse -Force
+
+        [ordered]@{
+            name      = $Tool.name
+            version   = $Tool.version
+            source    = "built from $($Tool.build.tag) with $($Tool.build.script)"
+            recipe    = $recipe
+            fetchedAt = (Get-Date).ToString('o')
+        } | ConvertTo-Json -Depth 5 | Set-Content -Encoding UTF8 -LiteralPath $MetaFile
+        Write-Host "    Installed $($Tool.name) into $Destination" -ForegroundColor Green
+    }
+    finally {
+        if (Test-Path -LiteralPath $tempDir) { Remove-Item -Recurse -Force -LiteralPath $tempDir }
+    }
+}
+
 $manifest = Get-Content -Raw -LiteralPath $ManifestPath | ConvertFrom-Json
 if (-not $manifest.tools) {
     throw "Manifest is missing a 'tools' array."
@@ -332,6 +417,10 @@ $manifestChanged = $false
 foreach ($tool in $tools) {
     $dest = Join-Path -Path $DestinationRoot -ChildPath $tool.destination
     $metaFile = Join-Path -Path $dest -ChildPath '.toolinfo.json'
+    if ($tool.PSObject.Properties['archiveType'] -and $tool.archiveType -eq 'msys2-build') {
+        Install-BuiltTool -Tool $tool -Destination $dest -MetaFile $metaFile
+        continue
+    }
     $contentRoot = $null
     if ($tool.PSObject.Properties['contentRoot']) {
         $contentRoot = $tool.contentRoot

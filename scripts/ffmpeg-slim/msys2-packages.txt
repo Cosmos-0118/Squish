@@ -1,0 +1,20 @@
+# MSYS2 packages the slim FFmpeg build needs (UCRT64). One per line; read by build-local.sh's check and by CI.
+make
+diffutils
+git
+tar
+mingw-w64-ucrt-x86_64-gcc
+mingw-w64-ucrt-x86_64-nasm
+mingw-w64-ucrt-x86_64-pkgconf
+mingw-w64-ucrt-x86_64-x264
+mingw-w64-ucrt-x86_64-x265
+mingw-w64-ucrt-x86_64-svt-av1
+mingw-w64-ucrt-x86_64-libvpx
+mingw-w64-ucrt-x86_64-opus
+mingw-w64-ucrt-x86_64-libwebp
+mingw-w64-ucrt-x86_64-dav1d
+mingw-w64-ucrt-x86_64-amf-headers
+mingw-w64-ucrt-x86_64-ffnvcodec-headers
+mingw-w64-ucrt-x86_64-libvpl
+mingw-w64-ucrt-x86_64-zlib
+mingw-w64-ucrt-x86_64-libiconv

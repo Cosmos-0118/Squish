@@ -1,0 +1,24 @@
+name: Prepare the ffmpeg build
+description: >
+  Installs MSYS2 (UCRT64) with the packages scripts/ffmpeg-slim/build-local.sh needs and exports MSYS2_ROOT, so that
+  scripts/fetch-tools.ps1 can build the ffmpeg manifest entry. Callers run it only when the tools cache missed.
+
+runs:
+  using: composite
+  steps:
+    - name: Install MSYS2 (fully upgraded)
+      id: msys2
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: UCRT64
+        update: true
+
+    # The package list is the single source of truth, so local setup and CI cannot drift apart.
+    - name: Install the codec toolchain packages
+      shell: msys2 {0}
+      run: |
+        grep -v -E '^\s*(#|$)' scripts/ffmpeg-slim/msys2-packages.txt | xargs pacman -S --needed --noconfirm
+
+    - name: Export MSYS2_ROOT
+      shell: pwsh
+      run: '"MSYS2_ROOT=${{ steps.msys2.outputs.msys2-location }}" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append'

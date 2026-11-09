@@ -98,11 +98,17 @@ jobs:
 
       # Only the projects whose tests exercise the real encoders pay for downloading them.
       - name: Cache third-party tools
+        id: tools-cache
         if: matrix.tools
         uses: actions/cache@v6
         with:
           path: tools
-          key: tools-${{ runner.os }}-${{ hashFiles('tools/tools-manifest.json', 'scripts/fetch-tools.ps1') }}
+          key: tools-${{ runner.os }}-${{ hashFiles('tools/tools-manifest.json', 'scripts/fetch-tools.ps1', 'scripts/ffmpeg-slim/*') }}
+
+      # ffmpeg is compiled, not downloaded. MSYS2 is only set up when the cache above missed (a changed manifest or recipe).
+      - name: Prepare the ffmpeg build
+        if: matrix.tools && steps.tools-cache.outputs.cache-hit != 'true'
+        uses: ./.github/actions/prepare-ffmpeg-build
 
       - name: Stage third-party tools
         if: matrix.tools
@@ -154,10 +160,16 @@ jobs:
             nuget-${{ runner.os }}-
 
       - name: Cache third-party tools
+        id: tools-cache
         uses: actions/cache@v6
         with:
           path: tools
-          key: tools-${{ runner.os }}-${{ hashFiles('tools/tools-manifest.json', 'scripts/fetch-tools.ps1') }}
+          key: tools-${{ runner.os }}-${{ hashFiles('tools/tools-manifest.json', 'scripts/fetch-tools.ps1', 'scripts/ffmpeg-slim/*') }}
+
+      # ffmpeg is compiled, not downloaded. MSYS2 is only set up when the cache above missed (a changed manifest or recipe).
+      - name: Prepare the ffmpeg build
+        if: steps.tools-cache.outputs.cache-hit != 'true'
+        uses: ./.github/actions/prepare-ffmpeg-build
 
       - name: Stage third-party tools
         shell: pwsh

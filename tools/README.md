@@ -38,7 +38,7 @@ When this block is present, `fetch-tools.ps1` downloads the checksum manifest, p
 
 For pinned vendor releases, prefer immutable archive URLs over moving `stable`, `latest`, or redirect-based endpoints. That keeps historical CI runs reproducible after upstream promotes a newer point release.
 
-The bundled ffmpeg entry points at the gyan.dev `full_build-shared` release, which is large because it links many codecs Squish never uses. `docs/ffmpeg-slim-build.md` describes a slim build workflow that can replace it (SVT-AV1 and the NVENC/AMF/QSV encoders are kept).
+The ffmpeg entry has no download: it is compiled from the FFmpeg source tag with MSYS2 (`"archiveType": "msys2-build"`, recipe in `scripts/ffmpeg-slim`), because every public build links in far more codecs than Squish uses (about 230 MB against about 74 MB). SVT-AV1 and the NVENC/AMF/QSV encoders are kept. See `docs/ffmpeg-slim-build.md`; use `-Exclude ffmpeg` to skip it.
 
 ## Subfolders
 
