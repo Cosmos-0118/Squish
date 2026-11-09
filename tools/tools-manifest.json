@@ -3,10 +3,16 @@
     {
       "name": "ffmpeg",
       "version": "9.0.2",
-      "url": "https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-9.0.2-full_build.7z",
-      "sha256": "f0e46253c70dfe902bac915dfb4224f0cf1b7c6eeab9da2ccc9a5581f9a71b13",
+      "url": "https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-9.0.2-full_build-shared.7z",
+      "sha256": "4d2060a8b34a940aa47d785142055bb92a63053781e55f2ace4546edd519a8f5",
       "archiveType": "7zip",
       "destination": "ffmpeg",
+      "include": [
+        "ffmpeg.exe",
+        "ffprobe.exe",
+        "*.dll",
+        "LICENSE"
+      ],
       "updateSource": {
         "type": "text",
         "url": "https://www.gyan.dev/ffmpeg/builds/release-version",
@@ -20,6 +26,10 @@
       "sha256": "176ef4f632b09dca449e27bc11df090c1222528dff9f583a14bbd026a0c8eb2f",
       "archiveType": "zip",
       "destination": "mozjpeg",
+      "include": [
+        "cjpeg-static.exe",
+        "jpegtran-static.exe"
+      ],
       "updateSource": {
         "type": "github-release",
         "repo": "garyzyg/mozjpeg-windows"
@@ -61,6 +71,9 @@
       "archiveType": "zip",
       "destination": "libwebp",
       "contentRoot": "libwebp-1.6.0-windows-x64",
+      "include": [
+        "cwebp.exe"
+      ],
       "updateSource": {
         "type": "github-tags",
         "repo": "webmproject/libwebp"
@@ -73,6 +86,9 @@
       "sha256": "cb2d9fea43dcbab1d0707e3b37eb7b08070ad2fb60a2c188c39ec12382c0484a",
       "archiveType": "zip",
       "destination": "libavif",
+      "include": [
+        "avifenc.exe"
+      ],
       "updateSource": {
         "type": "github-release",
         "repo": "AOMediaCodec/libavif"

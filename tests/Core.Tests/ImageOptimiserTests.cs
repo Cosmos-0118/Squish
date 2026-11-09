@@ -19,8 +19,7 @@ public sealed class ImageOptimiserTests
 
     private static readonly ImageOptimiserOptions BuiltIn = new()
     {
-        AdvancedCodecs = AdvancedCodecPreferences.Disabled,
-        CropSuggestions = CropSuggestionOptions.Disabled
+        AdvancedCodecs = AdvancedCodecPreferences.Disabled
     };
 
     // ---- JPEG ------------------------------------------------------------------------------------------
@@ -326,7 +325,6 @@ public sealed class ImageOptimiserTests
             // An unreachable perceptual target disables every lossy candidate, leaving only the lossless pass.
             var options = new ImageOptimiserOptions
             {
-                CropSuggestions = CropSuggestionOptions.Disabled,
                 PerceptualGuard = PerceptualGuardOptions.Default with { MinimumScore = 99.99 }
             };
             var result = await RunAsync(new ImageOptimiser(options), source);
@@ -668,7 +666,7 @@ public sealed class ImageOptimiserTests
         var output = default(FilePath?);
         try
         {
-            var result = await RunAsync(new ImageOptimiser(new ImageOptimiserOptions { CropSuggestions = CropSuggestionOptions.Disabled }), source, Aggressive);
+            var result = await RunAsync(new ImageOptimiser(new ImageOptimiserOptions()), source, Aggressive);
 
             Assert.Equal(OptimisationStatus.Succeeded, result.Status);
             output = result.OutputPath;
@@ -689,7 +687,7 @@ public sealed class ImageOptimiserTests
         var output = default(FilePath?);
         try
         {
-            var result = await RunAsync(new ImageOptimiser(new ImageOptimiserOptions { CropSuggestions = CropSuggestionOptions.Disabled }), source, Aggressive);
+            var result = await RunAsync(new ImageOptimiser(new ImageOptimiserOptions()), source, Aggressive);
 
             Assert.Equal(OptimisationStatus.Succeeded, result.Status);
             output = result.OutputPath;

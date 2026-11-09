@@ -13,7 +13,6 @@
 
   <ItemGroup>
     <PackageReference Include="Magick.NET-Q8-AnyCPU" />
-    <PackageReference Include="Microsoft.ML.OnnxRuntime" />
     <PackageReference Include="Microsoft.Extensions.Logging" />
   </ItemGroup>
 

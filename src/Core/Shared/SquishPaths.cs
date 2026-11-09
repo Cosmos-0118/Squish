@@ -36,7 +36,6 @@ public static class SquishPaths
     public static FilePath ForFilters => EnsureDirectory("for-filters");
     public static FilePath ProcessLogs => EnsureDirectory("process-logs");
     public static FilePath FinderQuickAction => EnsureDirectory("finder-quick-action");
-    public static FilePath SegmentationCache => EnsureDirectory("segmentation-cache");
 
     private static FilePath EnsureDirectory(string name)
     {

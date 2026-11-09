@@ -7,13 +7,10 @@
 #define MyAppExeName "Squish.exe"
 #define MyAppAumid "Cosmos0118.Squish"
 #ifndef AppBuildOutput
-  #define AppBuildOutput "..\\src\\App\\bin\\Release\\net10.0-windows10.0.19041.0\\win-x64\\publish"
-#endif
-#ifndef CliBuildOutput
-  #define CliBuildOutput "..\\src\\CliBridge\\bin\\Release\\net10.0\\win-x64\\publish"
+  #define AppBuildOutput "..\\src\\App\\bin\\Release\\net10.0-windows\\win-x64\\publish"
 #endif
 #ifndef ExplorerBuildOutput
-  #define ExplorerBuildOutput "..\\src\\Integrations\\Explorer\\bin\\Release\\net10.0-windows10.0.19041.0\\win-x64\\publish"
+  #define ExplorerBuildOutput "..\\src\\Integrations\\Explorer\\bin\\Release\\net10.0-windows\\win-x64\\publish"
 #endif
 #ifndef ToolsRoot
   #define ToolsRoot "..\\tools"
@@ -58,14 +55,12 @@ Name: "installcli"; Description: "Register the squish CLI"; GroupDescription: "A
 Name: "registerexplorer"; Description: "Enable Explorer context menu"; GroupDescription: "Automation:"; Flags: checkedonce
 
 [Dirs]
-Name: "{app}\\cli"; Tasks: installcli
 Name: "{app}\\integrations"; Tasks: registerexplorer
 Name: "{app}\\tools"; Flags: uninsalwaysuninstall
 
 [Files]
+; The app folder also holds the CLI (Squish.CliBridge.exe): it shares Squish.Core.dll, Magick.NET and the .NET runtime with the app.
 Source: "{#AppBuildOutput}\\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
-Source: "{#CliBuildOutput}\\Squish.CliBridge.exe"; DestDir: "{app}\\cli"; DestName: "squish.exe"; Flags: ignoreversion
-Source: "{#CliBuildOutput}\\*"; DestDir: "{app}\\cli"; Flags: recursesubdirs ignoreversion; Excludes: "Squish.CliBridge.exe"
 Source: "{#ExplorerBuildOutput}\\Squish.Integrations.Explorer.dll"; DestDir: "{app}\\integrations"; Flags: ignoreversion
 Source: "{#ExplorerBuildOutput}\\Squish.Integrations.Explorer.comhost.dll"; DestDir: "{app}\\integrations"; Flags: ignoreversion
 Source: "{#ToolsRoot}\\*"; DestDir: "{app}\\tools"; Flags: recursesubdirs ignoreversion
@@ -78,14 +73,18 @@ Source: "SQUISH_LICENSE.txt"; DestDir: "{app}"; Flags: ignoreversion
 Name: "{autoprograms}\\{#MyAppName}"; Filename: "{app}\\{#MyAppExeName}"; WorkingDir: "{app}"; AppUserModelID: "{#MyAppAumid}"
 Name: "{autodesktop}\\{#MyAppName}"; Filename: "{app}\\{#MyAppExeName}"; Tasks: desktopicon; WorkingDir: "{app}"; AppUserModelID: "{#MyAppAumid}"
 
+[InstallDelete]
+; Releases up to 2.3.4 shipped a second, self-contained copy of the CLI here.
+Type: filesandordirs; Name: "{app}\\cli"
+
 [Registry]
 ; Entries written by releases published as "Clop for Windows".
 Root: HKCU; Subkey: "Software\\Microsoft\\Windows\\CurrentVersion\\Run"; ValueType: none; ValueName: "Clop"; Flags: deletevalue
 Root: HKCU; Subkey: "Software\\Microsoft\\Windows\\CurrentVersion\\Run"; ValueType: none; ValueName: "ClopWindows"; Flags: deletevalue
 Root: HKCU; Subkey: "Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\clop.exe"; ValueType: none; Flags: deletekey
 Root: HKCU; Subkey: "Software\\Microsoft\\Windows\\CurrentVersion\\Run"; ValueType: string; ValueName: "Squish"; ValueData: """{app}\\{#MyAppExeName}"""; Tasks: runatstartup
-Root: HKCU; Subkey: "Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\squish.exe"; ValueType: string; ValueName: ""; ValueData: "{app}\\cli\\squish.exe"; Tasks: installcli
-Root: HKCU; Subkey: "Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\squish.exe"; ValueType: string; ValueName: "Path"; ValueData: "{app}\\cli"; Tasks: installcli
+Root: HKCU; Subkey: "Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\squish.exe"; ValueType: string; ValueName: ""; ValueData: "{app}\\Squish.CliBridge.exe"; Tasks: installcli
+Root: HKCU; Subkey: "Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\squish.exe"; ValueType: string; ValueName: "Path"; ValueData: "{app}"; Tasks: installcli
 
 [Run]
 Filename: "{sys}\\regsvr32.exe"; Parameters: "/s ""{app}\\integrations\\Squish.Integrations.Explorer.comhost.dll"""; Tasks: registerexplorer; Flags: runhidden
