@@ -56,7 +56,6 @@ internal sealed class PdfImagePass
     private readonly Dictionary<int, List<int>> _softMaskParents = new();
     private readonly Dictionary<int, string> _exportedFiles = new();
     private readonly Dictionary<int, JsonElement> _exportedDicts = new();
-    private readonly List<JsonDocument> _exportDocuments = new();
     private readonly ConcurrentDictionary<string, Lazy<Task<ImageEncoding?>>> _shared = new(StringComparer.Ordinal);
 
     public PdfImagePass(QpdfRunner qpdf, PdfObjectMap structure, PdfOptimiserOptions options, bool aggressive, string workDirectory, OptimiserExecutionContext context, CancellationToken token)
@@ -76,7 +75,8 @@ internal sealed class PdfImagePass
     private int Workers => Math.Clamp(Environment.ProcessorCount / 2, 1, 3);
 
     // Several workers help with many small pictures; a few big scans must not be decoded side by side (about 1 GB each).
-    private readonly PixelBudget _budget = new(12);
+    // Process-wide: several PDFs (and Office files) optimised at once share one allowance instead of each taking 12 MP.
+    private readonly PixelBudget _budget = PixelBudget.Shared;
 
     /// <param name="inputPdf">The file <see cref="PdfObjectMap"/> was exported from; the update is applied to it directly.</param>
     /// <param name="extraArguments">Transformations every rewrite shares (metadata removal).</param>
@@ -89,11 +89,6 @@ internal sealed class PdfImagePass
         }
         finally
         {
-            foreach (var document in _exportDocuments)
-            {
-                document.Dispose();
-            }
-
             _temp.Dispose();
         }
     }
@@ -264,6 +259,9 @@ internal sealed class PdfImagePass
                 var start = new PdfMatrix(page.UserUnit, 0, 0, page.UserUnit, 0, 0);
                 ScanContent(stream.ToArray(), start, page.Resources, page.ResourceOwner, usage, visitedOwners, 0, new HashSet<int>());
             }
+
+            // The inflated content streams are only needed for the scan; do not keep them on disk through the image passes.
+            ForgetExports(streamIds);
 
             // Anything that references an image from a resource dictionary this scan never walked makes its size unknowable.
             foreach (var (owner, target) in FindResourceReferences())
@@ -533,8 +531,8 @@ internal sealed class PdfImagePass
             throw new IOException($"qpdf could not export streams: {result.StandardError}");
         }
 
-        var document = JsonDocument.Parse(await File.ReadAllBytesAsync(jsonPath, _token).ConfigureAwait(false));
-        _exportDocuments.Add(document);
+        // Only each stream dictionary is kept (as a small standalone copy); the batch's whole JSON tree is released at once.
+        using var document = JsonDocument.Parse(await File.ReadAllBytesAsync(jsonPath, _token).ConfigureAwait(false));
         foreach (var property in document.RootElement.GetProperty("qpdf")[1].EnumerateObject())
         {
             if (!PdfObjectMap.TryParseObjectKey(property.Name, out var id) || !property.Value.TryGetProperty("stream", out var stream))
@@ -549,8 +547,17 @@ internal sealed class PdfImagePass
 
             if (stream.TryGetProperty("dict", out var dict))
             {
-                _exportedDicts[id] = dict;
+                _exportedDicts[id] = dict.Clone();
             }
+        }
+
+        try
+        {
+            File.Delete(jsonPath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // best effort; the work directory is removed at the end
         }
     }
 
@@ -874,8 +881,9 @@ internal sealed class PdfImagePass
 
     private async Task<ImageEncoding?> OptimiseJpegAsync(int id, JsonElement dict, string file, long length, int width, int height, int components, double? scale, ImageUsage? usage)
     {
-        var bytes = await File.ReadAllBytesAsync(file, _token).ConfigureAwait(false);
-        var info = JpegInfo.TryRead(bytes);
+        // The file is only inspected here; reading it in a helper keeps its bytes from living in this method's state for the
+        // whole (long) encode below.
+        var (info, orientation) = await InspectJpegAsync(file).ConfigureAwait(false);
         if (info is not { } jpeg || jpeg.Components != components || jpeg.Components is not (1 or 3))
         {
             return null;
@@ -888,7 +896,7 @@ internal sealed class PdfImagePass
         }
 
         var staged = _temp.New("squish-pdfimg", "jpg");
-        await File.WriteAllBytesAsync(staged.Value, bytes, _token).ConfigureAwait(false);
+        File.Copy(file, staged.Value, overwrite: true);
 
         var best = new ImageEncoding(EncodingKind.Jpeg, staged, length, jpeg.Width, jpeg.Height, "unchanged", length);
 
@@ -904,7 +912,6 @@ internal sealed class PdfImagePass
         }
 
         // 2. Perceptual re-encode (and downsample), unless a colour-sensitive detail makes pixel access unsafe.
-        var orientation = JpegSegments.Extract(bytes).Exif is { Length: > 0 } exif ? JpegSegments.ReadOrientation(exif) : 1;
         var rawRgbCoded = jpeg.Components == 3 && jpeg.AdobeTransform == 0;
         if (orientation == 1 && !rawRgbCoded)
         {
@@ -922,6 +929,26 @@ internal sealed class PdfImagePass
         return best.Description == "unchanged" || best.Size >= length * 0.97 ? null : best;
     }
 
+    private async Task<(JpegInfo? Info, int Orientation)> InspectJpegAsync(string file)
+    {
+        var bytes = await File.ReadAllBytesAsync(file, _token).ConfigureAwait(false);
+        var info = JpegInfo.TryRead(bytes);
+        if (info is null)
+        {
+            return (null, 1);
+        }
+
+        var orientation = JpegSegments.Extract(bytes).Exif is { Length: > 0 } exif ? JpegSegments.ReadOrientation(exif) : 1;
+        return (info, orientation);
+    }
+
+    private async Task WriteRawFileAsPngAsync(string file, int width, int height, int components, FilePath destination)
+    {
+        // The raw bitmap (tens of MB) is dropped as soon as the PNG exists, before the optimising pipeline starts.
+        var raw = await File.ReadAllBytesAsync(file, _token).ConfigureAwait(false);
+        await Task.Run(() => WriteRawAsPng(raw, width, height, components, destination), _token).ConfigureAwait(false);
+    }
+
     private async Task<ImageEncoding?> OptimiseRawBitmapAsync(JsonElement dict, string file, long reference, int width, int height, int components, double? scale)
     {
         if ((long)width * height < 20_000)
@@ -930,8 +957,7 @@ internal sealed class PdfImagePass
         }
 
         var staged = _temp.New("squish-pdfbmp", "png");
-        var raw = await File.ReadAllBytesAsync(file, _token).ConfigureAwait(false);
-        await Task.Run(() => WriteRawAsPng(raw, width, height, components, staged), _token).ConfigureAwait(false);
+        await WriteRawFileAsPngAsync(file, width, height, components, staged).ConfigureAwait(false);
 
         var converted = await RunPipelineAsync(staged, convertPng: true, scale, width, height, components, minPixels: 20_000).ConfigureAwait(false);
         if (converted is not { } candidate)
@@ -1122,7 +1148,8 @@ internal sealed class PdfImagePass
         var data = _temp.New("squish-pdfidat", "bin");
         await File.WriteAllBytesAsync(data.Value, stream.Idat, _token).ConfigureAwait(false);
         var size = stream.Idat.LongLength + (stream.Palette?.LongLength ?? 0);
-        return new ImageEncoding(EncodingKind.Png, data, size, stream.Width, stream.Height, "PNG", size, stream);
+        // The scanline data now lives in `data`; this record is cached for the whole run and only needs the header fields.
+        return new ImageEncoding(EncodingKind.Png, data, size, stream.Width, stream.Height, "PNG", size, stream with { Idat = [] });
     }
 
     private async Task<FilePath?> ToGreyscaleAsync(FilePath source)

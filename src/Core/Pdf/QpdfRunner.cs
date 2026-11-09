@@ -39,14 +39,17 @@ internal sealed class QpdfRunner
 
     /// <summary>
     /// Rewrites <paramref name="input"/> with the shared write options and returns the smaller result. When the document holds
-    /// predictor-coded pictures it writes both with and without <c>--recompress-flate</c> (concurrently) and keeps the better
+    /// predictor-coded pictures it writes both with and without <c>--recompress-flate</c> (one after the other) and keeps the better
     /// one, because neither choice wins for every file: recompressing helps content streams and fonts, but flattens predictors.
     /// </summary>
     /// <returns>The path of the written file, or null when qpdf could not write any variant.</returns>
     public async Task<string?> WriteBestAsync(string input, string outputBase, IReadOnlyList<string> arguments, bool linearize, bool predictorsPresent, CancellationToken token)
     {
         var variants = predictorsPresent ? new[] { false, true } : new[] { true };
-        var written = await Task.WhenAll(variants.Select(async recompress =>
+        // One after the other: two qpdf processes holding the whole document at once doubled the peak for the sake of
+        // a few seconds at the very end of a run.
+        var written = new List<string>();
+        foreach (var recompress in variants)
         {
             var output = $"{outputBase}-{(recompress ? "flate" : "keep")}.pdf";
             var all = new List<string> { input, output };
@@ -55,14 +58,15 @@ internal sealed class QpdfRunner
             var result = await RunAsync(all, token).ConfigureAwait(false);
             if (Succeeded(result) && File.Exists(output))
             {
-                return output;
+                written.Add(output);
             }
+            else
+            {
+                Log.Warning($"qpdf could not write {output}: {result.StandardError}");
+            }
+        }
 
-            Log.Warning($"qpdf could not write {output}: {result.StandardError}");
-            return null;
-        })).ConfigureAwait(false);
-
-        return written.Where(path => path is not null).MinBy(path => new FileInfo(path!).Length);
+        return written.MinBy(path => new FileInfo(path).Length);
     }
 
     /// <summary>

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Squish.Core.Shared;
 
 namespace Squish.Core.Imaging;
 
@@ -129,29 +130,60 @@ internal sealed class PerceptualReference
         }
 
         var scores = new double[Tiles.Count];
-        void ScoreAt(int i)
+        for (var i = 0; i < Tiles.Count; i++)
         {
             var tile = Tiles[i];
+            if (!_cachePrepared)
+            {
+                // Full coverage of a large frame: one ~1 MP tile at a time. The metric already spreads its blur, downsample
+                // and colour passes over every core, so tiles side by side only doubled the working set.
+                scores[i] = ScoreUncachedTile(tile, candidate, cancellationToken);
+                continue;
+            }
+
             var crop = tile.Width == candidate.Width && tile.Height == candidate.Height
                 ? candidate
                 : candidate.Crop(tile.X, tile.Y, tile.Width, tile.Height);
             scores[i] = ScoreTile(i, crop, cancellationToken);
         }
 
-        if (_cachePrepared)
+        return Aggregate(scores);
+    }
+
+    /// <summary>
+    /// Scores one tile without caching anything: both sides are read through pooled buffers (no per-tile crop allocations)
+    /// and the metric borrows its planes from the scratch pool, so scoring a huge frame churns no Large Object Heap memory.
+    /// </summary>
+    private double ScoreUncachedTile(SampleTile tile, RasterImage candidate, CancellationToken token)
+    {
+        if (tile.Width == _reference.Width && tile.Height == _reference.Height)
         {
-            for (var i = 0; i < Tiles.Count; i++)
-            {
-                ScoreAt(i);
-            }
-        }
-        else
-        {
-            // Full coverage: independent ~1 MP tiles (~110 MB of working set each), each already using three threads.
-            Parallel.For(0, Tiles.Count, new ParallelOptions { MaxDegreeOfParallelism = Math.Clamp(Environment.ProcessorCount / 3, 1, 2), CancellationToken = cancellationToken }, ScoreAt);
+            return ScoreSpans(_reference.Pixels, candidate.Pixels, tile.Width, tile.Height, token);
         }
 
-        return Aggregate(scores);
+        var length = tile.Width * tile.Height * 4;
+        var referenceTile = ScratchPool<byte>.Rent(length);
+        var candidateTile = ScratchPool<byte>.Rent(length);
+        try
+        {
+            CopyRegion(_reference, tile, referenceTile);
+            CopyRegion(candidate, tile, candidateTile);
+            return ScoreSpans(referenceTile.AsSpan(0, length), candidateTile.AsSpan(0, length), tile.Width, tile.Height, token);
+        }
+        finally
+        {
+            ScratchPool<byte>.Return(referenceTile);
+            ScratchPool<byte>.Return(candidateTile);
+        }
+    }
+
+    private static void CopyRegion(RasterImage source, SampleTile tile, byte[] destination)
+    {
+        var rowBytes = tile.Width * 4;
+        for (var row = 0; row < tile.Height; row++)
+        {
+            Buffer.BlockCopy(source.Pixels, ((tile.Y + row) * source.Width + tile.X) * 4, destination, row * rowBytes, rowBytes);
+        }
     }
 
     /// <summary>
@@ -261,17 +293,20 @@ internal sealed class PerceptualReference
             : _reference.Crop(tile.X, tile.Y, tile.Width, tile.Height);
 
     internal static double ScorePair(RasterImage reference, RasterImage candidate, CancellationToken token)
+        => ScoreSpans(reference.Pixels, candidate.Pixels, reference.Width, reference.Height, token);
+
+    private static double ScoreSpans(ReadOnlySpan<byte> reference, ReadOnlySpan<byte> candidate, int width, int height, CancellationToken token)
     {
-        var alpha = HasTransparency(reference.Pixels) || HasTransparency(candidate.Pixels);
+        var alpha = HasTransparency(reference) || HasTransparency(candidate);
         if (!alpha)
         {
-            return Ssimulacra2.ComputeOpaqueRgba(reference.Pixels, candidate.Pixels, reference.Width, reference.Height, token);
+            return Ssimulacra2.ComputeOpaqueRgba(reference, candidate, width, height, token);
         }
 
-        return Ssimulacra2.Compute(reference.Pixels, candidate.Pixels, reference.Width, reference.Height, 4, token);
+        return Ssimulacra2.Compute(reference, candidate, width, height, 4, token);
     }
 
-    private static bool HasTransparency(byte[] rgba)
+    private static bool HasTransparency(ReadOnlySpan<byte> rgba)
     {
         for (var i = 3; i < rgba.Length; i += 4)
         {

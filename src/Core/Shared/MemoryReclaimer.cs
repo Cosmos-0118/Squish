@@ -23,6 +23,8 @@ internal static class MemoryReclaimer
 
         try
         {
+            // Pooled scoring planes are live objects as far as the GC is concerned; let go of them first.
+            ScratchPools.TrimAll();
             GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
             GC.Collect(GC.MaxGeneration, GCCollectionMode.Aggressive, blocking: true, compacting: true);
 
