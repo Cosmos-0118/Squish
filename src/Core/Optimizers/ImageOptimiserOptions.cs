@@ -57,8 +57,6 @@ public sealed record ImageOptimiserOptions
 
     public PerceptualGuardOptions PerceptualGuard { get; init; } = PerceptualGuardOptions.Default;
 
-    public CropSuggestionOptions CropSuggestions { get; init; } = CropSuggestionOptions.Disabled;
-
     public MetadataPolicyOptions MetadataPolicy
     {
         get => _metadataPolicy;
@@ -167,21 +165,6 @@ public sealed record PerceptualGuardOptions
     public bool RejectWhenBelowThreshold { get; init; } = true;
 
     public bool RecordMetrics { get; init; } = true;
-}
-
-public sealed record CropSuggestionOptions
-{
-    public static CropSuggestionOptions Disabled { get; } = new();
-
-    public bool Enabled { get; init; }
-
-    public string? OnnxModelPath { get; init; }
-
-    public bool CacheMasks { get; init; } = true;
-
-    public double EdgeSensitivity { get; init; } = 0.6;
-
-    public int MinimumSubjectAreaPixels { get; init; } = 12_000;
 }
 
 public sealed record MetadataPolicyOptions

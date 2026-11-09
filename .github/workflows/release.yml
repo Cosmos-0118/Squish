@@ -102,12 +102,10 @@ jobs:
           if (-not (Test-Path $iscc)) { throw 'ISCC.exe not found' }
           $appVersion = $env:APP_VERSION
           $appOut = Resolve-Path 'out/publish/app'
-          $cliOut = Resolve-Path 'out/publish/cli'
           $explorerOut = Resolve-Path 'out/publish/explorer'
           & $iscc /Qp `
             "/DMyAppVersion=$appVersion" `
             "/DAppBuildOutput=$appOut" `
-            "/DCliBuildOutput=$cliOut" `
             "/DExplorerBuildOutput=$explorerOut" `
             "/DToolsRoot=$(Resolve-Path out/publish/tools)" `
             'installer/SquishInstaller.iss'

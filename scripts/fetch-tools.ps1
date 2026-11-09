@@ -26,6 +26,35 @@ function Get-Checksum([string]$Path) {
     return (Get-FileHash -Path $Path -Algorithm SHA256).Hash.ToLowerInvariant()
 }
 
+function Copy-ArchivePayload {
+    # Copies an extracted archive into the tool folder. Without "include" everything is copied. With it, only the listed
+    # files are kept (flattened into the destination): release archives often bundle dev headers, static libs, docs and
+    # sibling tools that Squish never runs, and every byte of that ships in the installer. A plain name takes the first
+    # match; a wildcard (for example *.dll) takes every match. A pattern that matches nothing fails the fetch, so a
+    # renamed upstream file cannot silently ship a broken tool.
+    param(
+        [Parameter(Mandatory = $true)] $Tool,
+        [Parameter(Mandatory = $true)] [string]$SourcePath,
+        [Parameter(Mandatory = $true)] [string]$Destination
+    )
+
+    if (-not $Tool.PSObject.Properties['include']) {
+        Copy-Item -Path (Join-Path $SourcePath '*') -Destination $Destination -Recurse -Force
+        return
+    }
+
+    foreach ($fileName in $Tool.include) {
+        $found = @(Get-ChildItem -LiteralPath $SourcePath -Recurse -File -Filter $fileName)
+        if ($found.Count -eq 0) { throw "'$fileName' not found in the $($Tool.name) archive." }
+        if (-not [System.Management.Automation.WildcardPattern]::ContainsWildcardCharacters($fileName)) {
+            $found = @($found | Select-Object -First 1)
+        }
+        foreach ($match in $found) {
+            Copy-Item -LiteralPath $match.FullName -Destination $Destination -Force
+        }
+    }
+}
+
 function Resolve-RepoPath([string]$Path) {
     if ([string]::IsNullOrWhiteSpace($Path)) { return $null }
     if ([System.IO.Path]::IsPathRooted($Path)) { return $Path }
@@ -344,7 +373,10 @@ foreach ($tool in $tools) {
     if (-not $Force -and (Test-Path -LiteralPath $metaFile)) {
         try {
             $current = Get-Content -Raw -LiteralPath $metaFile | ConvertFrom-Json
-            if ($current.version -eq $tool.version) {
+            # The include list is part of what was installed: tightening it must refresh an existing checkout.
+            $wantedInclude = if ($tool.PSObject.Properties['include']) { ($tool.include -join '|') } else { '' }
+            $haveInclude = if ($current.PSObject.Properties['include']) { ($current.include -join '|') } else { '' }
+            if ($current.version -eq $tool.version -and $haveInclude -eq $wantedInclude) {
                 Write-Host "    Already have requested version. Use -Force to re-download." -ForegroundColor Yellow
                 $skip = $true
             }
@@ -449,7 +481,7 @@ foreach ($tool in $tools) {
                         $sourcePath = $expandDir
                     }
                 }
-                Copy-Item -Path (Join-Path $sourcePath '*') -Destination $dest -Recurse -Force
+                Copy-ArchivePayload -Tool $tool -SourcePath $sourcePath -Destination $dest
                 Remove-Item -Recurse -Force -LiteralPath $expandDir
             }
             'zip' {
@@ -467,17 +499,7 @@ foreach ($tool in $tools) {
                         $sourcePath = $expandDir
                     }
                 }
-                if ($tool.PSObject.Properties['include']) {
-                    # Release archives that bundle many tools: keep only the ones we use.
-                    foreach ($fileName in $tool.include) {
-                        $match = Get-ChildItem -LiteralPath $sourcePath -Recurse -File -Filter $fileName | Select-Object -First 1
-                        if (-not $match) { throw "'$fileName' not found in the $($tool.name) archive." }
-                        Copy-Item -LiteralPath $match.FullName -Destination $dest -Force
-                    }
-                }
-                else {
-                    Copy-Item -Path (Join-Path $sourcePath '*') -Destination $dest -Recurse -Force
-                }
+                Copy-ArchivePayload -Tool $tool -SourcePath $sourcePath -Destination $dest
                 Remove-Item -Recurse -Force -LiteralPath $expandDir
             }
             'raw' {
@@ -650,6 +672,7 @@ foreach ($tool in $tools) {
             sha256    = $computedSha
             fetchedAt = (Get-Date).ToString('o')
         }
+        if ($tool.PSObject.Properties['include']) { $metadata['include'] = @($tool.include) }
         $metadata | ConvertTo-Json -Depth 5 | Set-Content -Encoding UTF8 -LiteralPath $metaFile
         Write-Host "    Installed $($tool.name) into $dest" -ForegroundColor Green
     }

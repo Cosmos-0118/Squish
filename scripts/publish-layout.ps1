@@ -35,7 +35,9 @@ try {
     New-Item -ItemType Directory -Path $Output | Out-Null
 
     Invoke-Publish 'src/App/Squish.App.csproj' (Join-Path $Output 'app') $false
-    Invoke-Publish 'src/CliBridge/Squish.CliBridge.csproj' (Join-Path $Output 'cli') $true
+    # The CLI shares the app folder (Squish.Core.dll, Magick.NET and its native library are already there) instead of a
+    # second self-contained copy with its own runtime. It runs on the same .NET runtime the app requires.
+    Invoke-Publish 'src/CliBridge/Squish.CliBridge.csproj' (Join-Path $Output 'app') $false
     Invoke-Publish 'src/Integrations/Explorer/Squish.Integrations.Explorer.csproj' (Join-Path $Output 'explorer') $false
 
     $docsTarget = Join-Path $Output 'docs'
@@ -55,7 +57,7 @@ try {
 
     $expected = @(
         'app/Squish.exe',
-        'cli/Squish.CliBridge.exe',
+        'app/Squish.CliBridge.exe',
         'explorer/Squish.Integrations.Explorer.comhost.dll',
         'tools/pngquant',
         'docs/windows-deps.md',

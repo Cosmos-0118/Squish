@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.Worker">
 
   <PropertyGroup>
-    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <UserSecretsId>dotnet-Squish.BackgroundService-6ffa64f7-113a-4cf8-8e1e-686244547250</UserSecretsId>
     <UseWindowsForms>true</UseWindowsForms>
   </PropertyGroup>
