@@ -44,6 +44,7 @@ internal sealed class PdfImagePass
 
     private PdfObjectMap _structure = null!;
     private string _inputPdf = string.Empty;
+    private readonly HashSet<int> _maskImages = new();
     private readonly Dictionary<int, string> _exportedFiles = new();
     private readonly Dictionary<int, JsonElement> _exportedDicts = new();
     private readonly List<JsonDocument> _exportDocuments = new();
@@ -93,6 +94,7 @@ internal sealed class PdfImagePass
         _structure = PdfObjectMap.Load(structurePath);
 
         var images = _structure.Ids.Where(IsImage).ToList();
+        CollectMaskImages(images);
         var updates = new JsonObject();
 
         var changed = 0;
@@ -160,6 +162,26 @@ internal sealed class PdfImagePass
     // ------------------------------------------------------------------------------------------------------
     // Where is each picture drawn, and how large?
     // ------------------------------------------------------------------------------------------------------
+
+    /// <summary>Soft masks and stencil masks carry alpha: JPEG ringing on their edges would show as halos, so they stay lossless.</summary>
+    private void CollectMaskImages(List<int> images)
+    {
+        foreach (var id in images)
+        {
+            if (_structure.ValueOf(id) is not { } dict)
+            {
+                continue;
+            }
+
+            foreach (var key in new[] { "/SMask", "/Mask" })
+            {
+                if (dict.TryGetProperty(key, out var target) && PdfObjectMap.TryGetRef(target, out var maskId))
+                {
+                    _maskImages.Add(maskId);
+                }
+            }
+        }
+    }
 
     private bool IsImage(int id)
         => _structure.IsStream(id) && _structure.ValueOf(id) is { } dict && PdfObjectMap.Name(dict, "/Subtype") == "/Image";
@@ -528,6 +550,11 @@ internal sealed class PdfImagePass
     private async Task<ImageUpdate?> TryOptimiseImageAsync(int id, ImageUsage? usage)
     {
         if (!_exportedDicts.TryGetValue(id, out var dict) || !_exportedFiles.TryGetValue(id, out var file) || !File.Exists(file))
+        {
+            return null;
+        }
+
+        if (_maskImages.Contains(id))
         {
             return null;
         }
