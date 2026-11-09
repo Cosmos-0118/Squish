@@ -11,6 +11,12 @@ namespace Squish.Core.Imaging;
 /// </summary>
 internal sealed class PixelBudget
 {
+    /// <summary>
+    /// The allowance every container job (PDF, Office) draws from. A budget per job meant N concurrent jobs could decode
+    /// N times as many pictures; sharing one keeps the whole process under a single ceiling.
+    /// </summary>
+    public static PixelBudget Shared { get; } = new(12);
+
     private readonly int _capacity;
     private readonly SemaphoreSlim _units;
     // Permits are taken under this gate, so two large pictures cannot each hold half of what the other is waiting for.

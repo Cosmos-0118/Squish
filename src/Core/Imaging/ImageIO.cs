@@ -107,12 +107,13 @@ internal static class ImageIO
             {
                 // A tray utility must not let one big image claim a share of physical RAM: past these budgets
                 // ImageMagick pages its pixel cache to disk instead of growing the working set.
-                ResourceLimits.Memory = 512UL * 1024 * 1024;
+                ResourceLimits.Memory = 256UL * 1024 * 1024;
                 ResourceLimits.Disk = 4UL * 1024 * 1024 * 1024;
                 ResourceLimits.Thread = (ulong)Math.Clamp(Environment.ProcessorCount, 1, 4);
                 ResourceLimits.Width = 65_536;
                 ResourceLimits.Height = 65_536;
-                ResourceLimits.Area = 1_000_000_000;
+                // Just above ImageOptimiserOptions.MaxInputPixels (80 MP): nothing the pipeline accepts is near a gigapixel.
+                ResourceLimits.Area = 100_000_000;
                 ResourceLimits.ListLength = 1024;
                 ResourceLimits.MaxMemoryRequest = 2UL * 1024 * 1024 * 1024;
             }

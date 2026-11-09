@@ -277,6 +277,9 @@ internal sealed class ImageOptimisationJob : IDisposable
 
         // The decoded pixels are not needed again on this path, so convert in place instead of cloning them natively.
         var reference = ImageIO.ToRasterInPlace(PrepareImage(decoded.Image, downscale));
+        // The managed copy is all the search needs (the properties read below are plain values); keeping ImageMagick's
+        // native pixel cache alive through the whole encode search would hold a second full copy of the picture.
+        decoded.Dispose();
         if (!PerceptualReference.IsSupported(reference))
         {
             return null;
@@ -478,18 +481,24 @@ internal sealed class ImageOptimisationJob : IDisposable
                 }
             }
 
+            // Everything below works on the managed raster and the metadata copied above; release the native pixel cache now.
+            decoded.Dispose();
+
+            var jpegProduced = false;
             if (wantsJpeg && !hasAlpha && content.IsPhotographic && reference.PixelCount >= _options.JpegConversionMinimumPixels && PerceptualReference.IsSupported(reference))
             {
                 var jpeg = await ConvertToJpegAsync(reference, content, blobs, "Converted photographic PNG to JPEG").ConfigureAwait(false);
                 if (jpeg is not null)
                 {
                     candidates.Add(jpeg);
+                    jpegProduced = true;
                 }
             }
 
             // A large continuous-tone photo cannot hold 256 colours at the perceptual target; skip the two pngquant runs
-            // and full-frame scoring that would only confirm it (aggressive/forced runs still try).
-            var photoTooRich = content.IsPhotographic && reference.PixelCount >= 1_000_000 && !_aggressive && !_forceFull;
+            // and full-frame scoring that would only confirm it (aggressive/forced runs still try - unless a JPEG already
+            // passed, which a 256-colour photo will not beat and which would otherwise score the whole frame a second time).
+            var photoTooRich = content.IsPhotographic && reference.PixelCount >= 1_000_000 && ((!_aggressive && !_forceFull) || jpegProduced);
             // pngquant writes a fresh PNG without EXIF/XMP/IPTC, so it is only off when the user wants metadata kept AND
             // this file has some. A screenshot with nothing to lose can still be quantised.
             var wouldLoseMetadata = _options.MetadataPolicy.PreserveMetadata
@@ -963,6 +972,30 @@ internal sealed class ImageOptimisationJob : IDisposable
                 _gate.Release();
             }
         }
+
+        /// <summary>
+        /// Runs a full-frame encode and its score as one turn. A full-frame encoder process holds the whole picture's
+        /// coefficients, so letting every parallel search start one before queueing for the score meant up to four at once.
+        /// </summary>
+        public async Task<(FilePath? File, double Score)> EncodeAndScoreAsync(Func<Task<FilePath?>> encode, CancellationToken token)
+        {
+            await _gate.WaitAsync(token).ConfigureAwait(false);
+            try
+            {
+                var file = await encode().ConfigureAwait(false);
+                if (file is null)
+                {
+                    return (null, 0);
+                }
+
+                var score = await Task.Run(() => reference.Score(ImageIO.DecodeToRaster(file.Value.Value), token), token).ConfigureAwait(false);
+                return (file, score);
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
     }
 
     /// <summary>
@@ -1060,13 +1093,12 @@ internal sealed class ImageOptimisationJob : IDisposable
         for (var attempt = 0; attempt < VerificationRetries; attempt++)
         {
             _token.ThrowIfCancellationRequested();
-            var file = await encode(reference, quality, _token).ConfigureAwait(false);
+            var (file, score) = await verification.EncodeAndScoreAsync(() => encode(reference, quality, _token), _token).ConfigureAwait(false);
             if (file is null)
             {
                 return null;
             }
 
-            var score = await verification.ScoreAsync(file.Value.Value, _token).ConfigureAwait(false);
             if (score >= _targetScore)
             {
                 return new EncodedCandidate(file.Value, quality, score);

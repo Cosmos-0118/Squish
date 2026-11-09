@@ -33,7 +33,7 @@ internal sealed class DocumentOptimisationJob : IDisposable
     private static readonly HashSet<string> AppScrubNames = new(StringComparer.Ordinal) { "Company", "Manager" };
     private static readonly HashSet<string> OdfScrubNames = new(StringComparer.Ordinal) { "initial-creator", "creator" };
 
-    private const long InMemoryPartLimit = 16L * 1024 * 1024;
+    private const long InMemoryPartLimit = 4L * 1024 * 1024;
 
     // A hostile archive can claim gigabytes of uncompressed data per entry; bound what is staged on disk.
     private const long MaxStagedMediaBytes = 1536L * 1024 * 1024;
@@ -312,7 +312,7 @@ internal sealed class DocumentOptimisationJob : IDisposable
         var results = new GroupResult?[ordered.Count];
         var done = 0;
         var workers = Math.Clamp(Environment.ProcessorCount / 2, 1, 3);
-        var budget = new PixelBudget(12);
+        var budget = PixelBudget.Shared;
         await Parallel.ForEachAsync(Enumerable.Range(0, ordered.Count), new ParallelOptions { MaxDegreeOfParallelism = workers, CancellationToken = _token }, async (index, _) =>
         {
             var members = ordered[index];
@@ -782,7 +782,9 @@ internal sealed class DocumentOptimisationJob : IDisposable
     {
         if (hint <= InMemoryPartLimit)
         {
-            return new MemoryStream();
+            // Sized up front (a rewrite is about as long as its source): a stream that grows by doubling abandons every
+            // intermediate buffer, each one large enough to land on the Large Object Heap.
+            return new MemoryStream((int)Math.Max(0, hint + (hint >> 3)));
         }
 
         var file = _temp.New("squish-docpart", "tmp");

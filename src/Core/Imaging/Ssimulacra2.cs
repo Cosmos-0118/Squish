@@ -2,6 +2,7 @@ using System;
 using System.Numerics;
 using System.Threading;
 using System.Threading.Tasks;
+using Squish.Core.Shared;
 
 namespace Squish.Core.Imaging;
 
@@ -57,14 +58,18 @@ internal static class Ssimulacra2
     /// against a dark and a light backdrop and the worse result wins, as the reference tool does.
     /// </summary>
     public static double Compute(ReadOnlySpan<byte> reference, ReadOnlySpan<byte> distorted, int width, int height, int channels, CancellationToken cancellationToken = default)
-        => Prepare(reference, width, height, channels, cancellationToken).Compare(distorted, cancellationToken);
+    {
+        using var prepared = Prepare(reference, width, height, channels, cancellationToken, pooled: true);
+        return prepared.Compare(distorted, cancellationToken);
+    }
 
     /// <summary>
     /// Pre-computes everything that depends only on <paramref name="reference"/> (XYB pyramid, blurred mean and
     /// second moment). Quality searches score many candidates against one reference, and this is roughly half of
-    /// the work of every comparison. Same input contract as <see cref="Compute"/>.
+    /// the work of every comparison. Same input contract as <see cref="Compute"/>. With <paramref name="pooled"/> the planes come
+    /// from (and, on dispose, go back to) a scratch pool - for short-lived references; a long-lived one should not borrow.
     /// </summary>
-    public static PreparedReference Prepare(ReadOnlySpan<byte> reference, int width, int height, int channels, CancellationToken cancellationToken = default)
+    public static PreparedReference Prepare(ReadOnlySpan<byte> reference, int width, int height, int channels, CancellationToken cancellationToken = default, bool pooled = false)
     {
         if (channels is not (3 or 4))
         {
@@ -78,10 +83,10 @@ internal static class Ssimulacra2
         }
 
         var backdrops = channels == 3
-            ? new[] { PrepareBackdrop(reference, width, height, 3, 3, 0f, cancellationToken) }
-            : new[] { PrepareBackdrop(reference, width, height, 4, 4, 0.1f, cancellationToken), PrepareBackdrop(reference, width, height, 4, 4, 0.9f, cancellationToken) };
+            ? new[] { PrepareBackdrop(reference, width, height, 3, 3, 0f, pooled, cancellationToken) }
+            : new[] { PrepareBackdrop(reference, width, height, 4, 4, 0.1f, pooled, cancellationToken), PrepareBackdrop(reference, width, height, 4, 4, 0.9f, pooled, cancellationToken) };
 
-        return new PreparedReference(width, height, channels, channels, backdrops);
+        return new PreparedReference(width, height, channels, channels, backdrops, pooled);
     }
 
     /// <summary>
@@ -89,13 +94,16 @@ internal static class Ssimulacra2
     /// into a packed RGB buffer first. Same result as <see cref="Compute"/> on the RGB data.
     /// </summary>
     public static double ComputeOpaqueRgba(ReadOnlySpan<byte> reference, ReadOnlySpan<byte> distorted, int width, int height, CancellationToken cancellationToken = default)
-        => PrepareOpaqueRgba(reference, width, height, cancellationToken).Compare(distorted, cancellationToken);
+    {
+        using var prepared = PrepareOpaqueRgba(reference, width, height, cancellationToken, pooled: true);
+        return prepared.Compare(distorted, cancellationToken);
+    }
 
     /// <summary>
     /// Like <see cref="Prepare"/> for an opaque RGBA reference. The prepared reference expects RGBA candidates
     /// (alpha ignored) in <see cref="PreparedReference.Compare"/>.
     /// </summary>
-    public static PreparedReference PrepareOpaqueRgba(ReadOnlySpan<byte> reference, int width, int height, CancellationToken cancellationToken = default)
+    public static PreparedReference PrepareOpaqueRgba(ReadOnlySpan<byte> reference, int width, int height, CancellationToken cancellationToken = default, bool pooled = false)
     {
         var expected = (long)width * height * 4;
         if (width < MinDimension || height < MinDimension || reference.Length < expected)
@@ -103,21 +111,45 @@ internal static class Ssimulacra2
             throw new ArgumentException("Images must be at least 8x8 and match the declared dimensions.");
         }
 
-        return new PreparedReference(width, height, 3, 4, new[] { PrepareBackdrop(reference, width, height, 3, 4, 0f, cancellationToken) });
+        return new PreparedReference(width, height, 3, 4, new[] { PrepareBackdrop(reference, width, height, 3, 4, 0f, pooled, cancellationToken) }, pooled);
     }
 
-    /// <summary>A reference image ready to be compared with any number of candidates. Immutable, so thread-safe.</summary>
-    internal sealed class PreparedReference
+    /// <summary>
+    /// A reference image ready to be compared with any number of candidates. Immutable, so thread-safe. One built with
+    /// <c>pooled: true</c> must be disposed (after its last comparison) to give its planes back.
+    /// </summary>
+    internal sealed class PreparedReference : IDisposable
     {
-        private readonly Backdrop[] _backdrops;
+        private Backdrop[]? _backdrops;
+        private readonly bool _pooled;
 
-        internal PreparedReference(int width, int height, int channels, int stride, Backdrop[] backdrops)
+        internal PreparedReference(int width, int height, int channels, int stride, Backdrop[] backdrops, bool pooled)
         {
             Width = width;
             Height = height;
             Channels = channels;
             Stride = stride;
             _backdrops = backdrops;
+            _pooled = pooled;
+        }
+
+        public void Dispose()
+        {
+            var backdrops = Interlocked.Exchange(ref _backdrops, null);
+            if (!_pooled || backdrops is null)
+            {
+                return;
+            }
+
+            foreach (var backdrop in backdrops)
+            {
+                foreach (var scale in backdrop.Scales)
+                {
+                    ReturnPlanes(scale.Xyb);
+                    ReturnPlanes(scale.Mu);
+                    ReturnPlanes(scale.Sigma);
+                }
+            }
         }
 
         public int Width { get; }
@@ -137,8 +169,9 @@ internal static class Ssimulacra2
                 throw new ArgumentException("Images must be at least 8x8 and match the declared dimensions.");
             }
 
+            var backdrops = _backdrops ?? throw new ObjectDisposedException(nameof(PreparedReference));
             var score = double.MaxValue;
-            foreach (var backdrop in _backdrops)
+            foreach (var backdrop in backdrops)
             {
                 score = Math.Min(score, CompareBackdrop(backdrop, distorted, Width, Height, Channels, Stride, cancellationToken));
             }
@@ -153,91 +186,127 @@ internal static class Ssimulacra2
     /// <summary>One pyramid level of the reference: XYB planes plus their blurred mean and blurred square.</summary>
     internal sealed record ReferenceScale(int Width, int Height, float[][] Xyb, float[][] Mu, float[][] Sigma);
 
-    private static Backdrop PrepareBackdrop(ReadOnlySpan<byte> reference, int width, int height, int channels, int stride, float backdrop, CancellationToken token)
+    private static Backdrop PrepareBackdrop(ReadOnlySpan<byte> reference, int width, int height, int channels, int stride, float backdrop, bool pooled, CancellationToken token)
     {
-        var lin = ToLinearPlanes(reference, width, height, channels, stride, backdrop);
+        var lin = ToLinearPlanes(reference, width, height, channels, stride, backdrop, pooled);
         var scales = new List<ReferenceScale>(NumScales);
         int w = width, h = height, gateW = width, gateH = height;
 
-        // One blur scratch plane serves every channel and every (smaller) scale.
-        var tmp = new float[width * height];
-
-        for (var scale = 0; scale < NumScales; scale++)
+        // One blur scratch plane serves every channel and every (smaller) scale; it never outlives this call, so it is always pooled.
+        var tmp = ScratchPool<float>.Rent(width * height);
+        try
         {
-            token.ThrowIfCancellationRequested();
-            if (gateW < MinDimension || gateH < MinDimension)
+            for (var scale = 0; scale < NumScales; scale++)
             {
-                break;
+                token.ThrowIfCancellationRequested();
+                if (gateW < MinDimension || gateH < MinDimension)
+                {
+                    // Nothing is kept for this level, so its planes go straight back.
+                    if (pooled)
+                    {
+                        ReturnPlanes(lin);
+                    }
+
+                    break;
+                }
+
+                // The last level has no successor, so skip the downsample that would only be thrown away.
+                int nextW = 0, nextH = 0;
+                var next = scale + 1 < NumScales ? Downsample(lin, w, h, out nextW, out nextH, pooled) : null;
+
+                ToXyb(lin, w * h);
+
+                var pixels = w * h;
+                var mu = new float[3][];
+                var sigma = new float[3][];
+                for (var c = 0; c < 3; c++)
+                {
+                    mu[c] = Rent(pixels, pooled);
+                    sigma[c] = Rent(pixels, pooled);
+                    Blur(lin[c], mu[c], tmp, w, h);
+                    BlurProduct(lin[c], lin[c], sigma[c], tmp, w, h);
+                }
+
+                scales.Add(new ReferenceScale(w, h, lin, mu, sigma));
+
+                if (next is null)
+                {
+                    break;
+                }
+
+                lin = next;
+                gateW = w;
+                gateH = h;
+                w = nextW;
+                h = nextH;
             }
-
-            // The last level has no successor, so skip the downsample that would only be thrown away.
-            int nextW = 0, nextH = 0;
-            var next = scale + 1 < NumScales ? Downsample(lin, w, h, out nextW, out nextH) : null;
-
-            ToXyb(lin, w * h);
-
-            var pixels = w * h;
-            var mu = new float[3][];
-            var sigma = new float[3][];
-            for (var c = 0; c < 3; c++)
-            {
-                mu[c] = new float[pixels];
-                sigma[c] = new float[pixels];
-                Blur(lin[c], mu[c], tmp, w, h);
-                BlurProduct(lin[c], lin[c], sigma[c], tmp, w, h);
-            }
-
-            scales.Add(new ReferenceScale(w, h, lin, mu, sigma));
-
-            if (next is null)
-            {
-                break;
-            }
-
-            lin = next;
-            gateW = w;
-            gateH = h;
-            w = nextW;
-            h = nextH;
+        }
+        finally
+        {
+            ScratchPool<float>.Return(tmp);
         }
 
         return new Backdrop(backdrop, scales.ToArray());
     }
 
+    private static float[] Rent(int length, bool pooled) => pooled ? ScratchPool<float>.Rent(length) : new float[length];
+
+    private static void ReturnPlanes(float[][] planes)
+    {
+        foreach (var plane in planes)
+        {
+            ScratchPool<float>.Return(plane);
+        }
+    }
+
     private static double CompareBackdrop(Backdrop reference, ReadOnlySpan<byte> distorted, int width, int height, int channels, int stride, CancellationToken token)
     {
-        var lin2 = ToLinearPlanes(distorted, width, height, channels, stride, reference.Value);
+        // Every plane here is private to this call, so all of them are borrowed and given back (even when cancelled).
+        float[][]? lin2 = ToLinearPlanes(distorted, width, height, channels, stride, reference.Value, pooled: true);
         var scales = new (double[] Ssim, double[] Edge)[NumScales];
         var scaleCount = 0;
 
-        // Four working planes sized for the largest scale; every channel and every smaller scale reuses their prefix,
-        // instead of allocating (and abandoning on the LOH) a fresh set per channel per scale.
+        // Four working planes sized for the largest scale; every channel and every smaller scale reuses their prefix.
         var first = reference.Scales[0];
-        var work = new Workspace(first.Width * first.Height);
-
-        foreach (var level in reference.Scales)
+        Workspace? work = null;
+        try
         {
-            token.ThrowIfCancellationRequested();
-            var next2 = scaleCount + 1 < reference.Scales.Length ? Downsample(lin2, level.Width, level.Height, out _, out _) : null;
-            ToXyb(lin2, level.Width * level.Height);
+            work = new Workspace(first.Width * first.Height);
 
-            scales[scaleCount++] = ComputeScale(level, lin2, work, token);
+            foreach (var level in reference.Scales)
+            {
+                token.ThrowIfCancellationRequested();
+                var next2 = scaleCount + 1 < reference.Scales.Length ? Downsample(lin2!, level.Width, level.Height, out _, out _, pooled: true) : null;
+                ToXyb(lin2!, level.Width * level.Height);
 
-            lin2 = next2!;
+                scales[scaleCount++] = ComputeScale(level, lin2!, work, token);
+
+                ReturnPlanes(lin2!);
+                lin2 = next2;
+            }
+        }
+        finally
+        {
+            if (lin2 is not null)
+            {
+                ReturnPlanes(lin2);
+            }
+
+            work?.Dispose();
         }
 
         return FinalScore(scales, scaleCount);
     }
 
     /// <summary>Scratch planes for one scale's comparison. Contents are undefined between uses.</summary>
-    private sealed class Workspace
+    private sealed class Workspace : IDisposable
     {
         public Workspace(int pixels)
         {
-            Tmp = new float[pixels];
-            Mu2 = new float[pixels];
-            S22 = new float[pixels];
-            S12 = new float[pixels];
+            Tmp = ScratchPool<float>.Rent(pixels);
+            Mu2 = ScratchPool<float>.Rent(pixels);
+            S22 = ScratchPool<float>.Rent(pixels);
+            S12 = ScratchPool<float>.Rent(pixels);
         }
 
         public float[] Tmp { get; }
@@ -247,6 +316,14 @@ internal static class Ssimulacra2
         public float[] S22 { get; }
 
         public float[] S12 { get; }
+
+        public void Dispose()
+        {
+            ScratchPool<float>.Return(Tmp);
+            ScratchPool<float>.Return(Mu2);
+            ScratchPool<float>.Return(S22);
+            ScratchPool<float>.Return(S12);
+        }
     }
 
     private static (double[] Ssim, double[] Edge) ComputeScale(ReferenceScale reference, float[][] xyb2, Workspace work, CancellationToken token)
@@ -352,10 +429,10 @@ internal static class Ssimulacra2
     // ---- colour ------------------------------------------------------------------------------------------
 
     /// <param name="stride">Bytes per pixel in <paramref name="pixels"/>. With <paramref name="channels"/> = 3 and stride 4 the alpha byte is ignored.</param>
-    private static float[][] ToLinearPlanes(ReadOnlySpan<byte> pixels, int width, int height, int channels, int stride, float backdrop)
+    private static float[][] ToLinearPlanes(ReadOnlySpan<byte> pixels, int width, int height, int channels, int stride, float backdrop, bool pooled)
     {
         var count = width * height;
-        var planes = new[] { new float[count], new float[count], new float[count] };
+        var planes = new[] { Rent(count, pooled), Rent(count, pooled), Rent(count, pooled) };
         var lut = SrgbToLinear;
 
         if (channels == 3)
@@ -432,13 +509,13 @@ internal static class Ssimulacra2
         });
     }
 
-    private static float[][] Downsample(float[][] planes, int width, int height, out int newWidth, out int newHeight)
+    private static float[][] Downsample(float[][] planes, int width, int height, out int newWidth, out int newHeight, bool pooled)
     {
         newWidth = (width + 1) / 2;
         newHeight = (height + 1) / 2;
         var nw = newWidth;
         var nh = newHeight;
-        var result = new[] { new float[nw * nh], new float[nw * nh], new float[nw * nh] };
+        var result = new[] { Rent(nw * nh, pooled), Rent(nw * nh, pooled), Rent(nw * nh, pooled) };
 
         for (var c = 0; c < 3; c++)
         {
