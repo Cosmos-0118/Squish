@@ -38,7 +38,7 @@ When this block is present, `fetch-tools.ps1` downloads the checksum manifest, p
 
 For pinned vendor releases, prefer immutable archive URLs over moving `stable`, `latest`, or redirect-based endpoints. That keeps historical CI runs reproducible after upstream promotes a newer point release.
 
-The bundled ffmpeg entry points at the `ffmpeg-git-full.7z` build from gyan.dev so hardware-less installs still ship the `libsvtav1` encoder. Re-run the helper whenever upstream refreshes the archive to ensure aggressive video optimisations keep working.
+The bundled ffmpeg entry points at the gyan.dev `full_build-shared` release, which is large because it links many codecs Squish never uses. `docs/ffmpeg-slim-build.md` describes a slim build workflow that can replace it (SVT-AV1 and the NVENC/AMF/QSV encoders are kept).
 
 ## Subfolders
 
