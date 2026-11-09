@@ -15,6 +15,7 @@ internal static class ExternalToolResolver
 {
     private static readonly ConcurrentDictionary<string, string?> Cache = new(StringComparer.OrdinalIgnoreCase);
     private const int MaxSearchDepth = 3;
+    private const int MaxRepoSearchLevels = 8;
 
     public static string FileName(string tool) => OperatingSystem.IsWindows() ? tool + ".exe" : tool;
 
@@ -149,6 +150,25 @@ internal static class ExternalToolResolver
             if (candidate is not null && Directory.Exists(candidate))
             {
                 yield return candidate;
+            }
+        }
+
+        // Running from a source checkout (F5, dotnet run, tests): the exe sits in <repo>/src/<project>/bin/<config>/<tfm>[/<rid>],
+        // well below the staged <repo>/tools. Walk upwards, but only accept a tools folder that carries the manifest, so a stray
+        // "tools" directory in some parent is never trusted.
+        var directory = new DirectoryInfo(baseDir);
+        for (var level = 0; level < MaxRepoSearchLevels && directory is not null; level++, directory = directory.Parent)
+        {
+            var tools = Path.Combine(directory.FullName, "tools");
+            if (File.Exists(Path.Combine(tools, "tools-manifest.json")))
+            {
+                var candidate = Path.Combine(tools, toolFolder);
+                if (Directory.Exists(candidate))
+                {
+                    yield return candidate;
+                }
+
+                yield break;
             }
         }
     }
