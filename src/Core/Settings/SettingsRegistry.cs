@@ -21,6 +21,7 @@ public static class SettingsRegistry
     public static readonly SettingKey<bool> OptimiseVideoClipboard = Bool("optimiseVideoClipboard", true);
     public static readonly SettingKey<bool> OptimiseClipboardFileDrops = Bool("optimiseClipboardFileDrops", false);
     public static readonly SettingKey<bool> OptimiseImagePathClipboard = Bool("optimiseImagePathClipboard", false);
+    public static readonly SettingKey<bool> OptimiseDocumentClipboard = Bool("optimiseDocumentClipboard", false);
     public static readonly SettingKey<bool> StripMetadata = Bool("stripMetadata", true);
     public static readonly SettingKey<bool> PreserveDates = Bool("preserveDates", true);
     public static readonly SettingKey<bool> PreserveColorMetadata = Bool("preserveColorMetadata", true);
@@ -57,6 +58,8 @@ public static class SettingsRegistry
     public static readonly SettingKey<bool> UseAggressiveOptimisationJpeg = Bool("useAggressiveOptimisationJPEG", false);
     public static readonly SettingKey<bool> UseAggressiveOptimisationPng = Bool("useAggressiveOptimisationPNG", false);
     public static readonly SettingKey<bool> UseAggressiveOptimisationGif = Bool("useAggressiveOptimisationGIF", false);
+    public static readonly SettingKey<bool> UseAggressiveOptimisationPdf = Bool("useAggressiveOptimisationPDF", false);
+    public static readonly SettingKey<bool> UseAggressiveOptimisationDocuments = Bool("useAggressiveOptimisationDocuments", false);
     public static readonly SettingKey<VideoEncoderPreset> VideoEncoderPresetPreference = new("videoEncoderPreset", VideoEncoderPreset.Auto);
     public static readonly SettingKey<bool> ForceFullImageOptimisations = Bool("forceFullImageOptimisations", false);
 
@@ -64,6 +67,14 @@ public static class SettingsRegistry
     public static readonly SettingKey<string[]> VideoDirs = Array("videoDirs", DesktopPath);
     public static readonly SettingKey<bool> EnableAutomaticImageOptimisations = Bool("enableAutomaticImageOptimisations", true);
     public static readonly SettingKey<bool> EnableAutomaticVideoOptimisations = Bool("enableAutomaticVideoOptimisations", true);
+
+    // PDFs and Office/OpenDocument/EPUB files are rewritten in place, so watching them is opt-in.
+    public static readonly SettingKey<string[]> PdfDirs = Array("pdfDirs", DesktopPath);
+    public static readonly SettingKey<string[]> DocumentDirs = Array("documentDirs", DesktopPath);
+    public static readonly SettingKey<bool> EnableAutomaticPdfOptimisations = Bool("enableAutomaticPdfOptimisations", false);
+    public static readonly SettingKey<bool> EnableAutomaticDocumentOptimisations = Bool("enableAutomaticDocumentOptimisations", false);
+    public static readonly SettingKey<int> MaxDocumentSizeMb = Int("maxDocumentSizeMB", 200);
+    public static readonly SettingKey<int> MaxDocumentFileCount = Int("maxDocumentFileCount", 1);
 
     public static readonly SettingKey<int> MaxVideoSizeMb = Int("maxVideoSizeMB", 500);
     public static readonly SettingKey<int> MaxImageSizeMb = Int("maxImageSizeMB", 50);
@@ -133,6 +144,7 @@ public static class SettingsRegistry
         OptimiseVideoClipboard,
         OptimiseClipboardFileDrops,
         OptimiseImagePathClipboard,
+        OptimiseDocumentClipboard,
         StripMetadata,
         PreserveDates,
         PreserveColorMetadata,
@@ -161,12 +173,20 @@ public static class SettingsRegistry
         UseAggressiveOptimisationJpeg,
         UseAggressiveOptimisationPng,
         UseAggressiveOptimisationGif,
+        UseAggressiveOptimisationPdf,
+        UseAggressiveOptimisationDocuments,
         VideoEncoderPresetPreference,
         ForceFullImageOptimisations,
         ImageDirs,
         VideoDirs,
         EnableAutomaticImageOptimisations,
         EnableAutomaticVideoOptimisations,
+        PdfDirs,
+        DocumentDirs,
+        EnableAutomaticPdfOptimisations,
+        EnableAutomaticDocumentOptimisations,
+        MaxDocumentSizeMb,
+        MaxDocumentFileCount,
         MaxVideoSizeMb,
         MaxImageSizeMb,
         MaxVideoFileCount,

@@ -22,6 +22,12 @@ public static class SquishFileGuards
             return false;
         }
 
+        // Office keeps a hidden "~$name.docx" next to every open document. It is not a document and must never be touched.
+        if (fileName.StartsWith("~$", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
         foreach (var suffix in OutputSuffixes)
         {
             if (fileName.EndsWith(suffix, StringComparison.OrdinalIgnoreCase) ||

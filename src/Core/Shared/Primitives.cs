@@ -130,7 +130,22 @@ public static class MediaFormats
         "webp", "avif", "heic", "bmp", "tiff", "tif", "png", "jpeg", "jpg", "gif"
     };
 
+    private static readonly HashSet<string> PdfExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "pdf"
+    };
+
+    /// <summary>ZIP-based documents: Office Open XML, OpenDocument and EPUB.</summary>
+    private static readonly HashSet<string> DocumentExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "xlsx", "xlsm", "docx", "docm", "pptx", "pptm", "ods", "odt", "odp", "epub"
+    };
+
     public static IReadOnlyCollection<string> ImageExtensionNames => ImageExtensions;
+
+    public static IReadOnlyCollection<string> PdfExtensionNames => PdfExtensions;
+
+    public static IReadOnlyCollection<string> DocumentExtensionNames => DocumentExtensions;
 
     public static IReadOnlyCollection<string> VideoExtensionNames => VideoExtensions;
 
@@ -143,6 +158,14 @@ public static class MediaFormats
     public static bool IsVideo(FilePath path) => IsVideo(path.Extension);
 
     public static bool IsVideo(string? extension) => !string.IsNullOrWhiteSpace(extension) && VideoExtensions.Contains(extension.TrimStart('.'));
+
+    public static bool IsPdf(FilePath path) => IsPdf(path.Extension);
+
+    public static bool IsPdf(string? extension) => !string.IsNullOrWhiteSpace(extension) && PdfExtensions.Contains(extension.TrimStart('.'));
+
+    public static bool IsDocument(FilePath path) => IsDocument(path.Extension);
+
+    public static bool IsDocument(string? extension) => !string.IsNullOrWhiteSpace(extension) && DocumentExtensions.Contains(extension.TrimStart('.'));
 }
 
 public enum CropOrientation

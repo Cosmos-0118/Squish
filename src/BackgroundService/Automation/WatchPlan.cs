@@ -11,19 +11,30 @@ internal enum WatchTypes
 {
     None = 0,
     Image = 1,
-    Video = 2
+    Video = 2,
+    Pdf = 4,
+    Document = 8
 }
 
 internal readonly record struct WatchRootSpec(string Path, WatchTypes Types);
 
 /// <summary>
-/// Turns the configured image/video folder lists into the smallest set of OS watches that still covers them.
+/// Turns the configured image/video/PDF/document folder lists into the smallest set of OS watches that still covers them.
 /// A folder listed for both kinds shares one watch, and a folder nested inside another watched folder that
 /// already covers its types needs none of its own.
 /// </summary>
 internal static class WatchPlan
 {
-    public static IReadOnlyList<WatchRootSpec> Build(bool paused, bool images, bool videos, IEnumerable<string?> imageDirs, IEnumerable<string?> videoDirs)
+    public static IReadOnlyList<WatchRootSpec> Build(
+        bool paused,
+        bool images,
+        bool videos,
+        IEnumerable<string?> imageDirs,
+        IEnumerable<string?> videoDirs,
+        bool pdfs = false,
+        bool documents = false,
+        IEnumerable<string?>? pdfDirs = null,
+        IEnumerable<string?>? documentDirs = null)
     {
         if (paused)
         {
@@ -41,6 +52,16 @@ internal static class WatchPlan
             Merge(merged, videoDirs, WatchTypes.Video);
         }
 
+        if (pdfs && pdfDirs is not null)
+        {
+            Merge(merged, pdfDirs, WatchTypes.Pdf);
+        }
+
+        if (documents && documentDirs is not null)
+        {
+            Merge(merged, documentDirs, WatchTypes.Document);
+        }
+
         var roots = merged.Select(kvp => new WatchRootSpec(kvp.Key, kvp.Value)).ToList();
         return roots
             .Where(root => !roots.Any(other => IsCoveredBy(root, other)))
@@ -52,7 +73,18 @@ internal static class WatchPlan
     {
         ItemType.Image => WatchTypes.Image,
         ItemType.Video => WatchTypes.Video,
+        ItemType.Pdf => WatchTypes.Pdf,
+        ItemType.Document => WatchTypes.Document,
         _ => WatchTypes.None
+    };
+
+    /// <summary>The item type for a single-type watch hit. Anything that is not video, PDF or document is an image.</summary>
+    public static ItemType ItemTypeFor(WatchTypes types) => types switch
+    {
+        WatchTypes.Video => ItemType.Video,
+        WatchTypes.Pdf => ItemType.Pdf,
+        WatchTypes.Document => ItemType.Document,
+        _ => ItemType.Image
     };
 
     private static void Merge(Dictionary<string, WatchTypes> target, IEnumerable<string?> directories, WatchTypes type)

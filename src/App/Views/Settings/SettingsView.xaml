@@ -241,6 +241,8 @@
                             <CheckBox Style="{StaticResource SettingSwitch}" Content="{loc:Loc settings.clipboard.optimiseVideos}" IsChecked="{Binding OptimiseVideoClipboard}" />
                             <Border Style="{StaticResource Divider}" />
                             <CheckBox Style="{StaticResource SettingSwitch}" Content="{loc:Loc settings.clipboard.optimiseFileDrops}" IsChecked="{Binding OptimiseClipboardFileDrops}" />
+                            <Border Style="{StaticResource Divider}" />
+                            <CheckBox Style="{StaticResource SettingSwitch}" Content="{loc:Loc settings.clipboard.optimiseDocuments}" Tag="{loc:Loc settings.clipboard.optimiseDocuments.subtitle}" IsChecked="{Binding OptimiseDocumentClipboard}" />
                         </StackPanel>
                     </Border>
                 </StackPanel>
@@ -253,6 +255,10 @@
                             <CheckBox Style="{StaticResource SettingSwitch}" Content="{loc:Loc settings.automation.watchImages}" IsChecked="{Binding EnableAutomaticImageOptimisations}" />
                             <Border Style="{StaticResource Divider}" />
                             <CheckBox Style="{StaticResource SettingSwitch}" Content="{loc:Loc settings.automation.watchVideos}" IsChecked="{Binding EnableAutomaticVideoOptimisations}" />
+                            <Border Style="{StaticResource Divider}" />
+                            <CheckBox Style="{StaticResource SettingSwitch}" Content="{loc:Loc settings.automation.watchPdfs}" Tag="{loc:Loc settings.automation.watchPdfs.subtitle}" IsChecked="{Binding EnableAutomaticPdfOptimisations}" />
+                            <Border Style="{StaticResource Divider}" />
+                            <CheckBox Style="{StaticResource SettingSwitch}" Content="{loc:Loc settings.automation.watchDocuments}" Tag="{loc:Loc settings.automation.watchDocuments.subtitle}" IsChecked="{Binding EnableAutomaticDocumentOptimisations}" />
                         </StackPanel>
                     </Border>
 
@@ -301,6 +307,52 @@
                                        Style="{StaticResource Text.Body}" />
                         </Grid>
                     </Border>
+
+                    <Grid Margin="0,28,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Margin="0,0,12,0">
+                            <TextBlock Text="{loc:Loc settings.automation.pdfFoldersTitle}" Style="{StaticResource Text.SectionLabel}" Margin="0,0,0,2" />
+                            <TextBlock Text="{loc:Loc settings.automation.folderSubtitle}" Style="{StaticResource Text.Body}" />
+                        </StackPanel>
+                        <Button Grid.Column="1" VerticalAlignment="Bottom" Content="{loc:Loc settings.automation.addFolder}" Command="{Binding AddPdfDirectoryCommand}" />
+                    </Grid>
+                    <Border Style="{StaticResource Card}">
+                        <Grid>
+                            <ItemsControl ItemsSource="{Binding PdfDirectories}"
+                                          Tag="{Binding RemovePdfDirectoryCommand}"
+                                          ItemTemplate="{StaticResource FolderRowTemplate}" />
+                            <TextBlock Text="{loc:Loc settings.automation.pdfFoldersEmpty}"
+                                       Margin="16,14"
+                                       Visibility="{Binding PdfDirectories.Count, Converter={StaticResource ShowWhenEquals}, ConverterParameter=0}"
+                                       Style="{StaticResource Text.Body}" />
+                        </Grid>
+                    </Border>
+
+                    <Grid Margin="0,28,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Margin="0,0,12,0">
+                            <TextBlock Text="{loc:Loc settings.automation.documentFoldersTitle}" Style="{StaticResource Text.SectionLabel}" Margin="0,0,0,2" />
+                            <TextBlock Text="{loc:Loc settings.automation.documentFolderSubtitle}" Style="{StaticResource Text.Body}" />
+                        </StackPanel>
+                        <Button Grid.Column="1" VerticalAlignment="Bottom" Content="{loc:Loc settings.automation.addFolder}" Command="{Binding AddDocumentDirectoryCommand}" />
+                    </Grid>
+                    <Border Style="{StaticResource Card}">
+                        <Grid>
+                            <ItemsControl ItemsSource="{Binding DocumentDirectories}"
+                                          Tag="{Binding RemoveDocumentDirectoryCommand}"
+                                          ItemTemplate="{StaticResource FolderRowTemplate}" />
+                            <TextBlock Text="{loc:Loc settings.automation.documentFoldersEmpty}"
+                                       Margin="16,14"
+                                       Visibility="{Binding DocumentDirectories.Count, Converter={StaticResource ShowWhenEquals}, ConverterParameter=0}"
+                                       Style="{StaticResource Text.Body}" />
+                        </Grid>
+                    </Border>
                 </StackPanel>
 
                 <!-- Optimisation -->
@@ -312,6 +364,16 @@
                                       Content="{loc:Loc settings.optimisation.aggressive}"
                                       Tag="{loc:Loc settings.optimisation.aggressive.subtitle}"
                                       IsChecked="{Binding AggressiveImageCompression}" />
+                            <Border Style="{StaticResource Divider}" />
+                            <CheckBox Style="{StaticResource SettingSwitch}"
+                                      Content="{loc:Loc settings.optimisation.aggressivePdf}"
+                                      Tag="{loc:Loc settings.optimisation.aggressivePdf.subtitle}"
+                                      IsChecked="{Binding AggressivePdfOptimisation}" />
+                            <Border Style="{StaticResource Divider}" />
+                            <CheckBox Style="{StaticResource SettingSwitch}"
+                                      Content="{loc:Loc settings.optimisation.aggressiveDocuments}"
+                                      Tag="{loc:Loc settings.optimisation.aggressiveDocuments.subtitle}"
+                                      IsChecked="{Binding AggressiveDocumentOptimisation}" />
                             <Border Style="{StaticResource Divider}" />
                             <CheckBox Style="{StaticResource SettingSwitch}"
                                       Content="{loc:Loc settings.optimisation.downscale}"

@@ -156,6 +156,16 @@ internal static class AutomationTargetResolver
             return ItemType.Video;
         }
 
+        if (MediaFormats.IsPdf(path))
+        {
+            return ItemType.Pdf;
+        }
+
+        if (MediaFormats.IsDocument(path))
+        {
+            return ItemType.Document;
+        }
+
         return null;
     }
 }
@@ -256,6 +266,21 @@ internal sealed class AutomationTypeFilter
             case "video":
             case "videos":
                 foreach (var ext in MediaFormats.VideoExtensionNames)
+                {
+                    yield return ext;
+                }
+                yield break;
+            case "pdf":
+            case "pdfs":
+                foreach (var ext in MediaFormats.PdfExtensionNames)
+                {
+                    yield return ext;
+                }
+                yield break;
+            case "document":
+            case "documents":
+            case "office":
+                foreach (var ext in MediaFormats.DocumentExtensionNames)
                 {
                     yield return ext;
                 }

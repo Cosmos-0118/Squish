@@ -47,6 +47,7 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
     private volatile bool _optimiseVideoClipboard;
     private volatile bool _optimiseClipboardFileDrops;
     private volatile bool _optimiseImagePathClipboard;
+    private volatile bool _optimiseDocumentClipboard;
     private string _customTemplate = string.Empty;
     private static readonly byte[] PngSignature = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
 
@@ -311,7 +312,7 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
         var results = new List<ClipboardItem>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        if (_optimiseClipboardFileDrops)
+        if (_optimiseClipboardFileDrops || _optimiseDocumentClipboard)
         {
             foreach (var rawPath in snapshot.FilePaths)
             {
@@ -339,14 +340,21 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
 
                 if (MediaFormats.IsImage(filePath))
                 {
-                    results.Add(new ClipboardItem(filePath, ItemType.Image, ClipboardOrigin.FileDrop, false, true, snapshot.Sequence));
+                    if (_optimiseClipboardFileDrops)
+                    {
+                        results.Add(new ClipboardItem(filePath, ItemType.Image, ClipboardOrigin.FileDrop, false, true, snapshot.Sequence));
+                    }
                 }
                 else if (MediaFormats.IsVideo(filePath))
                 {
-                    if (_optimiseVideoClipboard)
+                    if (_optimiseClipboardFileDrops && _optimiseVideoClipboard)
                     {
                         results.Add(new ClipboardItem(filePath, ItemType.Video, ClipboardOrigin.FileDrop, false, false, snapshot.Sequence));
                     }
+                }
+                else if (_optimiseDocumentClipboard && DocumentTypeOf(filePath) is { } documentType)
+                {
+                    results.Add(new ClipboardItem(filePath, documentType, ClipboardOrigin.FileDrop, false, false, snapshot.Sequence));
                 }
             }
         }
@@ -390,6 +398,12 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
                 if (_optimiseVideoClipboard && MediaFormats.IsVideo(filePath))
                 {
                     results.Add(new ClipboardItem(filePath, ItemType.Video, ClipboardOrigin.TextPath, false, false, snapshot.Sequence));
+                    continue;
+                }
+
+                if (_optimiseDocumentClipboard && DocumentTypeOf(filePath) is { } documentType)
+                {
+                    results.Add(new ClipboardItem(filePath, documentType, ClipboardOrigin.TextPath, false, false, snapshot.Sequence));
                 }
             }
         }
@@ -450,6 +464,16 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
             _logger.LogDebug("Cancelling clipboard optimisation {RequestId}; the clipboard now holds a different image.", requestId);
             _coordinator.Cancel(requestId, "Superseded by newer clipboard content");
         }
+    }
+
+    private static ItemType? DocumentTypeOf(FilePath filePath)
+    {
+        if (MediaFormats.IsPdf(filePath))
+        {
+            return ItemType.Pdf;
+        }
+
+        return MediaFormats.IsDocument(filePath) ? ItemType.Document : null;
     }
 
     private bool ShouldSkipSourceFile(FilePath filePath)
@@ -839,6 +863,7 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
               string.Equals(name, SettingsRegistry.CustomNameTemplateForClipboardImages.Name, StringComparison.Ordinal) ||
               string.Equals(name, SettingsRegistry.OptimiseVideoClipboard.Name, StringComparison.Ordinal) ||
             string.Equals(name, SettingsRegistry.OptimiseClipboardFileDrops.Name, StringComparison.Ordinal) ||
+              string.Equals(name, SettingsRegistry.OptimiseDocumentClipboard.Name, StringComparison.Ordinal) ||
               string.Equals(name, SettingsRegistry.OptimiseImagePathClipboard.Name, StringComparison.Ordinal);
     }
 
@@ -855,10 +880,11 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
             _optimiseVideoClipboard = SettingsHost.Get(SettingsRegistry.OptimiseVideoClipboard);
             _optimiseClipboardFileDrops = SettingsHost.Get(SettingsRegistry.OptimiseClipboardFileDrops);
             _optimiseImagePathClipboard = SettingsHost.Get(SettingsRegistry.OptimiseImagePathClipboard);
+            _optimiseDocumentClipboard = SettingsHost.Get(SettingsRegistry.OptimiseDocumentClipboard);
 
             // Only read what we will use: decoding a large text blob is wasted work otherwise.
             _monitor.CaptureOptions = new ClipboardCaptureOptions(
-                Files: _optimiseClipboardFileDrops,
+                Files: _optimiseClipboardFileDrops || _optimiseDocumentClipboard,
                 Image: true,
                 Text: _optimiseImagePathClipboard);
         }
