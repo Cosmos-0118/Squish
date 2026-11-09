@@ -41,8 +41,9 @@ rebuilds; otherwise a staged `tools/ffmpeg` is reused like any other tool.
 ### In CI
 
 `ci`, `release` and `tool-updates` stage ffmpeg with `.github/actions/stage-ffmpeg`, which has its **own cache**, keyed only
-on the ffmpeg version, `build.tag` and the recipe (`scripts/ffmpeg-slim/*`, `scripts/fetch-tools.ps1`). The other tools use a
-separate cache and `fetch-tools.ps1 -Exclude ffmpeg`, so bumping mozjpeg or any other tool never recompiles ffmpeg.
+on the ffmpeg version, `build.tag` and the recipe (`scripts/ffmpeg-slim/*`) and deliberately not on `fetch-tools.ps1`, so
+editing the download logic never recompiles it (the `v1` in the key is a manual salt for the rare install change that must).
+The other tools use a separate cache and `fetch-tools.ps1 -Exclude ffmpeg`, so bumping mozjpeg or any other tool never recompiles ffmpeg.
 
 On a miss the action installs MSYS2 and the packages in `scripts/ffmpeg-slim/msys2-packages.txt`, compiles ffmpeg through
 `fetch-tools.ps1`, and **saves the cache immediately**, so a later failure in the same job (a flaky download, a failing test)

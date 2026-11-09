@@ -1,7 +1,8 @@
 name: Stage ffmpeg
 description: >
   Puts the slim, compiled ffmpeg into tools/ffmpeg. It has its own cache, keyed only on the ffmpeg version and the
-  build recipe (scripts/ffmpeg-slim, scripts/fetch-tools.ps1), so changing any other tool never recompiles it. On a miss
+  build recipe (scripts/ffmpeg-slim), so changing any other tool, or the download logic in scripts/fetch-tools.ps1,
+  never recompiles it. On a miss
   it sets up MSYS2, builds with scripts/fetch-tools.ps1 and saves the cache straight away, so a later failure in the
   same job (a flaky download of another tool, a failing test) does not throw the build away. Needs the repository checked out.
 
@@ -20,7 +21,9 @@ runs:
       uses: actions/cache/restore@v6
       with:
         path: tools/ffmpeg
-        key: ffmpeg-${{ runner.os }}-${{ steps.ver.outputs.version }}-${{ hashFiles('scripts/ffmpeg-slim/*', 'scripts/fetch-tools.ps1') }}
+        # Only what decides the compiled output goes in the key. fetch-tools.ps1 is deliberately not part of it: editing its
+        # download retries must not throw away a 13 minute build. Bump the v1 if how the build is installed ever has to change.
+        key: ffmpeg-v1-${{ runner.os }}-${{ steps.ver.outputs.version }}-${{ hashFiles('scripts/ffmpeg-slim/*') }}
 
     - name: Prepare the ffmpeg build
       if: steps.cache.outputs.cache-hit != 'true'
