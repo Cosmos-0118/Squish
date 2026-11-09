@@ -275,26 +275,26 @@ Squish is a hobby project and the installer is **unsigned**. Some antivirus engi
 
 <!-- This block is rewritten by the release workflow (scripts/update-release-integrity.ps1). Do not edit it by hand. -->
 <!-- release-integrity:start -->
-- **Latest release:** [Squish 2.3.4](https://github.com/Cosmos-0118/Squish/releases/tag/v2.3.4)
+- **Latest release:** [Squish 2.4.0](https://github.com/Cosmos-0118/Squish/releases/tag/v2.4.0)
 - **SHA256 checksums:**
 
   | File | SHA256 |
   | --- | --- |
-  | `Squish-2.3.4-win-x64.zip` | `3c6bb30aedabe969bb8c79a692f352dc380fda1bb52cf9ac0e9d8c8ea97f290b` |
-  | `Squish-Setup-2.3.4.exe` | `1e7649567cc343c7f409f9c44e8adc6dacf44cb32638adac1045548da062b38d` |
+  | `Squish-2.4.0-win-x64.zip` | `b32cb722a03499f442386af05db1a24c3a38819f5ea1bdadaf6e647d90518857` |
+  | `Squish-Setup-2.4.0.exe` | `c433cea71949fa9d3e982992a56d01f4e058ecba46cea75502f1ffa0e5017490` |
 
   The same values are published as `SHA256SUMS.txt` on the release page.
 
 - **Verify locally** (run it in the folder you downloaded to):
 
   ```powershell
-  CertUtil -hashfile Squish-Setup-2.3.4.exe SHA256
+  CertUtil -hashfile Squish-Setup-2.4.0.exe SHA256
   ```
 
   Or have PowerShell compare it for you; it prints `True` when the file is genuine:
 
   ```powershell
-  (Get-FileHash .\Squish-Setup-2.3.4.exe -Algorithm SHA256).Hash -eq '1e7649567cc343c7f409f9c44e8adc6dacf44cb32638adac1045548da062b38d'
+  (Get-FileHash .\Squish-Setup-2.4.0.exe -Algorithm SHA256).Hash -eq 'c433cea71949fa9d3e982992a56d01f4e058ecba46cea75502f1ffa0e5017490'
   ```
 <!-- release-integrity:end -->
 
