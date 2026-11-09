@@ -578,6 +578,13 @@ public sealed class VideoOptimiser : IOptimiser
             probeInfo,
             RemuxPlan.Disabled);
 
+        // Subtitles are timed against the original media, so they cannot follow a speed change (the video is retimed
+        // with setpts, the text is not) and animated exports have no subtitle track at all.
+        if (mode != VideoOptimiserMode.Gif && !IsEffectiveSpeedChange(playbackSpeed) && probeInfo is not null)
+        {
+            plan = plan with { Subtitles = SubtitlePlan.For(probeInfo.SubtitleCodecs, outputExtension) };
+        }
+
         if (options.EnableContainerAwareRemux)
         {
             var remux = DetermineRemuxPlan(plan, options, probeInfo);
@@ -1810,6 +1817,9 @@ public sealed record VideoOptimiserPlan(
         => filters.Any(filter => !filter.StartsWith("mpdecimate", StringComparison.Ordinal));
 
     public bool ShouldRemux => Remux.Enabled;
+
+    /// <summary>Subtitle streams carried into the output (none unless the probe found convertible ones).</summary>
+    public SubtitlePlan Subtitles { get; init; } = SubtitlePlan.None;
 }
 
 public interface IVideoToolchain
@@ -2038,6 +2048,7 @@ internal sealed class ExternalVideoToolchain : IVideoToolchain
         if (includeAudio)
         {
             AppendAudioArguments(plan, args);
+            AppendSubtitleArguments(plan.Subtitles, args);
         }
         else
         {
@@ -2046,7 +2057,9 @@ internal sealed class ExternalVideoToolchain : IVideoToolchain
 
         if (plan.StripMetadata)
         {
-            args.AddRange(new[] { "-map_metadata", "-1", "-map_chapters", "-1" });
+            // Global level only: "-map_metadata -1" also erases every stream's language and title, which breaks audio/subtitle track
+            // selection. Location, device and title tags live in the container metadata, which this still removes.
+            args.AddRange(new[] { "-map_metadata:g", "-1", "-map_chapters", "-1" });
         }
 
         if (SupportsFastStart(plan.OutputExtension))
@@ -2115,9 +2128,19 @@ internal sealed class ExternalVideoToolchain : IVideoToolchain
             "-map", "0"
         };
 
+        // `-c copy -map 0` hands every subtitle stream to the muxer, and MP4/MOV reject SRT/ASS/bitmap tracks outright
+        // ("codec not currently supported in container"), failing the whole remux. Matroska takes them all unchanged.
+        if (!plan.OutputExtension.Equals("mkv", StringComparison.OrdinalIgnoreCase))
+        {
+            args.AddRange(new[] { "-map", "-0:s?" });
+            AppendSubtitleArguments(plan.Subtitles, args);
+        }
+
         if (plan.StripMetadata)
         {
-            args.AddRange(new[] { "-map_metadata", "-1" });
+            // Global level only: "-map_metadata -1" also erases every stream's language and title, which breaks audio/subtitle track
+            // selection. Location, device and title tags live in the container metadata, which this still removes.
+            args.AddRange(new[] { "-map_metadata:g", "-1" });
         }
 
         if (plan.OutputExtension.Equals("mp4", StringComparison.OrdinalIgnoreCase) || plan.OutputExtension.Equals("m4v", StringComparison.OrdinalIgnoreCase) || plan.OutputExtension.Equals("mov", StringComparison.OrdinalIgnoreCase))
@@ -2127,6 +2150,22 @@ internal sealed class ExternalVideoToolchain : IVideoToolchain
 
         args.AddRange(new[] { "-progress", "pipe:2", "-nostats", "-hide_banner", "-stats_period", "0.2", output.Value });
         return args;
+    }
+
+    /// <summary>Maps the planned subtitle streams and sets how they are written (mov_text conversion or stream copy).</summary>
+    private static void AppendSubtitleArguments(SubtitlePlan subtitles, List<string> args)
+    {
+        if (!subtitles.Any)
+        {
+            return;
+        }
+
+        foreach (var index in subtitles.Streams)
+        {
+            args.AddRange(new[] { "-map", $"0:s:{index.ToInvariantString()}" });
+        }
+
+        args.AddRange(new[] { "-c:s", subtitles.Codec! });
     }
 
     private static void AppendAudioArguments(VideoOptimiserPlan plan, List<string> args)

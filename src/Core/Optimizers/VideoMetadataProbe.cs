@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Text.Json;
 using System.Threading;
@@ -81,6 +82,7 @@ internal static class VideoProbeParser
 
             VideoStreamInfo? video = null;
             AudioStreamInfo? audio = null;
+            var subtitleCodecs = new List<string>();
 
             if (root.TryGetProperty("streams", out var streams) && streams.ValueKind == JsonValueKind.Array)
             {
@@ -95,12 +97,17 @@ internal static class VideoProbeParser
                     {
                         audio = ReadAudioStream(stream);
                     }
+                    else if (string.Equals(codecType, "subtitle", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // Kept in stream order: ffmpeg's `0:s:N` selector counts subtitle streams the same way.
+                        subtitleCodecs.Add(stream.TryGetProperty("codec_name", out var subtitleName) ? subtitleName.GetString() ?? string.Empty : string.Empty);
+                    }
                 }
             }
 
             if (!root.TryGetProperty("format", out var formatElement))
             {
-                return new VideoProbeInfo(null, null, null, null, null, video, audio);
+                return new VideoProbeInfo(null, null, null, null, null, video, audio) { SubtitleCodecs = subtitleCodecs };
             }
 
             var duration = ParseDouble(formatElement, "duration");
@@ -109,7 +116,7 @@ internal static class VideoProbeParser
             var formatName = formatElement.TryGetProperty("format_name", out var fn) ? fn.GetString() : null;
             var longName = formatElement.TryGetProperty("format_long_name", out var fln) ? fln.GetString() : null;
 
-            return new VideoProbeInfo(formatName, longName, duration, bitRate, size, video, audio);
+            return new VideoProbeInfo(formatName, longName, duration, bitRate, size, video, audio) { SubtitleCodecs = subtitleCodecs };
         }
         catch (Exception ex)
         {
