@@ -18,8 +18,9 @@ squish optimise <items...> [options]
 
 Key flags:
 
-- `--recursive`, `--types`, `--exclude-types` for bulk selection.
-- `--aggressive`, `--remove-audio`, `--playback-speed-factor` to tweak presets.
+- `--recursive`, `--types`, `--exclude-types` for bulk selection. Besides images and videos, `optimise` accepts PDFs (`.pdf`) and documents (`.docx .docm .xlsx .xlsm .pptx .pptm .odt .ods .odp .epub`). Select them with `--types pdf`, `--types documents` (alias `office`), or an extension such as `docx`.
+- PDF and document optimisation follow the same output settings as images and videos (replace in place or write `name.squish.ext` next to the original) and the "Strip metadata" / "Preserve dates" settings. Signed, encrypted and legacy binary (`.doc/.xls/.ppt`) files are reported as left untouched.
+- `--aggressive`, `--remove-audio`, `--playback-speed-factor` to tweak presets. `--aggressive` also applies to PDFs (150 dpi pictures, lower perceptual target) and Office documents (downscale oversized pictures, convert photographic PNG to JPEG, drop formatted blanks below spreadsheet data).
 - `--json` to receive a structured payload matching `OptimisationResult`.
 - Unsupported macOS-only switches (`--copy`, `--gui`, `--async`, `--adaptive-optimisation`) emit warnings but do not fail.
 

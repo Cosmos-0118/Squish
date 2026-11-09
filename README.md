@@ -6,7 +6,7 @@
 
 # Squish
 
-**Clipboard-first image and video optimisation for Windows.**
+**Clipboard-first image, video, PDF and document optimisation for Windows.**
 Copy, drop or save a file and Squish makes it smaller, without the visible quality loss.
 
 [![CI](https://img.shields.io/github/actions/workflow/status/Cosmos-0118/Squish/ci.yml?branch=main&label=build&style=flat-square)](https://github.com/Cosmos-0118/Squish/actions/workflows/ci.yml)
@@ -48,6 +48,8 @@ Oversized screenshots, 12 MB PNG exports and phone videos add up fast, and compr
 | **Drag and drop** | Drop files or whole folders into the window, or use *Browse files*. Results are tracked live. |
 | **Floating HUD** | A compact panel shows each file's before and after size and the percentage saved, in light or dark. |
 | **Images** | JPEG, PNG, GIF, WebP, AVIF, HEIC, BMP and TIFF. Lossless passes first, then a perceptually guarded lossy pass. Optional WebP and AVIF output. |
+| **PDF** | Structure recompressed with qpdf, then pictures re-encoded under the same perceptual guard and downsampled when drawn at more than 220 dpi (150 dpi in aggressive mode). Text, fonts, forms and bookmarks are never touched; signed and encrypted PDFs are left alone. Folder watching is opt-in. |
+| **Documents** | Word, Excel, PowerPoint, OpenDocument and EPUB files: embedded pictures optimised in place, XML minified, spreadsheet bloat (phantom cells, calcChain) removed, properties scrubbed, repacked at maximum deflate. Entirely in-process; legacy `.doc/.xls/.ppt`, signed and encrypted files are skipped. Folder watching is opt-in. |
 | **Video** | MP4, MOV, MKV, WebM and more. SVT-AV1 by default with x265 fallback, hardware encoders (AMD, NVIDIA, Intel) available. Frame rate, audio and 10-bit colour are preserved. |
 | **Privacy by default** | EXIF, GPS, XMP and IPTC metadata are stripped. Colour profiles and orientation are kept so images still look right. |
 | **Explorer integration** | Optimise files from the right-click menu. |
@@ -143,12 +145,18 @@ flowchart LR
     D[CLI / HTTP / Explorer] --> E
     E[Optimisation coordinator] --> F[Image optimiser]
     E --> G[Video optimiser]
+    E --> P[PDF optimiser]
+    E --> O[Document optimiser]
     F --> H[Smaller file<br/>+ HUD result]
     G --> H
+    P --> H
+    O --> H
 ```
 
 - **Images:** decode safely, run a lossless pass (`jpegtran`, `oxipng`), then search for the lowest quality that still meets a perceptual target using [SSIMULACRA2](docs/optimisation-pipeline.md). Encoders include mozjpeg, jpegli, pngquant, gifsicle, WebP and AVIF. A file is never replaced by a larger one.
 - **Video:** ffmpeg with a quality search over sampled footage, a bitrate cap for grainy sources, frame rate and audio preserved, `+faststart` for MP4.
+- **PDF:** a qpdf structural pass (maximum deflate, object streams, garbage collection), then picture re-encoding and downsampling through qpdf's JSON interface. See [the pipeline notes](docs/optimisation-pipeline.md#pdf).
+- **Documents:** in-process rewrite of the ZIP package: pictures through the image pipeline, minified XML, Excel bloat removal, metadata scrub. See [the pipeline notes](docs/optimisation-pipeline.md#documents-office-opendocument-epub).
 - **Markers:** optimised files are tagged (NTFS alternate data stream) so they are never compressed twice.
 
 The full details are in [docs/optimisation-pipeline.md](docs/optimisation-pipeline.md).
@@ -173,7 +181,7 @@ Each background service is supervised and restarts itself if it ever fails.
 | --- | --- | --- |
 | Desktop app | [`src/App`](src/App) | WPF shell: tray icon, main window, floating HUD, settings, onboarding. |
 | Background service | [`src/BackgroundService`](src/BackgroundService) | Clipboard and folder watchers, automation host, supervision. Runs while the window is closed. |
-| Optimisation engine | [`src/Core`](src/Core) | Image and video optimisers, perceptual scoring, settings, IPC. Platform neutral. |
+| Optimisation engine | [`src/Core`](src/Core) | Image, video, PDF and document optimisers, perceptual scoring, settings, IPC. Platform neutral. |
 | CLI | [`src/CliBridge`](src/CliBridge) | The `squish` command, talking to the running service over named pipes. |
 | Explorer integration | [`src/Integrations/Explorer`](src/Integrations/Explorer) | Right-click menu hooks. |
 | Tests and benchmarks | [`tests`](tests) | Unit and integration tests, plus a side-by-side benchmark harness. |
@@ -227,7 +235,7 @@ dotnet run -c Release --project tests/Benchmarks -- all
 | [Getting started](docs/getting-started.md) | Clone, build, run and package. |
 | [CLI reference](docs/cli.md) | `optimise`, `watch`, `schema` and flags. |
 | [Automation samples](docs/automation-samples.md) | HTTP API, named pipe and scripting examples. |
-| [Optimisation pipeline](docs/optimisation-pipeline.md) | Exactly how images and video are compressed. |
+| [Optimisation pipeline](docs/optimisation-pipeline.md) | Exactly how images, video, PDFs and documents are compressed. |
 | [Architecture](docs/architecture.md) | How the project maps onto the original app. |
 | [Brand notes](docs/brand.md) | Palette, icon and screenshot guidelines. |
 | [Security policy](SECURITY.md) | How to report a vulnerability. |
@@ -254,6 +262,7 @@ Bug reports, ideas and pull requests are welcome. If you spot behaviour that dif
 | oxipng | Lossless PNG optimisation | [shssoichiro/oxipng](https://github.com/shssoichiro/oxipng) | MIT |
 | pngquant | PNG palette quantisation | [pngquant.org](https://pngquant.org/) | GPL v3 / Commercial |
 | gifsicle | GIF optimisation | [kohler/gifsicle](https://github.com/kohler/gifsicle) | GPL v2 |
+| qpdf | PDF structure and picture rewriting (`qpdf.exe` + `qpdf30.dll`, about 7 MB) | [qpdf/qpdf](https://github.com/qpdf/qpdf) | Apache-2.0 |
 
 ## Installer integrity and false positives
 
