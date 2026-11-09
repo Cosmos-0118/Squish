@@ -114,7 +114,8 @@ public sealed class WorkdirCleanupService : IAsyncDisposable
             root.Append("images"),
             root.Append("conversions"),
             root.Append("for-resize"),
-            root.Append("for-filters")
+            root.Append("for-filters"),
+            root.Append("segmentation-cache")
         };
 
         var deletedFiles = 0;

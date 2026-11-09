@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 
@@ -6,9 +7,16 @@ namespace Squish.Core.Shared.Logging;
 
 internal static class LogFileLocator
 {
+    /// <summary>Daily log files older than this are deleted the first time a log path is resolved in a process.</summary>
+    internal static readonly TimeSpan LogRetention = TimeSpan.FromDays(14);
+
+    private static readonly object PruneGate = new();
+    private static readonly HashSet<string> PrunedDirectories = new(StringComparer.OrdinalIgnoreCase);
+
     public static string GetLogFilePath(string componentName)
     {
         var logsDirectory = EnsureLogsDirectory();
+        PruneOldLogsOnce(logsDirectory);
         var safeComponent = SanitizeComponent(componentName);
         var fileName = string.Format(
             CultureInfo.InvariantCulture,
@@ -17,6 +25,49 @@ internal static class LogFileLocator
             DateTime.UtcNow);
 
         return Path.Combine(logsDirectory, fileName);
+    }
+
+    private static void PruneOldLogsOnce(string logsDirectory)
+    {
+        lock (PruneGate)
+        {
+            if (!PrunedDirectories.Add(logsDirectory))
+            {
+                return;
+            }
+        }
+
+        PruneOldLogs(logsDirectory, DateTime.UtcNow - LogRetention);
+    }
+
+    internal static int PruneOldLogs(string logsDirectory, DateTime cutoffUtc)
+    {
+        var deleted = 0;
+        try
+        {
+            // Only touch the daily files we write: <component>-yyyyMMdd.log
+            foreach (var file in Directory.EnumerateFiles(logsDirectory, "*-????????.log"))
+            {
+                try
+                {
+                    if (File.GetLastWriteTimeUtc(file) < cutoffUtc)
+                    {
+                        File.Delete(file);
+                        deleted++;
+                    }
+                }
+                catch
+                {
+                    // in use by another process or read-only; try again next run
+                }
+            }
+        }
+        catch
+        {
+            // best effort
+        }
+
+        return deleted;
     }
 
     public static string EnsureLogsDirectory()
