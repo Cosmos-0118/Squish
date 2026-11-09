@@ -1,19 +1,44 @@
 name: codeql
 
+# Scans C# source, so pull requests and pushes only trigger it when something that compiles into the product changes
+# (src/, build inputs, this workflow). The weekly schedule always scans, which also covers dependency drift.
+
 on:
   push:
     branches: [main]
+    paths:
+      - "src/**"
+      - "Directory.Build.props"
+      - "Directory.Build.targets"
+      - "Directory.Packages.props"
+      - "global.json"
+      - ".editorconfig"
+      - ".github/workflows/codeql.yml"
   pull_request:
+    paths:
+      - "src/**"
+      - "Directory.Build.props"
+      - "Directory.Build.targets"
+      - "Directory.Packages.props"
+      - "global.json"
+      - ".editorconfig"
+      - ".github/workflows/codeql.yml"
   schedule:
     - cron: "27 4 * * 1"
+  workflow_dispatch:
 
 permissions:
   contents: read
   security-events: write
 
+concurrency:
+  group: codeql-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   analyze:
     runs-on: windows-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v6
@@ -22,6 +47,10 @@ jobs:
       - uses: github/codeql-action/init@v4
         with:
           languages: csharp
+          build-mode: manual
           queries: security-extended
-      - run: dotnet build src/Squish.sln --configuration Release
+      # --no-incremental makes sure every project is really compiled, so CodeQL traces all of it.
+      - run: dotnet build src/Squish.sln --configuration Release --no-incremental
       - uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:csharp"

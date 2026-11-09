@@ -13,6 +13,10 @@ namespace BackgroundService.Tests;
 /// These tests drive the real Windows clipboard, so they overwrite whatever is on it. They only run when
 /// SQUISH_CLIPBOARD_TESTS=1 is set.
 /// </summary>
+/// <remarks>
+/// Any other clipboard consumer on the desktop can add changes of its own. In particular a running Squish app
+/// rewrites images it has optimised, so quit it before running these for the cleanest results.
+/// </remarks>
 public sealed class ClipboardFactAttribute : FactAttribute
 {
     public ClipboardFactAttribute()
@@ -161,9 +165,11 @@ public sealed class ClipboardMonitorTests : IDisposable
         _monitor.Start();
 
         // Snipping Tool style: the capture overlay puts a bitmap on the clipboard, then the tool publishes it again.
-        for (var i = 0; i < 2; i++)
+        // Both publishes run on one STA thread with a short gap, so thread start-up jitter on a busy machine cannot
+        // stretch the gap towards the monitor's image debounce (200 ms) and split the pair into two reports.
+        RunSta(() =>
         {
-            RunSta(() =>
+            for (var i = 0; i < 2; i++)
             {
                 using var bitmap = new Bitmap(64, 48);
                 using (var g = Graphics.FromImage(bitmap))
@@ -172,15 +178,21 @@ public sealed class ClipboardMonitorTests : IDisposable
                 }
 
                 Clipboard.SetImage(bitmap);
-            });
-            await Task.Delay(100);
-        }
+                Thread.Sleep(60);
+            }
+        });
 
-        await Eventually(() => _seen.Any(s => s.Snapshot.ImageBytes is { Length: > 8 }));
+        await Eventually(() => ReportedScreenshots().Any());
         await Task.Delay(600);
 
-        Assert.Single(_seen);
+        // Count only the screenshot itself. A Squish instance running on the same desktop (for example the installed
+        // app) optimises the image and writes it back with the optimisation marker; the monitor correctly reports
+        // that as a separate change, and it is not a duplicate report of the screenshot.
+        Assert.Single(ReportedScreenshots());
     }
+
+    private IEnumerable<ClipboardSnapshot> ReportedScreenshots() =>
+        _seen.Select(s => s.Snapshot).Where(s => !s.HasOptimisationMarker && s.ImageBytes is { Length: > 8 });
 
     [ClipboardFact]
     public async Task SkipsReadingImageAndTextWhenNotWanted()

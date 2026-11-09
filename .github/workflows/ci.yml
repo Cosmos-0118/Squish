@@ -1,26 +1,77 @@
 name: ci
 
+# Only the work a change needs runs. scripts/detect-changes.ps1 maps the changed files onto the project graph and
+# decides which test projects, publish validation and lint jobs to run (see docs/ci.md). Everything runs when the
+# definition of CI or a global build input changes, on manual runs, and on the weekly full run below.
+#
+# Branch protection should require the single `ci-ok` check: it passes when every job that was needed passed, and
+# also when jobs were correctly skipped, which a list of individual required checks cannot express.
+
 on:
   push:
     branches:
       - main
   pull_request:
+  schedule:
+    # Safety net for selective CI: a full run on main once a week.
+    - cron: "17 3 * * 4"
   workflow_dispatch:
-    inputs:
-      note:
-        description: Optional note for manual runs
-        required: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  # Superseded pull request runs are wasted; every commit on main keeps its own complete result.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  DOTNET_NOLOGO: "1"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
 
 jobs:
-  build-test:
+  changes:
+    name: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      has_tests: ${{ steps.plan.outputs.has_tests }}
+      test_matrix: ${{ steps.plan.outputs.test_matrix }}
+      publish: ${{ steps.plan.outputs.publish }}
+      lint: ${{ steps.plan.outputs.lint }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # Full history (without file contents) so any base commit can be diffed.
+          fetch-depth: 0
+          filter: blob:none
+
+      - name: Work out what this change needs
+        id: plan
+        shell: pwsh
+        env:
+          EVENT: ${{ github.event_name }}
+          # A pull request is compared with its base branch, a push with the commit before it.
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if ($env:EVENT -in 'schedule', 'workflow_dispatch') {
+            ./scripts/detect-changes.ps1 -RunAll
+          } else {
+            ./scripts/detect-changes.ps1 -Base $env:BASE
+          }
+
+  test:
+    name: test (${{ matrix.name }})
+    needs: changes
+    if: needs.changes.outputs.has_tests == 'true'
     runs-on: windows-latest
+    timeout-minutes: 30
+    strategy:
+      # One failing project must not hide the result of the others.
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.changes.outputs.test_matrix) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -33,75 +84,124 @@ jobs:
       - name: Cache NuGet packages
         uses: actions/cache@v6
         with:
-          path: |
-            ~/.nuget/packages
-          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Packages.props', 'global.json') }}
           restore-keys: |
             nuget-${{ runner.os }}-
 
-      - name: Restore dependencies
-        run: dotnet restore src/Squish.sln
+      # Restore and build only this test project and what it references, not the whole solution.
+      - name: Restore
+        run: dotnet restore ${{ matrix.project }}
 
-      - name: Build solution
-        run: dotnet build src/Squish.sln --configuration Release --no-restore
+      - name: Build
+        run: dotnet build ${{ matrix.project }} --configuration Release --no-restore
 
-      # Tools are staged before the tests so the [ToolFact] tests exercise the real encoders instead of skipping.
+      # Only the projects whose tests exercise the real encoders pay for downloading them.
+      - name: Cache third-party tools
+        if: matrix.tools
+        uses: actions/cache@v6
+        with:
+          path: tools
+          key: tools-${{ runner.os }}-${{ hashFiles('tools/tools-manifest.json', 'scripts/fetch-tools.ps1') }}
+
+      - name: Stage third-party tools
+        if: matrix.tools
+        shell: pwsh
+        run: ./scripts/fetch-tools.ps1
+
+      - name: Test
+        shell: pwsh
+        env:
+          SQUISH_TOOLS_DIR: ${{ github.workspace }}\tools
+        # A hung test host is killed after 10 minutes, and a project that discovers no tests fails instead of passing.
+        run: >
+          dotnet test ${{ matrix.project }}
+          --configuration Release --no-build
+          --blame-hang-timeout 10m
+          --logger "trx;LogFileName=${{ matrix.name }}.trx"
+          --results-directory TestResults
+          -- RunConfiguration.TreatNoTestsAsError=true
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-${{ matrix.name }}
+          path: TestResults
+          if-no-files-found: ignore
+
+  publish:
+    name: publish layout
+    needs: changes
+    if: needs.changes.outputs.publish == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up .NET SDK (global.json)
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v6
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Packages.props', 'global.json') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
       - name: Cache third-party tools
         uses: actions/cache@v6
         with:
           path: tools
-          key: tools-${{ runner.os }}-${{ hashFiles('tools/tools-manifest.json') }}
+          key: tools-${{ runner.os }}-${{ hashFiles('tools/tools-manifest.json', 'scripts/fetch-tools.ps1') }}
 
       - name: Stage third-party tools
         shell: pwsh
         run: ./scripts/fetch-tools.ps1
 
-      - name: Run tests
-        env:
-          SQUISH_TOOLS_DIR: ${{ github.workspace }}\tools
-        run: dotnet test src/Squish.sln --configuration Release --no-build
-
-      - name: Publish artifacts
+      # Publishes app, CLI and Explorer integration, then fails if any piece of the layout is missing.
+      - name: Publish and validate layout
         shell: pwsh
-        run: |
-          $rid = 'win-x64'
-          $publishRoot = 'out/publish'
-          if (Test-Path $publishRoot) { Remove-Item $publishRoot -Recurse -Force }
-          New-Item -ItemType Directory -Path $publishRoot | Out-Null
-
-          dotnet publish src/App/Squish.App.csproj --configuration Release --runtime $rid --self-contained:$false --output "$publishRoot/app"
-          dotnet publish src/CliBridge/Squish.CliBridge.csproj --configuration Release --runtime $rid --self-contained:$true --output "$publishRoot/cli"
-          dotnet publish src/Integrations/Explorer/Squish.Integrations.Explorer.csproj --configuration Release --runtime $rid --self-contained:$false --output "$publishRoot/explorer"
-
-          $docsTarget = Join-Path $publishRoot 'docs'
-          New-Item -ItemType Directory -Path $docsTarget -Force | Out-Null
-          Copy-Item docs/windows-deps.md $docsTarget -Force
-          Copy-Item docs/cli.md $docsTarget -Force
-          Copy-Item docs/automation-samples.md $docsTarget -Force
-          Copy-Item installer/SQUISH_LICENSE.txt $publishRoot -Force
-          $toolsTarget = Join-Path $publishRoot 'tools'
-          if (Test-Path $toolsTarget) { Remove-Item $toolsTarget -Recurse -Force }
-          New-Item -ItemType Directory -Path $toolsTarget | Out-Null
-          Copy-Item "tools/*" $toolsTarget -Recurse -Force
-
-      - name: Validate publish layout
-        shell: pwsh
-        run: |
-          $paths = @(
-            'out/publish/app/Squish.exe',
-            'out/publish/cli/Squish.CliBridge.exe',
-            'out/publish/explorer/Squish.Integrations.Explorer.comhost.dll',
-            'out/publish/tools/pngquant',
-            'out/publish/docs/windows-deps.md',
-            'out/publish/SQUISH_LICENSE.txt'
-          )
-          foreach ($path in $paths) {
-            if (-not (Test-Path $path)) { throw "Missing expected artifact: $path" }
-          }
+        run: ./scripts/publish-layout.ps1 -Output out/publish
 
       - name: Upload publish artifact
-        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: squish-windows-publish
           path: out/publish
+
+  lint:
+    name: lint workflows and scripts
+    needs: changes
+    if: needs.changes.outputs.lint == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Change-detection self-tests
+        shell: pwsh
+        run: ./scripts/test-detect-changes.ps1
+
+  ci-ok:
+    name: ci-ok
+    # Always runs, so a skipped job never leaves the required check pending.
+    if: always()
+    needs: [changes, test, publish, lint]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every needed job passed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          if echo "$NEEDS" | jq -e '[.[].result] | any(. == "failure" or . == "cancelled")' > /dev/null; then
+            echo "::error::At least one job failed or was cancelled."
+            exit 1
+          fi

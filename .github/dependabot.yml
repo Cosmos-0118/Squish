@@ -5,6 +5,8 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore(deps)"
     groups:
       microsoft:
         patterns:
@@ -14,3 +16,10 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
+    commit-message:
+      prefix: "ci(deps)"
+    # One pull request for the week's action bumps instead of one per action, so CI runs once.
+    groups:
+      github-actions:
+        patterns:
+          - "*"
