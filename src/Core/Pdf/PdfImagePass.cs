@@ -631,6 +631,9 @@ internal sealed class PdfImagePass
 
             // Soft masks are needed again by the mask pass, which exports them on its own.
             ForgetExports(batch);
+
+            // The batch's decoded pictures are garbage now; don't let them wait for an idle moment that a long run never has.
+            MemoryReclaimer.ReclaimIfPressured();
         }
     }
 
@@ -904,7 +907,7 @@ internal sealed class PdfImagePass
         if (await _encoders.RecompressJpegLosslessAsync(staged, _token).ConfigureAwait(false) is { } lossless)
         {
             var size = new FileInfo(lossless.Value).Length;
-            var reread = JpegInfo.TryRead(await File.ReadAllBytesAsync(lossless.Value, _token).ConfigureAwait(false));
+            var (reread, _) = await ReadJpegHeaderAsync(lossless.Value, _token).ConfigureAwait(false);
             if (size < best.Size && reread is { } r && r.Components == components && r.Width == jpeg.Width && r.Height == jpeg.Height)
             {
                 best = best with { File = lossless, Size = size, Description = "lossless" };
@@ -931,15 +934,41 @@ internal sealed class PdfImagePass
 
     private async Task<(JpegInfo? Info, int Orientation)> InspectJpegAsync(string file)
     {
-        var bytes = await File.ReadAllBytesAsync(file, _token).ConfigureAwait(false);
-        var info = JpegInfo.TryRead(bytes);
+        var (info, header) = await ReadJpegHeaderAsync(file, _token).ConfigureAwait(false);
         if (info is null)
         {
             return (null, 1);
         }
 
-        var orientation = JpegSegments.Extract(bytes).Exif is { Length: > 0 } exif ? JpegSegments.ReadOrientation(exif) : 1;
+        var orientation = JpegSegments.Extract(header).Exif is { Length: > 0 } exif ? JpegSegments.ReadOrientation(exif) : 1;
         return (info, orientation);
+    }
+
+    // Everything JpegInfo / the EXIF reader need sits in the marker segments before the first scan, so only that prefix is read:
+    // a multi-megabyte picture no longer becomes a multi-megabyte array on the Large Object Heap just to learn its size.
+    private const int JpegHeaderStartBytes = 64 * 1024;
+    private const int JpegHeaderMaxBytes = 4 * 1024 * 1024;
+
+    internal static async Task<(JpegInfo? Info, byte[] Header)> ReadJpegHeaderAsync(string file, CancellationToken token)
+    {
+        await using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 1, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        var length = stream.Length;
+        var size = (long)JpegHeaderStartBytes;
+        while (true)
+        {
+            var header = new byte[(int)Math.Min(size, length)];
+            stream.Position = 0;
+            await stream.ReadExactlyAsync(header, token).ConfigureAwait(false);
+            var info = JpegInfo.TryRead(header);
+
+            // A null result may only mean the segments are longer than what was read (big ICC/XMP blocks), so widen the window.
+            if (info is not null || header.Length >= length || size >= JpegHeaderMaxBytes)
+            {
+                return (info, header);
+            }
+
+            size *= 4;
+        }
     }
 
     private async Task WriteRawFileAsPngAsync(string file, int width, int height, int components, FilePath destination)
@@ -1074,7 +1103,8 @@ internal sealed class PdfImagePass
         var metadata = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             [OptimisationMetadata.OutputReplaceOriginal] = true,
-            [OptimisationMetadata.ImageAggressive] = _aggressive
+            [OptimisationMetadata.ImageAggressive] = _aggressive,
+            [OptimisationMetadata.PixelBudgetHeld] = true
         };
         var request = new OptimisationRequest(ItemType.Image, staged, metadata: metadata);
         var context = new OptimiserExecutionContext(request.RequestId, static _ => { });
@@ -1101,8 +1131,7 @@ internal sealed class PdfImagePass
         }
 
         var current = output;
-        var data = await File.ReadAllBytesAsync(current.Value, _token).ConfigureAwait(false);
-        var info = JpegInfo.TryRead(data);
+        var (info, _) = await ReadJpegHeaderAsync(current.Value, _token).ConfigureAwait(false);
         if (info is not { } jpeg)
         {
             return null;
@@ -1118,8 +1147,7 @@ internal sealed class PdfImagePass
             }
 
             current = grey.Value;
-            data = await File.ReadAllBytesAsync(current.Value, _token).ConfigureAwait(false);
-            info = JpegInfo.TryRead(data);
+            (info, _) = await ReadJpegHeaderAsync(current.Value, _token).ConfigureAwait(false);
             if (info is not { } greyInfo)
             {
                 return null;
@@ -1128,8 +1156,9 @@ internal sealed class PdfImagePass
             jpeg = greyInfo;
         }
 
+        var encodedLength = new FileInfo(current.Value).Length;
         return jpeg.Components == components
-            ? new ImageEncoding(EncodingKind.Jpeg, current, data.LongLength, jpeg.Width, jpeg.Height, "re-encoded", data.LongLength)
+            ? new ImageEncoding(EncodingKind.Jpeg, current, encodedLength, jpeg.Width, jpeg.Height, "re-encoded", encodedLength)
             : null;
     }
 

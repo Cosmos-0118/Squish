@@ -59,10 +59,15 @@ internal sealed class FfmpegVideoQualitySearch : IVideoQualitySearch
             return null;
         }
 
-        var workDirectory = Path.Combine(Path.GetTempPath(), "squish-vq-" + Guid.NewGuid().ToString("N"));
+        // Decoding and scoring sample frames holds full-resolution frames in memory; draw on the same process-wide allowance
+        // as pictures, so a 4K search cannot run on top of a batch of large images.
+        var frameSize = plan.SourceProbe?.Video;
+        var framePixels = frameSize is { Width: > 0, Height: > 0 } ? (long)frameSize.Width.Value * frameSize.Height.Value : 2_000_000L;
+        using var pixelLease = await PixelBudget.Shared.AcquireAsync(framePixels, cancellationToken).ConfigureAwait(false);
+
+        var workDirectory = TempRuns.CreateDirectory();
         try
         {
-            Directory.CreateDirectory(workDirectory);
             var samples = PlanSamples(duration);
             var references = new List<SampleReference>();
 

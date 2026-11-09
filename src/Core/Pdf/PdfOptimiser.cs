@@ -120,8 +120,7 @@ internal sealed class PdfOptimisationJob
             return Untouched(started, "Encrypted PDF; left untouched");
         }
 
-        var workDirectory = Path.Combine(Path.GetTempPath(), "squish-pdf-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(workDirectory);
+        var workDirectory = TempRuns.CreateDirectory();
         try
         {
             return await OptimiseCoreAsync(qpdf, head, originalSize, workDirectory, started).ConfigureAwait(false);

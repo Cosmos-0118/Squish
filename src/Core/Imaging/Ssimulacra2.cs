@@ -59,8 +59,25 @@ internal static class Ssimulacra2
     /// </summary>
     public static double Compute(ReadOnlySpan<byte> reference, ReadOnlySpan<byte> distorted, int width, int height, int channels, CancellationToken cancellationToken = default)
     {
-        using var prepared = Prepare(reference, width, height, channels, cancellationToken, pooled: true);
-        return prepared.Compare(distorted, cancellationToken);
+        if (channels is not (3 or 4))
+        {
+            throw new ArgumentOutOfRangeException(nameof(channels));
+        }
+
+        var expected = (long)width * height * channels;
+        if (width < MinDimension || height < MinDimension || reference.Length < expected || distorted.Length < expected)
+        {
+            throw new ArgumentException("Images must be at least 8x8 and match the declared dimensions.");
+        }
+
+        if (channels == 3)
+        {
+            return CompareOnce(reference, distorted, width, height, 3, 3, 0f, cancellationToken);
+        }
+
+        return Math.Min(
+            CompareOnce(reference, distorted, width, height, 4, 4, 0.1f, cancellationToken),
+            CompareOnce(reference, distorted, width, height, 4, 4, 0.9f, cancellationToken));
     }
 
     /// <summary>
@@ -95,8 +112,13 @@ internal static class Ssimulacra2
     /// </summary>
     public static double ComputeOpaqueRgba(ReadOnlySpan<byte> reference, ReadOnlySpan<byte> distorted, int width, int height, CancellationToken cancellationToken = default)
     {
-        using var prepared = PrepareOpaqueRgba(reference, width, height, cancellationToken, pooled: true);
-        return prepared.Compare(distorted, cancellationToken);
+        var expected = (long)width * height * 4;
+        if (width < MinDimension || height < MinDimension || reference.Length < expected || distorted.Length < expected)
+        {
+            throw new ArgumentException("Images must be at least 8x8 and match the declared dimensions.");
+        }
+
+        return CompareOnce(reference, distorted, width, height, 3, 4, 0f, cancellationToken);
     }
 
     /// <summary>
@@ -123,6 +145,12 @@ internal static class Ssimulacra2
         private Backdrop[]? _backdrops;
         private readonly bool _pooled;
 
+        // Comparisons run outside any caller lock, so a pooled reference may be disposed while one is still reading its planes.
+        // Returning them to the pool then would hand live planes to another thread; the last comparison out does it instead.
+        private readonly object _useGate = new();
+        private int _activeComparisons;
+        private bool _disposed;
+
         internal PreparedReference(int width, int height, int channels, int stride, Backdrop[] backdrops, bool pooled)
         {
             Width = width;
@@ -135,7 +163,27 @@ internal static class Ssimulacra2
 
         public void Dispose()
         {
-            var backdrops = Interlocked.Exchange(ref _backdrops, null);
+            Backdrop[]? release = null;
+            lock (_useGate)
+            {
+                if (_disposed)
+                {
+                    return;
+                }
+
+                _disposed = true;
+                if (_activeComparisons == 0)
+                {
+                    release = _backdrops;
+                    _backdrops = null;
+                }
+            }
+
+            ReturnBackdrops(release);
+        }
+
+        private void ReturnBackdrops(Backdrop[]? backdrops)
+        {
             if (!_pooled || backdrops is null)
             {
                 return;
@@ -169,9 +217,64 @@ internal static class Ssimulacra2
                 throw new ArgumentException("Images must be at least 8x8 and match the declared dimensions.");
             }
 
-            var backdrops = _backdrops ?? throw new ObjectDisposedException(nameof(PreparedReference));
+            if (!TryEnter())
+            {
+                throw new ObjectDisposedException(nameof(PreparedReference));
+            }
+
+            try
+            {
+                return CompareEntered(distorted, cancellationToken);
+            }
+            finally
+            {
+                Exit();
+            }
+        }
+
+        /// <summary>
+        /// Registers a comparison about to start. While one is registered, <see cref="Dispose"/> keeps the planes out of the pool.
+        /// False once disposed. Pair every success with <see cref="Exit"/>.
+        /// </summary>
+        internal bool TryEnter()
+        {
+            lock (_useGate)
+            {
+                if (_disposed)
+                {
+                    return false;
+                }
+
+                _activeComparisons++;
+                return true;
+            }
+        }
+
+        internal void Exit()
+        {
+            Backdrop[]? release = null;
+            lock (_useGate)
+            {
+                if (--_activeComparisons == 0 && _disposed)
+                {
+                    release = _backdrops;
+                    _backdrops = null;
+                }
+            }
+
+            ReturnBackdrops(release);
+        }
+
+        /// <summary>Like <see cref="Compare"/> for a caller that already holds a <see cref="TryEnter"/> registration.</summary>
+        internal double CompareEntered(ReadOnlySpan<byte> distorted, CancellationToken cancellationToken)
+        {
+            if (distorted.Length < (long)Width * Height * Stride)
+            {
+                throw new ArgumentException("Images must be at least 8x8 and match the declared dimensions.");
+            }
+
             var score = double.MaxValue;
-            foreach (var backdrop in backdrops)
+            foreach (var backdrop in _backdrops!)
             {
                 score = Math.Min(score, CompareBackdrop(backdrop, distorted, Width, Height, Channels, Stride, cancellationToken));
             }
@@ -298,15 +401,99 @@ internal static class Ssimulacra2
         return FinalScore(scales, scaleCount);
     }
 
+    /// <summary>
+    /// Compares two images once, without keeping a reference pyramid: both are walked down the scales in lockstep, so only the
+    /// current scale's planes (plus the next, quarter-size one) exist at any time. Building a <see cref="PreparedReference"/>
+    /// for a single comparison held every scale's XYB, mean and second-moment planes (~9 planes per scale) while the comparison
+    /// rented its own on top; this peaks at about a third less and returns each scale's planes as soon as it is scored.
+    /// Produces exactly the score <c>Prepare(...).Compare(...)</c> does.
+    /// </summary>
+    private static double CompareOnce(ReadOnlySpan<byte> reference, ReadOnlySpan<byte> distorted, int width, int height, int channels, int stride, float backdrop, CancellationToken token)
+    {
+        float[][]? lin1 = ToLinearPlanes(reference, width, height, channels, stride, backdrop, pooled: true);
+        float[][]? lin2 = null;
+        var scales = new (double[] Ssim, double[] Edge)[NumScales];
+        var scaleCount = 0;
+        Workspace? work = null;
+        try
+        {
+            lin2 = ToLinearPlanes(distorted, width, height, channels, stride, backdrop, pooled: true);
+            work = new Workspace(width * height, withReference: true);
+
+            int w = width, h = height, gateW = width, gateH = height;
+            for (var scale = 0; scale < NumScales; scale++)
+            {
+                token.ThrowIfCancellationRequested();
+                if (gateW < MinDimension || gateH < MinDimension)
+                {
+                    break;
+                }
+
+                // The last level has no successor, so skip the downsample that would only be thrown away.
+                int nextW = 0, nextH = 0;
+                float[][]? next1 = null, next2 = null;
+                if (scale + 1 < NumScales)
+                {
+                    next1 = Downsample(lin1!, w, h, out nextW, out nextH, pooled: true);
+                    next2 = Downsample(lin2!, w, h, out _, out _, pooled: true);
+                }
+
+                ToXyb(lin1!, w * h);
+                ToXyb(lin2!, w * h);
+                scales[scaleCount++] = ComputeScale(w, h, lin1!, lin2!, work, token);
+
+                // Hand over to the next level before returning this one, so a failure never returns the same planes twice.
+                var done1 = lin1;
+                var done2 = lin2;
+                lin1 = next1;
+                lin2 = next2;
+                ReturnPlanes(done1!);
+                ReturnPlanes(done2!);
+
+                if (next1 is null)
+                {
+                    break;
+                }
+
+                gateW = w;
+                gateH = h;
+                w = nextW;
+                h = nextH;
+            }
+        }
+        finally
+        {
+            if (lin1 is not null)
+            {
+                ReturnPlanes(lin1);
+            }
+
+            if (lin2 is not null)
+            {
+                ReturnPlanes(lin2);
+            }
+
+            work?.Dispose();
+        }
+
+        return FinalScore(scales, scaleCount);
+    }
+
     /// <summary>Scratch planes for one scale's comparison. Contents are undefined between uses.</summary>
     private sealed class Workspace : IDisposable
     {
-        public Workspace(int pixels)
+        /// <param name="withReference">Also borrow planes for the reference's own blurred mean and second moment (one-shot comparisons).</param>
+        public Workspace(int pixels, bool withReference = false)
         {
             Tmp = ScratchPool<float>.Rent(pixels);
             Mu2 = ScratchPool<float>.Rent(pixels);
             S22 = ScratchPool<float>.Rent(pixels);
             S12 = ScratchPool<float>.Rent(pixels);
+            if (withReference)
+            {
+                Mu1 = ScratchPool<float>.Rent(pixels);
+                S11 = ScratchPool<float>.Rent(pixels);
+            }
         }
 
         public float[] Tmp { get; }
@@ -317,70 +504,102 @@ internal static class Ssimulacra2
 
         public float[] S12 { get; }
 
+        public float[]? Mu1 { get; }
+
+        public float[]? S11 { get; }
+
         public void Dispose()
         {
             ScratchPool<float>.Return(Tmp);
             ScratchPool<float>.Return(Mu2);
             ScratchPool<float>.Return(S22);
             ScratchPool<float>.Return(S12);
+            ScratchPool<float>.Return(Mu1);
+            ScratchPool<float>.Return(S11);
         }
     }
 
     private static (double[] Ssim, double[] Edge) ComputeScale(ReferenceScale reference, float[][] xyb2, Workspace work, CancellationToken token)
     {
-        var ssim = new double[6];
-        var edge = new double[12];
         var w = reference.Width;
         var h = reference.Height;
-        var pixels = w * h;
         var perChannel = new (double S0, double S1, double[] Edge)[3];
-        var tmp = work.Tmp;
-        var mu2 = work.Mu2;
-        var s22 = work.S22;
-        var s12 = work.S12;
 
         // Channels run one after another over a single set of scratch planes (peak memory = one channel's worth);
         // the blur itself is parallel across rows for large planes, so cores stay busy.
         for (var c = 0; c < 3; c++)
         {
             token.ThrowIfCancellationRequested();
-            var a = reference.Xyb[c];
             var b = xyb2[c];
-            var mu1 = reference.Mu[c];
-            var s11 = reference.Sigma[c];
-
-            Blur(b, mu2, tmp, w, h);
-            BlurProduct(b, b, s22, tmp, w, h);
-            BlurProduct(a, b, s12, tmp, w, h);
-
-            double sum0 = 0, sum1 = 0;
-            var e = new double[4];
-            for (var i = 0; i < pixels; i++)
-            {
-                var m1 = mu1[i];
-                var m2 = mu2[i];
-                var dm = m1 - m2;
-                var numM = 1.0f - dm * dm;
-                var numS = 2.0f * (s12[i] - m1 * m2) + C2;
-                var denS = (s11[i] - m1 * m1) + (s22[i] - m2 * m2) + C2;
-                var d = Math.Max(0.0, 1.0 - (double)(numM * numS / denS));
-                sum0 += d;
-                sum1 += Pow4(d);
-
-                var num = 1.0 + Math.Abs(b[i] - m2);
-                var den = 1.0 + Math.Abs(a[i] - m1);
-                var d1 = num / den - 1.0;
-                var artifact = Math.Max(d1, 0.0);
-                var lost = Math.Max(-d1, 0.0);
-                e[0] += artifact;
-                e[1] += Pow4(artifact);
-                e[2] += lost;
-                e[3] += Pow4(lost);
-            }
-
-            perChannel[c] = (sum0, sum1, e);
+            Blur(b, work.Mu2, work.Tmp, w, h);
+            BlurProduct(b, b, work.S22, work.Tmp, w, h);
+            BlurProduct(reference.Xyb[c], b, work.S12, work.Tmp, w, h);
+            perChannel[c] = AccumulateChannel(reference.Xyb[c], b, reference.Mu[c], work.Mu2, reference.Sigma[c], work.S22, work.S12, w * h);
         }
 
+        return Summarise(perChannel, w * h);
+    }
+
+    /// <summary>
+    /// Lockstep version of <see cref="ComputeScale(ReferenceScale, float[][], Workspace, CancellationToken)"/> for a one-shot
+    /// comparison: the reference's mean and second moment are blurred here, one channel at a time, instead of coming from a pyramid.
+    /// </summary>
+    private static (double[] Ssim, double[] Edge) ComputeScale(int w, int h, float[][] xyb1, float[][] xyb2, Workspace work, CancellationToken token)
+    {
+        var perChannel = new (double S0, double S1, double[] Edge)[3];
+        var mu1 = work.Mu1!;
+        var s11 = work.S11!;
+
+        for (var c = 0; c < 3; c++)
+        {
+            token.ThrowIfCancellationRequested();
+            var a = xyb1[c];
+            var b = xyb2[c];
+            Blur(a, mu1, work.Tmp, w, h);
+            BlurProduct(a, a, s11, work.Tmp, w, h);
+            Blur(b, work.Mu2, work.Tmp, w, h);
+            BlurProduct(b, b, work.S22, work.Tmp, w, h);
+            BlurProduct(a, b, work.S12, work.Tmp, w, h);
+            perChannel[c] = AccumulateChannel(a, b, mu1, work.Mu2, s11, work.S22, work.S12, w * h);
+        }
+
+        return Summarise(perChannel, w * h);
+    }
+
+    private static (double S0, double S1, double[] Edge) AccumulateChannel(float[] a, float[] b, float[] mu1, float[] mu2, float[] s11, float[] s22, float[] s12, int pixels)
+    {
+        double sum0 = 0, sum1 = 0;
+        var e = new double[4];
+        for (var i = 0; i < pixels; i++)
+        {
+            var m1 = mu1[i];
+            var m2 = mu2[i];
+            var dm = m1 - m2;
+            var numM = 1.0f - dm * dm;
+            var numS = 2.0f * (s12[i] - m1 * m2) + C2;
+            var denS = (s11[i] - m1 * m1) + (s22[i] - m2 * m2) + C2;
+            var d = Math.Max(0.0, 1.0 - (double)(numM * numS / denS));
+            sum0 += d;
+            sum1 += Pow4(d);
+
+            var num = 1.0 + Math.Abs(b[i] - m2);
+            var den = 1.0 + Math.Abs(a[i] - m1);
+            var d1 = num / den - 1.0;
+            var artifact = Math.Max(d1, 0.0);
+            var lost = Math.Max(-d1, 0.0);
+            e[0] += artifact;
+            e[1] += Pow4(artifact);
+            e[2] += lost;
+            e[3] += Pow4(lost);
+        }
+
+        return (sum0, sum1, e);
+    }
+
+    private static (double[] Ssim, double[] Edge) Summarise((double S0, double S1, double[] Edge)[] perChannel, int pixels)
+    {
+        var ssim = new double[6];
+        var edge = new double[12];
         var inv = 1.0 / pixels;
         for (var c = 0; c < 3; c++)
         {

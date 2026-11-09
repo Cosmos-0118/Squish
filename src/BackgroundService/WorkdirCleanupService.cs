@@ -30,6 +30,10 @@ public sealed class WorkdirCleanupService : IAsyncDisposable
     {
         while (!cancellationToken.IsCancellationRequested)
         {
+            // Scratch directories of finished or crashed jobs are not user data and are swept on every cycle (and so once at
+            // start-up) whatever the workdir interval is; only directories of dead processes, or hours old, are touched.
+            await SweepTempRunsAsync(cancellationToken).ConfigureAwait(false);
+
             var interval = GetInterval();
             TimeSpan wait;
 
@@ -65,6 +69,26 @@ public sealed class WorkdirCleanupService : IAsyncDisposable
             {
                 return;
             }
+        }
+    }
+
+    private async Task SweepTempRunsAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var removed = await Task.Run(() => TempRuns.SweepStale(), cancellationToken).ConfigureAwait(false);
+            if (removed > 0)
+            {
+                _logger.LogInformation("Temp sweep removed {Count} abandoned scratch entries.", removed);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Shutting down: the loop's own cancellation check ends the run.
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Temp sweep failed.");
         }
     }
 
