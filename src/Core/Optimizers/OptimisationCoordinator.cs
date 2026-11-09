@@ -10,7 +10,10 @@ namespace Squish.Core.Optimizers;
 
 public sealed class OptimisationCoordinator : IAsyncDisposable
 {
-    private readonly Channel<OptimisationWorkItem> _channel;
+    // Two queues, so a picture never waits behind PDFs: light work (images) is served by degreeOfParallelism workers, heavy
+    // work by its own few workers.
+    private readonly Channel<OptimisationWorkItem> _lightChannel;
+    private readonly Channel<OptimisationWorkItem> _heavyChannel;
     private readonly ConcurrentDictionary<ItemType, IOptimiser> _optimisers;
     private readonly List<Task> _workers = new();
     private readonly CancellationTokenSource _shutdownCts = new();
@@ -19,17 +22,24 @@ public sealed class OptimisationCoordinator : IAsyncDisposable
     private readonly ConcurrentDictionary<string, OptimisationWorkItem> _workItems = new(StringComparer.Ordinal);
     private readonly int _degreeOfParallelism;
 
+    // PDF, Office and video jobs each stage gigabytes of temp data and hold large documents / frames in memory for a long
+    // time; images are comparatively light. Heavy jobs have workers of their own, so at most this many run at once however
+    // many are queued: a folder of 12 PDFs cannot unpack 12 documents at the same time while they wait for the pixel budget.
+    public const int DefaultMaxConcurrentHeavyJobs = 2;
+
     // After a burst, wait this long with nothing running or queued before handing freed memory back to Windows.
     private static readonly TimeSpan IdleReclaimDelay = TimeSpan.FromSeconds(3);
     private readonly Timer _idleReclaimTimer;
     private int _activeWorkItems;
 
-    public OptimisationCoordinator(IEnumerable<IOptimiser> optimisers, int degreeOfParallelism = 2)
+    public OptimisationCoordinator(IEnumerable<IOptimiser> optimisers, int degreeOfParallelism = 2, int maxConcurrentHeavyJobs = DefaultMaxConcurrentHeavyJobs)
     {
         if (degreeOfParallelism <= 0)
         {
             throw new ArgumentOutOfRangeException(nameof(degreeOfParallelism));
         }
+
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxConcurrentHeavyJobs);
 
         ArgumentNullException.ThrowIfNull(optimisers);
         var optimiserList = optimisers.ToList();
@@ -37,18 +47,25 @@ public sealed class OptimisationCoordinator : IAsyncDisposable
         _optimisers = new ConcurrentDictionary<ItemType, IOptimiser>(optimiserList.Select(o => new KeyValuePair<ItemType, IOptimiser>(o.ItemType, o)), EqualityComparer<ItemType>.Default);
         // Unbounded: Enqueue is synchronous, so a bounded queue could only reject work once full. Folder drops,
         // watch folders and CLI batches routinely queue hundreds of files; each queued item is just a request record.
-        _channel = Channel.CreateUnbounded<OptimisationWorkItem>(new UnboundedChannelOptions
+        var channelOptions = new UnboundedChannelOptions
         {
             SingleWriter = false,
             SingleReader = false,
             AllowSynchronousContinuations = false
-        });
+        };
+        _lightChannel = Channel.CreateUnbounded<OptimisationWorkItem>(channelOptions);
+        _heavyChannel = Channel.CreateUnbounded<OptimisationWorkItem>(channelOptions);
 
         _idleReclaimTimer = new Timer(_ => ReclaimIfIdle(), null, Timeout.Infinite, Timeout.Infinite);
 
         for (var i = 0; i < _degreeOfParallelism; i++)
         {
-            _workers.Add(Task.Run(ProcessQueueAsync));
+            _workers.Add(Task.Run(() => ProcessQueueAsync(_lightChannel)));
+        }
+
+        for (var i = 0; i < maxConcurrentHeavyJobs; i++)
+        {
+            _workers.Add(Task.Run(() => ProcessQueueAsync(_heavyChannel)));
         }
     }
 
@@ -80,7 +97,7 @@ public sealed class OptimisationCoordinator : IAsyncDisposable
     {
         // Track before publishing: a worker may finish (and clear the state) before TryWrite returns.
         _workItems[workItem.Request.RequestId] = workItem;
-        if (_channel.Writer.TryWrite(workItem))
+        if (ChannelFor(workItem.Request.ItemType).Writer.TryWrite(workItem))
         {
             return new OptimisationTicket(workItem.Request.RequestId, workItem.Completion.Task);
         }
@@ -111,13 +128,17 @@ public sealed class OptimisationCoordinator : IAsyncDisposable
 
     public IReadOnlyCollection<OptimisationRequest> PendingRequests => _requests.Values.ToList();
 
-    private async Task ProcessQueueAsync()
+    private Channel<OptimisationWorkItem> ChannelFor(ItemType type) => IsHeavy(type) ? _heavyChannel : _lightChannel;
+
+    private int QueuedCount => _lightChannel.Reader.Count + _heavyChannel.Reader.Count;
+
+    private async Task ProcessQueueAsync(Channel<OptimisationWorkItem> channel)
     {
         try
         {
-            while (await _channel.Reader.WaitToReadAsync(_shutdownCts.Token).ConfigureAwait(false))
+            while (await channel.Reader.WaitToReadAsync(_shutdownCts.Token).ConfigureAwait(false))
             {
-                while (_channel.Reader.TryRead(out var workItem))
+                while (channel.Reader.TryRead(out var workItem))
                 {
                     Interlocked.Increment(ref _activeWorkItems);
                     _idleReclaimTimer.Change(Timeout.Infinite, Timeout.Infinite);
@@ -127,7 +148,7 @@ public sealed class OptimisationCoordinator : IAsyncDisposable
                     }
                     finally
                     {
-                        if (Interlocked.Decrement(ref _activeWorkItems) == 0 && _channel.Reader.Count == 0)
+                        if (Interlocked.Decrement(ref _activeWorkItems) == 0 && QueuedCount == 0)
                         {
                             ScheduleIdleReclaim();
                         }
@@ -155,7 +176,7 @@ public sealed class OptimisationCoordinator : IAsyncDisposable
 
     private void ReclaimIfIdle()
     {
-        if (Volatile.Read(ref _activeWorkItems) == 0 && _channel.Reader.Count == 0)
+        if (Volatile.Read(ref _activeWorkItems) == 0 && QueuedCount == 0)
         {
             MemoryReclaimer.Reclaim();
         }
@@ -240,6 +261,8 @@ public sealed class OptimisationCoordinator : IAsyncDisposable
         }
     }
 
+    private static bool IsHeavy(ItemType type) => type is ItemType.Pdf or ItemType.Document or ItemType.Video or ItemType.ClipboardVideo;
+
     private void ReportProgress(OptimisationProgress progress)
     {
         var handler = ProgressChanged;
@@ -281,7 +304,8 @@ public sealed class OptimisationCoordinator : IAsyncDisposable
 
     public async Task StopAsync()
     {
-        _channel.Writer.TryComplete();
+        _lightChannel.Writer.TryComplete();
+        _heavyChannel.Writer.TryComplete();
         DrainPendingWorkItems("Shutdown requested");
         _shutdownCts.Cancel();
         try
@@ -302,9 +326,12 @@ public sealed class OptimisationCoordinator : IAsyncDisposable
 
     private void DrainPendingWorkItems(string reason)
     {
-        while (_channel.Reader.TryRead(out var workItem))
+        foreach (var channel in new[] { _lightChannel, _heavyChannel })
         {
-            CancelPendingWorkItem(workItem, reason);
+            while (channel.Reader.TryRead(out var workItem))
+            {
+                CancelPendingWorkItem(workItem, reason);
+            }
         }
     }
 

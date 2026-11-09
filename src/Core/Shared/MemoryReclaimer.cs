@@ -13,6 +13,54 @@ internal static class MemoryReclaimer
     private static readonly TimeSpan FinalizerWait = TimeSpan.FromSeconds(5);
     private static int _running;
 
+    /// <summary>Managed heap size above which <see cref="ReclaimIfPressured"/> acts.</summary>
+    public const long DefaultPressureThresholdBytes = 384L * 1024 * 1024;
+
+    /// <summary>
+    /// A lightweight reclaim for the gaps between batches of a long job (many pictures in one PDF, one Office file with
+    /// hundreds of images), where waiting for the app to go idle would let dead pixel buffers pile up on the Large Object Heap.
+    /// Does nothing while the managed heap is under <paramref name="heapThresholdBytes"/>. Otherwise it runs one blocking,
+    /// compacting collection - and deliberately leaves the scratch pools alone, since other jobs may be mid-run and would only
+    /// re-allocate what was dropped - unless the heap is still over the line afterwards, in which case the pooled arrays are
+    /// what is holding it and they are released too. Safe from any thread; overlapping calls collapse into one.
+    /// </summary>
+    public static void ReclaimIfPressured(long heapThresholdBytes = DefaultPressureThresholdBytes)
+    {
+        if (GC.GetTotalMemory(forceFullCollection: false) < heapThresholdBytes)
+        {
+            return;
+        }
+
+        if (Interlocked.Exchange(ref _running, 1) != 0)
+        {
+            return;
+        }
+
+        try
+        {
+            CompactLargeObjectHeap();
+            if (GC.GetTotalMemory(forceFullCollection: false) >= heapThresholdBytes && ScratchPools.RetainedBytes > 0)
+            {
+                ScratchPools.TrimAll();
+                CompactLargeObjectHeap();
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning($"Memory reclaim between batches failed: {ex.Message}");
+        }
+        finally
+        {
+            Volatile.Write(ref _running, 0);
+        }
+    }
+
+    private static void CompactLargeObjectHeap()
+    {
+        GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
+        GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: true);
+    }
+
     /// <summary>Compacts the managed heap and decommits freed regions. Safe to call from any thread; overlapping calls collapse into one.</summary>
     public static void Reclaim()
     {

@@ -325,14 +325,21 @@ internal static class ImageIO
         return components[0] == "2x2" && components[1] == "1x1" && components[2] == "1x1";
     }
 
-    public static RasterImage ToRaster(MagickImage image)
+    public static RasterImage ToRaster(MagickImage image, bool pooled = false)
     {
         using var clone = (MagickImage)image.Clone();
-        return ToRasterInPlace(clone);
+        return ToRasterInPlace(clone, pooled);
     }
 
-    /// <summary>Same as <see cref="ToRaster"/> but is allowed to mutate (and so avoids copying) the supplied image.</summary>
-    public static RasterImage ToRasterInPlace(MagickImage image)
+    // Pixels are exported a few rows at a time. A whole-image export makes Magick.NET allocate a second image-sized native buffer
+    // plus an image-sized managed array on the Large Object Heap; a strip stays a small Gen-0 array and a small native buffer.
+    private const int ExportStripBytes = 64 * 1024;
+
+    /// <summary>
+    /// Same as <see cref="ToRaster"/> but is allowed to mutate (and so avoids copying) the supplied image. With
+    /// <paramref name="pooled"/> the pixel buffer is borrowed from the scratch pool: the caller must dispose the raster.
+    /// </summary>
+    public static RasterImage ToRasterInPlace(MagickImage image, bool pooled = false)
     {
         if (image.ColorSpace == ColorSpace.CMYK || image.ColorSpace == ColorSpace.Gray || image.ColorSpace == ColorSpace.LinearGray)
         {
@@ -349,28 +356,44 @@ internal static class ImageIO
             image.Alpha(AlphaAction.Set);
         }
 
-        // The pixel collection holds a native cache view that references the image's pixel cache; it has no finalizer,
-        // so it must be disposed or the pixel buffer outlives the image for the life of the process.
-        byte[]? bytes;
-        using (var pixels = image.GetPixelsUnsafe())
+        var width = (int)image.Width;
+        var height = (int)image.Height;
+        var raster = pooled ? RasterImage.Rent(width, height) : new RasterImage(width, height, new byte[checked(width * height * 4)]);
+        try
         {
-            bytes = pixels.ToByteArray(PixelMapping.RGBA);
+            var destination = raster.Pixels;
+            var rowBytes = width * 4;
+            var rows = Math.Clamp(ExportStripBytes / rowBytes, 1, height);
+
+            // The pixel collection holds a native cache view that references the image's pixel cache; it has no finalizer,
+            // so it must be disposed or the pixel buffer outlives the image for the life of the process.
+            using var pixels = image.GetPixelsUnsafe();
+            for (var y = 0; y < height; y += rows)
+            {
+                var count = Math.Min(rows, height - y);
+                var strip = pixels.ToByteArray(0, y, (uint)width, (uint)count, PixelMapping.RGBA)
+                    ?? throw new InvalidOperationException("Unable to read pixels.");
+                Buffer.BlockCopy(strip, 0, destination, y * rowBytes, count * rowBytes);
+            }
+        }
+        catch
+        {
+            raster.Dispose();
+            throw;
         }
 
-        if (bytes is null)
-        {
-            throw new InvalidOperationException("Unable to read pixels.");
-        }
-
-        return new RasterImage((int)image.Width, (int)image.Height, bytes);
+        return raster;
     }
 
-    /// <summary>Decodes an encoded candidate (any supported format) back into pixels.</summary>
-    public static RasterImage DecodeToRaster(string path)
+    /// <summary>
+    /// Decodes an encoded candidate (any supported format) back into pixels. With <paramref name="pooled"/> the buffer is
+    /// borrowed from the scratch pool, so the caller must dispose the raster (use it for throwaway scoring decodes).
+    /// </summary>
+    public static RasterImage DecodeToRaster(string path, bool pooled = false)
     {
         var format = ImageFormatSniffer.Sniff(path);
         using var decoded = Decode(path, format, autoOrient: false);
-        return ToRasterInPlace(decoded.Image);
+        return ToRasterInPlace(decoded.Image, pooled);
     }
 
     public static RasterImage RasterFromPixels(int width, int height, byte[] rgba) => new(width, height, rgba);

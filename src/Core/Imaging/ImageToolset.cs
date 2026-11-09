@@ -61,22 +61,26 @@ internal sealed class ImageToolset
 
 /// <summary>
 /// Tracks temp files created during one optimisation so every exit path cleans up after itself. Thread-safe: a job
-/// runs independent encoder searches concurrently.
+/// runs independent encoder searches concurrently. Files are made in a directory of the scope's own
+/// (<see cref="TempRuns"/>), created on first use and deleted whole on dispose - so even a file nobody released
+/// cannot outlive the job, and a crashed process leaves one identifiable directory for the next start-up sweep.
 /// </summary>
 internal sealed class TempFileScope : IDisposable
 {
     private readonly List<string> _files = new();
     private readonly object _gate = new();
+    private string? _directory;
 
     public FilePath New(string prefix, string extension)
     {
-        var path = FilePath.TempFile(prefix, extension, addUniqueSuffix: true);
         lock (_gate)
         {
+            _directory ??= TempRuns.CreateDirectory();
+            var ext = string.IsNullOrEmpty(extension) ? ".tmp" : extension.StartsWith('.') ? extension : "." + extension;
+            var path = new FilePath(Path.Combine(_directory, $"{prefix}-{Guid.NewGuid():N}{ext}"));
             _files.Add(path.Value);
+            return path;
         }
-
-        return path;
     }
 
     public FilePath Track(FilePath path)
@@ -101,15 +105,23 @@ internal sealed class TempFileScope : IDisposable
     public void Dispose()
     {
         string[] files;
+        string? directory;
         lock (_gate)
         {
             files = _files.ToArray();
             _files.Clear();
+            directory = _directory;
+            _directory = null;
         }
 
         foreach (var file in files)
         {
             Delete(file);
+        }
+
+        if (directory is not null)
+        {
+            TempRuns.TryDelete(directory);
         }
     }
 

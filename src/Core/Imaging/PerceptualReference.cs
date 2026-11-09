@@ -16,7 +16,7 @@ internal readonly record struct SampleTile(int X, int Y, int Width, int Height);
 /// smooth gradients (the places where blocking, ringing and banding show up first) which keeps every
 /// comparison in the tens of milliseconds regardless of megapixels.
 /// </summary>
-internal sealed class PerceptualReference
+internal sealed class PerceptualReference : IDisposable
 {
     public const int DefaultFullFramePixels = 1_500_000;
     public const int DefaultTileSize = 384;
@@ -37,6 +37,10 @@ internal sealed class PerceptualReference
     // Full-coverage references would cache the whole image's pyramid (~36 bytes per pixel), so they re-prepare instead.
     private readonly bool _cachePrepared;
 
+    // The stacked sample tiles every parallel search probes; built once, shared (read-only) and dropped with the reference.
+    private readonly Lazy<RasterImage> _mosaic;
+    private bool _disposed;
+
     private PerceptualReference(RasterImage reference, IReadOnlyList<SampleTile> tiles, bool wholeImage, bool cachePrepared = true)
     {
         _reference = reference;
@@ -46,6 +50,40 @@ internal sealed class PerceptualReference
         _cachePrepared = cachePrepared;
         _prepared = new Ssimulacra2.PreparedReference?[tiles.Count, 2];
         _tileTransparency = new bool?[tiles.Count];
+        _mosaic = new Lazy<RasterImage>(() => BuildMosaicCore(pooled: true), LazyThreadSafetyMode.ExecutionAndPublication);
+    }
+
+    /// <summary>Gives back the pooled planes of every prepared tile. Idempotent; the reference must not be scored afterwards.</summary>
+    public void Dispose()
+    {
+        lock (_prepared)
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            DisposePrepared();
+        }
+
+        if (_mosaic.IsValueCreated)
+        {
+            _mosaic.Value.Dispose();
+        }
+    }
+
+    // Caller holds _prepared's lock.
+    private void DisposePrepared()
+    {
+        for (var i = 0; i < _prepared.GetLength(0); i++)
+        {
+            for (var slot = 0; slot < _prepared.GetLength(1); slot++)
+            {
+                _prepared[i, slot]?.Dispose();
+                _prepared[i, slot] = null;
+            }
+        }
     }
 
     public IReadOnlyList<SampleTile> Tiles { get; }
@@ -141,10 +179,23 @@ internal sealed class PerceptualReference
                 continue;
             }
 
-            var crop = tile.Width == candidate.Width && tile.Height == candidate.Height
-                ? candidate
-                : candidate.Crop(tile.X, tile.Y, tile.Width, tile.Height);
-            scores[i] = ScoreTile(i, crop, cancellationToken);
+            if (tile.Width == candidate.Width && tile.Height == candidate.Height)
+            {
+                scores[i] = ScoreTile(i, candidate.Span, cancellationToken);
+                continue;
+            }
+
+            var length = tile.Width * tile.Height * 4;
+            var candidateTile = ScratchPool<byte>.Rent(length);
+            try
+            {
+                CopyRegion(candidate, tile, candidateTile);
+                scores[i] = ScoreTile(i, candidateTile.AsSpan(0, length), cancellationToken);
+            }
+            finally
+            {
+                ScratchPool<byte>.Return(candidateTile);
+            }
         }
 
         return Aggregate(scores);
@@ -158,7 +209,7 @@ internal sealed class PerceptualReference
     {
         if (tile.Width == _reference.Width && tile.Height == _reference.Height)
         {
-            return ScoreSpans(_reference.Pixels, candidate.Pixels, tile.Width, tile.Height, token);
+            return ScoreSpans(_reference.Span, candidate.Span, tile.Width, tile.Height, token);
         }
 
         var length = tile.Width * tile.Height * 4;
@@ -186,6 +237,26 @@ internal sealed class PerceptualReference
         }
     }
 
+    /// <summary>True when any pixel of the region is not fully opaque (reads the image in place; copies nothing).</summary>
+    private static bool RegionHasTransparency(RasterImage source, SampleTile tile)
+    {
+        if (tile.Width == source.Width && tile.Height == source.Height)
+        {
+            return HasTransparency(source.Span);
+        }
+
+        for (var row = 0; row < tile.Height; row++)
+        {
+            var start = ((tile.Y + row) * source.Width + tile.X) * 4;
+            if (HasTransparency(source.Pixels.AsSpan(start, tile.Width * 4)))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>
     /// Scores a candidate that was encoded from a <see cref="BuildMosaic"/> image: tile i of the mosaic is compared
     /// with tile i of the reference.
@@ -197,20 +268,49 @@ internal sealed class PerceptualReference
         for (var i = 0; i < Tiles.Count; i++)
         {
             var tile = Tiles[i];
-            var candidate = decodedMosaic.Crop(0, offset, tile.Width, tile.Height);
-            scores[i] = ScoreTile(i, candidate, cancellationToken);
+            if (tile.Width == decodedMosaic.Width)
+            {
+                // Tiles are stacked full-width, so tile i is already one contiguous run of the decoded mosaic.
+                var slice = decodedMosaic.Pixels.AsSpan(offset * decodedMosaic.Width * 4, tile.Width * tile.Height * 4);
+                scores[i] = ScoreTile(i, slice, cancellationToken);
+            }
+            else
+            {
+                // A narrower (edge-padded) tile: copy just its visible columns.
+                var length = tile.Width * tile.Height * 4;
+                var candidate = ScratchPool<byte>.Rent(length);
+                try
+                {
+                    CopyRegion(decodedMosaic, new SampleTile(0, offset, tile.Width, tile.Height), candidate);
+                    scores[i] = ScoreTile(i, candidate.AsSpan(0, length), cancellationToken);
+                }
+                finally
+                {
+                    ScratchPool<byte>.Return(candidate);
+                }
+            }
+
             offset += tile.Height;
         }
 
         return Aggregate(scores);
     }
 
+    /// <summary>
+    /// The sample tiles stacked into one small image (see <see cref="BuildMosaic"/>), built on first use and shared by every
+    /// search on this reference. Owned by the reference: callers must not dispose or modify it.
+    /// </summary>
+    public RasterImage Mosaic => _mosaic.Value;
+
     /// <summary>Stacks the sample tiles into one small image (all tiles share the same width) for fast quality searches.</summary>
-    public RasterImage BuildMosaic()
+    public RasterImage BuildMosaic() => BuildMosaicCore(pooled: false);
+
+    private RasterImage BuildMosaicCore(bool pooled)
     {
         var width = Tiles.Max(t => t.Width);
         var height = Tiles.Sum(t => t.Height);
-        var pixels = new byte[width * height * 4];
+        var raster = pooled ? RasterImage.Rent(width, height) : new RasterImage(width, height, new byte[width * height * 4]);
+        var pixels = raster.Pixels;
 
         // Pad narrow tiles by edge replication so mosaics stay rectangular.
         var offset = 0;
@@ -230,7 +330,7 @@ internal sealed class PerceptualReference
             offset += tile.Height;
         }
 
-        return new RasterImage(width, height, pixels);
+        return raster;
     }
 
     // The worst region matters most for perceived quality, but a single outlier tile must not dominate.
@@ -252,48 +352,100 @@ internal sealed class PerceptualReference
         return sum / worst;
     }
 
-    /// <summary>Same result as <see cref="ScorePair"/> on tile <paramref name="index"/>, reusing its cached reference side.</summary>
-    private double ScoreTile(int index, RasterImage candidate, CancellationToken token)
+    /// <summary>
+    /// Same result as <see cref="ScorePair"/> on tile <paramref name="index"/>, reusing its cached reference side.
+    /// <paramref name="candidate"/> holds exactly the tile's pixels (RGBA).
+    /// </summary>
+    private double ScoreTile(int index, ReadOnlySpan<byte> candidate, CancellationToken token)
     {
         var tile = Tiles[index];
         if (!_cachePrepared)
         {
-            return ScorePair(TileOf(tile), candidate, token);
+            return ScoreReferenceTile(tile, candidate, token);
         }
 
-        var candidateAlpha = HasTransparency(candidate.Pixels);
+        var candidateAlpha = HasTransparency(candidate);
         Ssimulacra2.PreparedReference prepared;
-        bool alpha;
 
         // Concurrent searches share one reference; prepare each tile once, then compare without the lock.
         lock (_prepared)
         {
-            var referenceAlpha = _tileTransparency[index] ??= HasTransparency(TileOf(tile).Pixels);
-            alpha = referenceAlpha || candidateAlpha;
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            var referenceAlpha = _tileTransparency[index] ??= RegionHasTransparency(_reference, tile);
+            var alpha = referenceAlpha || candidateAlpha;
             var slot = alpha ? 1 : 0;
             if (_prepared[index, slot] is not { } cached)
             {
-                var reference = TileOf(tile);
-                cached = alpha
-                    ? Ssimulacra2.Prepare(reference.Pixels, reference.Width, reference.Height, 4, token)
-                    : Ssimulacra2.PrepareOpaqueRgba(reference.Pixels, reference.Width, reference.Height, token);
+                cached = PrepareTile(tile, alpha, token);
                 _prepared[index, slot] = cached;
             }
 
+            // Registered under the same lock that releases prepared tiles, so they cannot go back to the pool mid-comparison.
             prepared = cached;
+            prepared.TryEnter();
         }
 
         // Both layouts read RGBA directly (an opaque reference ignores the alpha byte), so no packed-RGB copy is made.
-        return prepared.Compare(candidate.Pixels, token);
+        try
+        {
+            return prepared.CompareEntered(candidate, token);
+        }
+        finally
+        {
+            prepared.Exit();
+        }
     }
 
-    private RasterImage TileOf(SampleTile tile)
-        => tile.Width == _reference.Width && tile.Height == _reference.Height
-            ? _reference
-            : _reference.Crop(tile.X, tile.Y, tile.Width, tile.Height);
+    // The reference side of one tile, read straight from the reference (or through a pooled copy of the region) and built
+    // from pooled planes, which Dispose() hands back.
+    private Ssimulacra2.PreparedReference PrepareTile(SampleTile tile, bool alpha, CancellationToken token)
+    {
+        if (tile.Width == _reference.Width && tile.Height == _reference.Height)
+        {
+            return PrepareSpan(_reference.Span, tile, alpha, token);
+        }
+
+        var length = tile.Width * tile.Height * 4;
+        var region = ScratchPool<byte>.Rent(length);
+        try
+        {
+            CopyRegion(_reference, tile, region);
+            return PrepareSpan(region.AsSpan(0, length), tile, alpha, token);
+        }
+        finally
+        {
+            ScratchPool<byte>.Return(region);
+        }
+    }
+
+    private static Ssimulacra2.PreparedReference PrepareSpan(ReadOnlySpan<byte> pixels, SampleTile tile, bool alpha, CancellationToken token)
+        => alpha
+            ? Ssimulacra2.Prepare(pixels, tile.Width, tile.Height, 4, token, pooled: true)
+            : Ssimulacra2.PrepareOpaqueRgba(pixels, tile.Width, tile.Height, token, pooled: true);
+
+    // Uncached path: compare the candidate tile with a pooled copy of the same region of the reference.
+    private double ScoreReferenceTile(SampleTile tile, ReadOnlySpan<byte> candidate, CancellationToken token)
+    {
+        if (tile.Width == _reference.Width && tile.Height == _reference.Height)
+        {
+            return ScoreSpans(_reference.Span, candidate, tile.Width, tile.Height, token);
+        }
+
+        var length = tile.Width * tile.Height * 4;
+        var region = ScratchPool<byte>.Rent(length);
+        try
+        {
+            CopyRegion(_reference, tile, region);
+            return ScoreSpans(region.AsSpan(0, length), candidate, tile.Width, tile.Height, token);
+        }
+        finally
+        {
+            ScratchPool<byte>.Return(region);
+        }
+    }
 
     internal static double ScorePair(RasterImage reference, RasterImage candidate, CancellationToken token)
-        => ScoreSpans(reference.Pixels, candidate.Pixels, reference.Width, reference.Height, token);
+        => ScoreSpans(reference.Span, candidate.Span, reference.Width, reference.Height, token);
 
     private static double ScoreSpans(ReadOnlySpan<byte> reference, ReadOnlySpan<byte> candidate, int width, int height, CancellationToken token)
     {

@@ -128,6 +128,7 @@ internal sealed class DocumentOptimisationJob : IDisposable
             var media = _options.OptimiseImages
                 ? await OptimiseMediaAsync(archive, format, names, mediaPlan, removed).ConfigureAwait(false)
                 : new Dictionary<string, MediaOutcome>(StringComparer.Ordinal);
+            MemoryReclaimer.ReclaimIfPressured();
 
             _context.ReportProgress(70, "Repacking document");
             rewrittenParts = WritePackage(archive, format, names, removed, mediaPlan.Duplicates, media, output);
@@ -465,7 +466,8 @@ internal sealed class DocumentOptimisationJob : IDisposable
         var metadata = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             [OptimisationMetadata.OutputReplaceOriginal] = true,
-            [OptimisationMetadata.ImageAggressive] = _aggressive
+            [OptimisationMetadata.ImageAggressive] = _aggressive,
+            [OptimisationMetadata.PixelBudgetHeld] = true
         };
 
         var request = new OptimisationRequest(ItemType.Image, staged, metadata: metadata);

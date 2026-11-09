@@ -29,6 +29,23 @@ internal enum ChromaSubsampling
 internal sealed class ImageEncoders
 {
     private static readonly ProcessRunnerOptions Quiet = ProcessRunnerOptions.Create(throwOnError: false);
+
+    // Every encoder is its own process and the lossy searches of all running jobs spawn them side by side; a few cores' worth
+    // is plenty, and more only multiplies the coefficient buffers each one holds. Process-wide, across jobs.
+    private static readonly SemaphoreSlim EncoderGate = new(Math.Clamp(Environment.ProcessorCount / 2, 2, 4));
+
+    private static async Task<ProcessResult> RunToolAsync(string command, IEnumerable<string> arguments, ProcessRunnerOptions options, CancellationToken token)
+    {
+        await EncoderGate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            return await ProcessRunner.RunAsync(command, arguments, options, token).ConfigureAwait(false);
+        }
+        finally
+        {
+            EncoderGate.Release();
+        }
+    }
     private readonly ImageToolset _tools;
     private readonly TempFileScope _temp;
 
@@ -67,7 +84,7 @@ internal sealed class ImageEncoders
                 staging.Value
             };
 
-            var result = await ProcessRunner.RunAsync(cjpeg, args, Quiet, token).ConfigureAwait(false);
+            var result = await RunToolAsync(cjpeg, args, Quiet, token).ConfigureAwait(false);
             _temp.Release(staging);
             return Succeeded(result, output) ? output : null;
         }
@@ -114,7 +131,7 @@ internal sealed class ImageEncoders
             output.Value
         };
 
-        var result = await ProcessRunner.RunAsync(cjpegli, args, Quiet, token).ConfigureAwait(false);
+        var result = await RunToolAsync(cjpegli, args, Quiet, token).ConfigureAwait(false);
         _temp.Release(staging);
         return Succeeded(result, output) ? output : null;
     }
@@ -129,7 +146,7 @@ internal sealed class ImageEncoders
 
         var output = _temp.New("squish-jpgl", "jpg");
         var args = new[] { "-optimize", "-progressive", "-copy", "none", "-outfile", output.Value, source.Value };
-        var result = await ProcessRunner.RunAsync(jpegtran, args, Quiet, token).ConfigureAwait(false);
+        var result = await RunToolAsync(jpegtran, args, Quiet, token).ConfigureAwait(false);
         return Succeeded(result, output) ? output : null;
     }
 
@@ -187,11 +204,11 @@ internal sealed class ImageEncoders
                 return args;
             }
 
-            var result = await ProcessRunner.RunAsync(oxipng, BuildArgs(tuned: true), Quiet, token).ConfigureAwait(false);
+            var result = await RunToolAsync(oxipng, BuildArgs(tuned: true), Quiet, token).ConfigureAwait(false);
             if (result.ExitCode != 0)
             {
                 // An oxipng build that does not know one of the tuning flags must not cost the whole lossless pass.
-                result = await ProcessRunner.RunAsync(oxipng, BuildArgs(tuned: false), Quiet, token).ConfigureAwait(false);
+                result = await RunToolAsync(oxipng, BuildArgs(tuned: false), Quiet, token).ConfigureAwait(false);
             }
 
             return Succeeded(result, output) ? output : null;
@@ -238,7 +255,7 @@ internal sealed class ImageEncoders
             source.Value
         };
 
-        var result = await ProcessRunner.RunAsync(pngquant, args, Quiet, token).ConfigureAwait(false);
+        var result = await RunToolAsync(pngquant, args, Quiet, token).ConfigureAwait(false);
         return Succeeded(result, output) ? output : null;
     }
 
@@ -282,7 +299,7 @@ internal sealed class ImageEncoders
         }
 
         args.AddRange(new[] { stagingPng.Value, "-o", output.Value });
-        var result = await ProcessRunner.RunAsync(cwebp, args, Quiet, token).ConfigureAwait(false);
+        var result = await RunToolAsync(cwebp, args, Quiet, token).ConfigureAwait(false);
         return Succeeded(result, output) ? output : null;
     }
 
@@ -307,7 +324,7 @@ internal sealed class ImageEncoders
             output.Value
         };
 
-        var result = await ProcessRunner.RunAsync(avifenc, args, Quiet, token).ConfigureAwait(false);
+        var result = await RunToolAsync(avifenc, args, Quiet, token).ConfigureAwait(false);
         return Succeeded(result, output) ? output : null;
     }
 
@@ -328,7 +345,7 @@ internal sealed class ImageEncoders
             }
 
             args.AddRange(new[] { source.Value, "-o", output.Value });
-            var result = await ProcessRunner.RunAsync(gifsicle, args, Quiet, token).ConfigureAwait(false);
+            var result = await RunToolAsync(gifsicle, args, Quiet, token).ConfigureAwait(false);
             return Succeeded(result, output) ? output : null;
         }
 

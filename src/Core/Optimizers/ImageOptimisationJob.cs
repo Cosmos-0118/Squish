@@ -77,6 +77,12 @@ internal sealed class ImageOptimisationJob : IDisposable
             return OptimisationResult.Failure(_request.RequestId, limit);
         }
 
+        // Pictures inside a PDF / Office file already hold a lease on the shared budget (the container pass took it before
+        // calling us); taking it again here could deadlock, so only standalone images draw on it.
+        using var lease = OptimisationMetadata.GetFlag(_request.Metadata, OptimisationMetadata.PixelBudgetHeld)
+            ? null
+            : await PixelBudget.Shared.AcquireAsync(probe.PixelCount, _token).ConfigureAwait(false);
+
         ImageCandidate? best = probe.Format switch
         {
             SourceFormat.Jpeg => await OptimiseJpegAsync(probe).ConfigureAwait(false),
@@ -276,7 +282,7 @@ internal sealed class ImageOptimisationJob : IDisposable
         }
 
         // The decoded pixels are not needed again on this path, so convert in place instead of cloning them natively.
-        var reference = ImageIO.ToRasterInPlace(PrepareImage(decoded.Image, downscale));
+        using var reference = ImageIO.ToRasterInPlace(PrepareImage(decoded.Image, downscale), pooled: true);
         // The managed copy is all the search needs (the properties read below are plain values); keeping ImageMagick's
         // native pixel cache alive through the whole encode search would hold a second full copy of the picture.
         decoded.Dispose();
@@ -331,7 +337,7 @@ internal sealed class ImageOptimisationJob : IDisposable
             : [ChromaSubsampling.Subsampled420, ChromaSubsampling.Full444];
     }
 
-    private async Task<EncodedCandidate?> EncodeJpegWithGuardAsync(RasterImage reference, IReadOnlyList<ChromaSubsampling> chromas, int lowest, int highest)
+    private async Task<EncodedCandidate?> EncodeJpegWithGuardAsync(RasterImage reference, IReadOnlyList<ChromaSubsampling> chromas, int lowest, int highest, SharedFullCoverage? sharedCoverage = null)
     {
         var mozjpeg = _encoders.HasMozJpeg;
 
@@ -343,10 +349,25 @@ internal sealed class ImageOptimisationJob : IDisposable
         }
 
         // The searches are independent (separate encoder processes, read-only reference), so run them side by side.
-        var perceptual = PerceptualReference.Create(reference);
+        using var perceptual = PerceptualReference.Create(reference);
         // The final full-frame check is identical for every search, so they share one reference (and its prepared
-        // pyramid) and take turns on it: concurrent full-frame decodes + scoring were the biggest memory spike.
-        var verification = perceptual.IsWholeImage ? null : new Verification(PerceptualReference.CreateFullCoverage(reference));
+        // pyramid) and take turns on it: concurrent full-frame decodes + scoring were the biggest memory spike. A caller that
+        // goes on to judge the same picture again (the PNG palette pass) hands in its own so that reference is built only once.
+        Verification? verification = null;
+        var ownsVerification = false;
+        if (!perceptual.IsWholeImage)
+        {
+            if (sharedCoverage is not null)
+            {
+                verification = sharedCoverage.Get();
+            }
+            else
+            {
+                verification = new Verification(PerceptualReference.CreateFullCoverage(reference), ownsReference: true);
+                ownsVerification = true;
+            }
+        }
+
         // Every chroma layout is tried with each JPEG encoder; the smallest file that passes wins.
         var entries = new List<(ChromaSubsampling Chroma, string Encoder, Task<EncodedCandidate?> Search)>();
         foreach (var chroma in chromas)
@@ -361,7 +382,18 @@ internal sealed class ImageOptimisationJob : IDisposable
             }
         }
 
-        await Task.WhenAll(entries.Select(e => e.Search)).ConfigureAwait(false);
+        try
+        {
+            // WhenAll completes only once every search has, so nothing is still scoring when the references go.
+            await Task.WhenAll(entries.Select(e => e.Search)).ConfigureAwait(false);
+        }
+        finally
+        {
+            if (ownsVerification)
+            {
+                verification!.Dispose();
+            }
+        }
 
         EncodedCandidate? best = null;
         var bestChroma = chromas[0];
@@ -467,7 +499,7 @@ internal sealed class ImageOptimisationJob : IDisposable
             using var decoded = ImageIO.Decode(_source.Value, SourceFormat.Png, autoOrient: true);
             // The downscaled PNG candidate re-reads the decoded image later; otherwise it is free to consume.
             var prepared = PrepareImage(decoded.Image, downscale);
-            var reference = downscale ? ImageIO.ToRaster(prepared) : ImageIO.ToRasterInPlace(prepared);
+            using var reference = downscale ? ImageIO.ToRaster(prepared, pooled: true) : ImageIO.ToRasterInPlace(prepared, pooled: true);
             var hasAlpha = reference.HasVisibleAlpha();
             var content = ImageContentAnalyzer.Analyse(reference, hasAlpha);
             var blobs = new MetadataBlobs(decoded.ExifProfile, decoded.IccProfile, decoded.XmpProfile, decoded.IptcProfile);
@@ -484,10 +516,13 @@ internal sealed class ImageOptimisationJob : IDisposable
             // Everything below works on the managed raster and the metadata copied above; release the native pixel cache now.
             decoded.Dispose();
 
+            // The JPEG conversion and the palette search both judge the whole frame of this same picture; they share one
+            // full-coverage reference (built on first use) instead of each constructing its own. Released before WebP/AVIF.
+            using var coverage = new SharedFullCoverage(reference);
             var jpegProduced = false;
             if (wantsJpeg && !hasAlpha && content.IsPhotographic && reference.PixelCount >= _options.JpegConversionMinimumPixels && PerceptualReference.IsSupported(reference))
             {
-                var jpeg = await ConvertToJpegAsync(reference, content, blobs, "Converted photographic PNG to JPEG").ConfigureAwait(false);
+                var jpeg = await ConvertToJpegAsync(reference, content, blobs, "Converted photographic PNG to JPEG", coverage).ConfigureAwait(false);
                 if (jpeg is not null)
                 {
                     candidates.Add(jpeg);
@@ -505,12 +540,14 @@ internal sealed class ImageOptimisationJob : IDisposable
                 && (blobs.Exif is { Length: > 0 } || blobs.Xmp is { Length: > 0 } || blobs.Iptc is { Length: > 0 });
             if (wantsLossyPalette && !photoTooRich && !wouldLoseMetadata && PerceptualReference.IsSupported(reference) && !HasNonSrgbProfile(blobs))
             {
-                var palette = await QuantisedPngAsync(reference, strip).ConfigureAwait(false);
+                var palette = await QuantisedPngAsync(reference, strip, coverage).ConfigureAwait(false);
                 if (palette is not null)
                 {
                     candidates.Add(palette);
                 }
             }
+
+            coverage.Dispose();
 
             if (wantsModern && PerceptualReference.IsSupported(reference) && !HasNonSrgbProfile(blobs))
             {
@@ -554,11 +591,14 @@ internal sealed class ImageOptimisationJob : IDisposable
         return await LosslessPngAsync(staging, (long)decoded.Image.Width * decoded.Image.Height, strip, description).ConfigureAwait(false);
     }
 
-    private async Task<ImageCandidate?> QuantisedPngAsync(RasterImage reference, string strip)
+    private async Task<ImageCandidate?> QuantisedPngAsync(RasterImage reference, string strip, SharedFullCoverage? sharedCoverage = null)
     {
         _context.ReportProgress(45, "Trying 256-colour palette");
         // Palette error is global (dithering, banding), so every pixel is judged rather than a few sampled tiles.
-        var perceptual = GuardEnabled ? PerceptualReference.CreateFullCoverage(reference) : null;
+        using var ownedScoring = GuardEnabled && sharedCoverage is null
+            ? new Verification(PerceptualReference.CreateFullCoverage(reference), ownsReference: true)
+            : null;
+        var scoring = GuardEnabled ? ownedScoring ?? sharedCoverage!.Get() : null;
         var staging = _encoders.WritePngStaging(reference);
 
         FilePath? bestFile = null;
@@ -566,8 +606,7 @@ internal sealed class ImageOptimisationJob : IDisposable
         var bestQuality = 0;
 
         // pngquant runs side by side (cheap external processes), but decoding + scoring a candidate holds the whole
-        // frame and a scoring workspace, so those take turns.
-        var scoring = perceptual is null ? null : new Verification(perceptual);
+        // frame and a scoring workspace, so those take turns (the Verification's gate).
 
         // Quantises at a pngquant quality cap; the file comes back only when it meets the target.
         async Task<(int Quality, FilePath? File, double? Score)> ProbeAsync(int quality)
@@ -578,12 +617,12 @@ internal sealed class ImageOptimisationJob : IDisposable
                 return (quality, null, null);
             }
 
-            if (perceptual is null)
+            if (scoring is null)
             {
                 return (quality, quantised, null);
             }
 
-            var score = await scoring!.ScoreAsync(quantised.Value.Value, _token).ConfigureAwait(false);
+            var score = await scoring.ScoreAsync(quantised.Value.Value, _token).ConfigureAwait(false);
             if (score < _targetScore)
             {
                 _temp.Release(quantised.Value);
@@ -673,10 +712,13 @@ internal sealed class ImageOptimisationJob : IDisposable
             return null;
         }
 
-        var reference = ImageIO.ToRaster(PrepareImage(decoded.Image, downscale));
+        // Convert in place (no native clone of the whole picture) and release the native pixel cache straight away: everything
+        // below works on the managed raster and the metadata copied here. The rare PNG fallback decodes the source again.
+        using var reference = ImageIO.ToRasterInPlace(PrepareImage(decoded.Image, downscale), pooled: true);
         var hasAlpha = reference.HasVisibleAlpha();
         var content = ImageContentAnalyzer.Analyse(reference, hasAlpha);
         var blobs = new MetadataBlobs(decoded.ExifProfile, decoded.IccProfile, decoded.XmpProfile, decoded.IptcProfile);
+        decoded.Dispose();
         var extension = _source.Extension ?? probe.Format.DefaultExtension();
         var candidates = new List<ImageCandidate>();
 
@@ -714,7 +756,11 @@ internal sealed class ImageOptimisationJob : IDisposable
         if (candidates.Count == 0 && !keepModernFormat)
         {
             var staging = _temp.New("squish-conv", "png");
-            WriteDecodedAsPng(decoded, staging, downscale);
+            using (var again = ImageIO.Decode(_source.Value, probe.Format, autoOrient: true))
+            {
+                WriteDecodedAsPng(again, staging, downscale);
+            }
+
             var png = await LosslessPngAsync(staging, reference.PixelCount, PngStripMode(), $"Converted {probe.Format} to PNG").ConfigureAwait(false);
             if (png is not null)
             {
@@ -737,10 +783,10 @@ internal sealed class ImageOptimisationJob : IDisposable
         return PickBest(candidates);
     }
 
-    private async Task<ImageCandidate?> ConvertToJpegAsync(RasterImage reference, ImageContentProfile content, MetadataBlobs blobs, string description)
+    private async Task<ImageCandidate?> ConvertToJpegAsync(RasterImage reference, ImageContentProfile content, MetadataBlobs blobs, string description, SharedFullCoverage? sharedCoverage = null)
     {
         var chromas = JpegChromaCandidates(content, sourceIs420: null);
-        var encoded = await EncodeJpegWithGuardAsync(reference, chromas, _options.MinimumLossyQuality, _options.MaximumLossyQuality).ConfigureAwait(false);
+        var encoded = await EncodeJpegWithGuardAsync(reference, chromas, _options.MinimumLossyQuality, _options.MaximumLossyQuality, sharedCoverage).ConfigureAwait(false);
         if (encoded is null)
         {
             return null;
@@ -776,7 +822,7 @@ internal sealed class ImageOptimisationJob : IDisposable
             ImageCandidate? lossyWebp = null;
             if (GuardEnabled && PerceptualReference.IsSupported(reference))
             {
-                var perceptual = PerceptualReference.Create(reference);
+                using var perceptual = PerceptualReference.Create(reference);
                 var encoded = await SearchLossyAsync(reference, perceptual, _options.MinimumLossyQuality, _options.MaximumLossyQuality,
                     async (image, quality, token) => await _encoders.EncodeWebpAsync(stagingCache.Get(image), quality, lossless: false, token).ConfigureAwait(false)).ConfigureAwait(false);
                 if (encoded is not null)
@@ -791,7 +837,7 @@ internal sealed class ImageOptimisationJob : IDisposable
 
         if (allowAvif && _encoders.HasAvif && GuardEnabled && PerceptualReference.IsSupported(reference))
         {
-            var perceptual = PerceptualReference.Create(reference);
+            using var perceptual = PerceptualReference.Create(reference);
             var encoded = await SearchLossyAsync(reference, perceptual, _options.MinimumLossyQuality, _options.MaximumLossyQuality,
                 async (image, quality, token) => await _encoders.EncodeAvifAsync(stagingCache.Get(image), quality, chroma, speed: 6, token).ConfigureAwait(false),
                 iterations: 5).ConfigureAwait(false);
@@ -875,6 +921,21 @@ internal sealed class ImageOptimisationJob : IDisposable
             return null;
         }
 
+        try
+        {
+            return await BisectGifLossyAsync(references).ConfigureAwait(false);
+        }
+        finally
+        {
+            foreach (var (_, frameReference) in references)
+            {
+                frameReference.Dispose();
+            }
+        }
+    }
+
+    private async Task<ImageCandidate?> BisectGifLossyAsync(List<(long StartTicks, PerceptualReference Reference)> references)
+    {
         ImageCandidate? best = null;
         var low = 0;
         var high = GifLossyLevels.Length - 1;
@@ -956,16 +1017,33 @@ internal sealed class ImageOptimisationJob : IDisposable
     /// A full-frame reference plus a gate so only one decode-and-score runs at a time per job: each holds the decoded
     /// frame and a whole scoring workspace, which is tens to hundreds of MB for large images.
     /// </summary>
-    private sealed class Verification(PerceptualReference reference)
+    private sealed class Verification : IDisposable
     {
+        private readonly PerceptualReference _reference;
+        private readonly bool _ownsReference;
         private readonly SemaphoreSlim _gate = new(1, 1);
+
+        /// <param name="ownsReference">Dispose <paramref name="reference"/> with this verification (false when others still use it).</param>
+        public Verification(PerceptualReference reference, bool ownsReference)
+        {
+            _reference = reference;
+            _ownsReference = ownsReference;
+        }
+
+        public void Dispose()
+        {
+            if (_ownsReference)
+            {
+                _reference.Dispose();
+            }
+        }
 
         public async Task<double> ScoreAsync(string path, CancellationToken token)
         {
             await _gate.WaitAsync(token).ConfigureAwait(false);
             try
             {
-                return await Task.Run(() => reference.Score(ImageIO.DecodeToRaster(path), token), token).ConfigureAwait(false);
+                return await Task.Run(() => DecodeAndScore(path, token), token).ConfigureAwait(false);
             }
             finally
             {
@@ -988,12 +1066,46 @@ internal sealed class ImageOptimisationJob : IDisposable
                     return (null, 0);
                 }
 
-                var score = await Task.Run(() => reference.Score(ImageIO.DecodeToRaster(file.Value.Value), token), token).ConfigureAwait(false);
+                var score = await Task.Run(() => DecodeAndScore(file.Value.Value, token), token).ConfigureAwait(false);
                 return (file, score);
             }
             finally
             {
                 _gate.Release();
+            }
+        }
+
+        // The decoded candidate is thrown away after one score, so its pixels are borrowed from the scratch pool.
+        private double DecodeAndScore(string path, CancellationToken token)
+        {
+            using var decoded = ImageIO.DecodeToRaster(path, pooled: true);
+            return _reference.Score(decoded, token);
+        }
+    }
+
+    /// <summary>
+    /// A full-coverage <see cref="Verification"/> created the first time a pass needs it and released with the owner, so the
+    /// JPEG conversion and the palette search of one PNG judge it against the same reference.
+    /// </summary>
+    private sealed class SharedFullCoverage(RasterImage reference) : IDisposable
+    {
+        private readonly object _gate = new();
+        private Verification? _verification;
+
+        public Verification Get()
+        {
+            lock (_gate)
+            {
+                return _verification ??= new Verification(PerceptualReference.CreateFullCoverage(reference), ownsReference: true);
+            }
+        }
+
+        public void Dispose()
+        {
+            lock (_gate)
+            {
+                _verification?.Dispose();
+                _verification = null;
             }
         }
     }
@@ -1012,7 +1124,8 @@ internal sealed class ImageOptimisationJob : IDisposable
         Verification? verification = null)
     {
         var useMosaic = !perceptual.IsWholeImage;
-        var probeImage = useMosaic ? perceptual.BuildMosaic() : reference;
+        // The mosaic belongs to the reference and is built once for all the searches that share it.
+        var probeImage = useMosaic ? perceptual.Mosaic : reference;
 
         // When the probe is the whole image, the lowest passing encode already is the final, verified candidate.
         EncodedCandidate? passing = null;
@@ -1028,7 +1141,7 @@ internal sealed class ImageOptimisationJob : IDisposable
             var keep = false;
             try
             {
-                var decoded = ImageIO.DecodeToRaster(file.Value.Value);
+                using var decoded = ImageIO.DecodeToRaster(file.Value.Value, pooled: true);
                 var score = useMosaic ? perceptual.ScoreMosaic(decoded, token) : perceptual.Score(decoded, token);
                 if (!useMosaic && score >= _targetScore && (passing is null || quality < passing.Quality))
                 {
@@ -1088,36 +1201,51 @@ internal sealed class ImageOptimisationJob : IDisposable
 
         // The search judged a few sampled tiles; the shipped file is judged on every pixel. Sampled tiles miss
         // low-frequency error such as chroma re-subsampling of a 4:2:2 / 4:4:4 source (seen 5+ points too generous).
-        verification ??= new Verification(perceptual.IsWholeImage ? perceptual : PerceptualReference.CreateFullCoverage(reference));
-        var quality = found.Value;
-        for (var attempt = 0; attempt < VerificationRetries; attempt++)
+        Verification? ownedVerification = null;
+        if (verification is null)
         {
-            _token.ThrowIfCancellationRequested();
-            var (file, score) = await verification.EncodeAndScoreAsync(() => encode(reference, quality, _token), _token).ConfigureAwait(false);
-            if (file is null)
-            {
-                return null;
-            }
-
-            if (score >= _targetScore)
-            {
-                return new EncodedCandidate(file.Value, quality, score);
-            }
-
-            _temp.Release(file.Value);
-            if (quality >= highest)
-            {
-                break;
-            }
-
-            // The probe was too generous by (probe score - real score) at this quality. Search the cheap probe again
-            // against a target raised by that bias instead of blindly stepping up full-size encodes.
-            var bias = probed.TryGetValue(quality, out var probeScore) && probeScore is double p ? Math.Max(0, p - score) : 0;
-            var corrected = await LossySearch.FindLowestPassingAsync(quality + 1, highest, _targetScore + bias + 0.5, EvaluateCached, iterations, _token).ConfigureAwait(false);
-            quality = corrected ?? highest;
+            // A whole-image reference already is the full-frame one (and belongs to the caller, who may be sharing it).
+            verification = perceptual.IsWholeImage
+                ? new Verification(perceptual, ownsReference: false)
+                : ownedVerification = new Verification(PerceptualReference.CreateFullCoverage(reference), ownsReference: true);
         }
 
-        return null;
+        try
+        {
+            var quality = found.Value;
+            for (var attempt = 0; attempt < VerificationRetries; attempt++)
+            {
+                _token.ThrowIfCancellationRequested();
+                var (file, score) = await verification.EncodeAndScoreAsync(() => encode(reference, quality, _token), _token).ConfigureAwait(false);
+                if (file is null)
+                {
+                    return null;
+                }
+
+                if (score >= _targetScore)
+                {
+                    return new EncodedCandidate(file.Value, quality, score);
+                }
+
+                _temp.Release(file.Value);
+                if (quality >= highest)
+                {
+                    break;
+                }
+
+                // The probe was too generous by (probe score - real score) at this quality. Search the cheap probe again
+                // against a target raised by that bias instead of blindly stepping up full-size encodes.
+                var bias = probed.TryGetValue(quality, out var probeScore) && probeScore is double p ? Math.Max(0, p - score) : 0;
+                var corrected = await LossySearch.FindLowestPassingAsync(quality + 1, highest, _targetScore + bias + 0.5, EvaluateCached, iterations, _token).ConfigureAwait(false);
+                quality = corrected ?? highest;
+            }
+
+            return null;
+        }
+        finally
+        {
+            ownedVerification?.Dispose();
+        }
     }
 
     private ImageCandidate? PickBest(params ImageCandidate?[] candidates) => PickBest((IEnumerable<ImageCandidate?>)candidates);
