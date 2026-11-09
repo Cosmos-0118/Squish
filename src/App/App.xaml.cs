@@ -66,7 +66,12 @@ public partial class App : System.Windows.Application
             .ConfigureServices(services =>
             {
                 services.AddSingleton<IOptimiser>(_ => new SettingsBackedImageOptimiser(ImageOptimiserOptionsFactory.FromSettings));
-                services.AddSingleton<IOptimiser>(_ => new VideoOptimiser(VideoOptimiserOptions.Default.WithHardwareOverride()));
+                services.AddSingleton<IOptimiser>(_ =>
+                {
+                    // Hardware is probed once; the user's settings are re-read on every request.
+                    var videoBaseline = VideoOptimiserOptions.Default.WithHardwareOverride();
+                    return new SettingsBackedVideoOptimiser(() => VideoOptimiserOptionsFactory.Apply(videoBaseline));
+                });
 
                 services.AddSingleton(provider =>
                 {

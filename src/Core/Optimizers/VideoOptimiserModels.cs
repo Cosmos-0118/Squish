@@ -69,6 +69,9 @@ public sealed record LoudnessProfile(double Integrated, double TruePeak, double 
 
 public sealed record AudioPlan(bool RemoveAudio, bool CopyStream, string? Encoder, int? BitrateKbps, int? Channels, bool NormalizeLoudness, LoudnessProfile Loudness)
 {
+    /// <summary>Playback speed the video is retimed by; the audio is run through <c>atempo</c> by the same factor.</summary>
+    public double? TempoFactor { get; init; }
+
     public static AudioPlan Remove => new(true, false, null, null, null, false, new LoudnessProfile(-24, -2, 7));
     public static AudioPlan Copy => new(false, true, null, null, null, false, new LoudnessProfile(-24, -2, 7));
 }

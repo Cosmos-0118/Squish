@@ -182,8 +182,10 @@ public sealed class VideoOptimiser : IOptimiser
                 return new OptimisationResult(request.RequestId, OptimisationStatus.Succeeded, plan.SourcePath, "Original already optimal");
             }
 
+            // Read the source times first: when the output replaces the source in place, the copy below overwrites them.
+            var sourceTimes = CaptureTimestamps(plan.SourcePath, plan.PreserveTimestamps);
             File.Copy(tempOutput.Value, finalOutput.Value, overwrite: true);
-            CopyTimestamps(plan.SourcePath, finalOutput, plan.PreserveTimestamps);
+            ApplyTimestamps(sourceTimes, finalOutput);
 
             if (outputPlan.RequiresSourceDeletion(plan.SourcePath))
             {
@@ -278,8 +280,9 @@ public sealed class VideoOptimiser : IOptimiser
             var outputPlan = OptimisedOutputPlanner.Plan(plan.SourcePath, plan.OutputExtension, request.Metadata, BuildCopyOutputPath);
             var finalOutput = outputPlan.Destination;
             finalOutput.EnsureParentDirectoryExists();
+            var sourceTimes = CaptureTimestamps(plan.SourcePath, plan.PreserveTimestamps);
             File.Copy(tempOutput.Value, finalOutput.Value, overwrite: true);
-            CopyTimestamps(plan.SourcePath, finalOutput, plan.PreserveTimestamps);
+            ApplyTimestamps(sourceTimes, finalOutput);
 
             if (outputPlan.RequiresSourceDeletion(plan.SourcePath))
             {
@@ -330,8 +333,9 @@ public sealed class VideoOptimiser : IOptimiser
             var originalSize = SafeFileSize(plan.SourcePath);
             var optimisedSize = SafeFileSize(tempOutput);
 
+            var sourceTimes = CaptureTimestamps(plan.SourcePath, plan.PreserveTimestamps);
             File.Copy(tempOutput.Value, finalOutput.Value, overwrite: true);
-            CopyTimestamps(plan.SourcePath, finalOutput, plan.PreserveTimestamps);
+            ApplyTimestamps(sourceTimes, finalOutput);
 
             if (outputPlan.RequiresSourceDeletion(plan.SourcePath))
             {
@@ -411,23 +415,41 @@ public sealed class VideoOptimiser : IOptimiser
         return isGif ? $"GIF ready – {successDescriptor}" : successDescriptor;
     }
 
-    private static void CopyTimestamps(FilePath source, FilePath destination, bool preserve)
+    private readonly record struct FileTimes(DateTime CreationUtc, DateTime LastWriteUtc);
+
+    /// <summary>
+    /// Reads the source's timestamps. Must run before the optimised file is copied to its destination, because with
+    /// "replace originals" the destination is the source and the copy overwrites its times.
+    /// </summary>
+    private static FileTimes? CaptureTimestamps(FilePath source, bool preserve)
     {
         if (!preserve)
+        {
+            return null;
+        }
+
+        try
+        {
+            var sourceInfo = new FileInfo(source.Value);
+            return sourceInfo.Exists ? new FileTimes(sourceInfo.CreationTimeUtc, sourceInfo.LastWriteTimeUtc) : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static void ApplyTimestamps(FileTimes? times, FilePath destination)
+    {
+        if (times is not { } captured)
         {
             return;
         }
 
         try
         {
-            var sourceInfo = new FileInfo(source.Value);
-            if (!sourceInfo.Exists)
-            {
-                return;
-            }
-
-            File.SetCreationTimeUtc(destination.Value, sourceInfo.CreationTimeUtc);
-            File.SetLastWriteTimeUtc(destination.Value, sourceInfo.LastWriteTimeUtc);
+            File.SetCreationTimeUtc(destination.Value, captured.CreationUtc);
+            File.SetLastWriteTimeUtc(destination.Value, captured.LastWriteUtc);
         }
         catch
         {
@@ -494,7 +516,13 @@ public sealed class VideoOptimiser : IOptimiser
         var animatedFormat = DetermineAnimatedFormat(mode, metadata, options);
         var hardware = options.HardwareOverride ?? VideoHardwareDetector.Detect(options.FfmpegPath, options.ProbeHardwareCapabilities);
         var encoderSelection = SelectEncoder(options, hardware, aggressive, forceMp4, requestedExtension, codecOverride, encoderPreset, probeInfo);
-        encoderSelection = ApplyHardwareBitrateTarget(options, encoderSelection, probeInfo);
+        // "GPU · Constant quality" means fixed quantisers. A bitrate target would replace them (the bitrate branch of
+        // BuildVideoCodecArguments never emits the preset's -rc cqp), which is what happened whenever the quality search
+        // did not run, e.g. for clips under four seconds. The other presets are bitrate-driven by design.
+        if (encoderPreset != VideoEncoderPreset.GpuCqp || !encoderSelection.UseHardwareEncoder)
+        {
+            encoderSelection = ApplyHardwareBitrateTarget(options, encoderSelection, probeInfo);
+        }
 
         var outputExtension = mode == VideoOptimiserMode.Gif
             ? ResolveAnimatedExtension(animatedFormat)
@@ -506,12 +534,12 @@ public sealed class VideoOptimiser : IOptimiser
         var sourceFps = probeInfo?.Video?.FrameRate;
         var capRequestedExplicitly = ReadInt(metadata, "video.targetFps").HasValue || ReadBool(metadata, "video.capFps") == true;
         var effectiveCapFps = capFps && (capRequestedExplicitly || (sourceFps is double measured && measured > targetFps + 0.5));
-        var filters = BuildFilters(maxWidth, maxHeight, playbackSpeed, options.EnforceEvenDimensions, effectiveCapFps, targetFps, frameDecimation);
+        var filters = BuildFilters(maxWidth, maxHeight, playbackSpeed, options.EnforceEvenDimensions, effectiveCapFps, targetFps, frameDecimation, probeInfo?.Video);
 
         var lookahead = DetermineLookahead(options, encoderSelection);
         var useTwoPass = ShouldUseTwoPass(options, encoderSelection, aggressive, probeInfo);
 
-        var audioPlan = BuildAudioPlan(metadata, options, removeAudio, outputExtension, encoderSelection, probeInfo);
+        var audioPlan = BuildAudioPlan(metadata, options, removeAudio, outputExtension, encoderSelection, probeInfo, playbackSpeed);
         var softwareFallback = encoderSelection.UseHardwareEncoder
             ? CreateSoftwareSelection(options, encoderSelection.Codec, aggressive, forceMp4, requestedExtension, probeInfo)
             : null;
@@ -664,9 +692,15 @@ public sealed class VideoOptimiser : IOptimiser
         };
     }
 
-    private static IReadOnlyList<string> BuildFilters(int? maxWidth, int? maxHeight, double? playbackSpeed, bool enforceEven, bool capFps, int targetFps, FrameDecimationPlan frameDecimation)
+    private static IReadOnlyList<string> BuildFilters(int? maxWidth, int? maxHeight, double? playbackSpeed, bool enforceEven, bool capFps, int targetFps, FrameDecimationPlan frameDecimation, VideoStreamInfo? sourceVideo = null)
     {
         var filters = new List<string>();
+
+        // Combing artefacts must not be baked into a progressive encode. send_frame keeps the frame rate unchanged.
+        if (sourceVideo?.IsInterlaced == true)
+        {
+            filters.Add("bwdif=mode=send_frame:parity=auto:deint=interlaced");
+        }
 
         if (frameDecimation.Enabled)
         {
@@ -675,14 +709,23 @@ public sealed class VideoOptimiser : IOptimiser
 
         if (maxWidth.HasValue || maxHeight.HasValue)
         {
-            var width = maxWidth.HasValue ? EnsureEven(maxWidth.Value, enforceEven) : "-2";
-            var height = maxHeight.HasValue ? EnsureEven(maxHeight.Value, enforceEven) : "-2";
-            filters.Add($"scale=w={width}:h={height}:force_original_aspect_ratio=decrease");
+            // A cap only ever shrinks: min(iw, cap) keeps a 400x300 clip from being scaled up to fill a 720 box, and a
+            // missing bound is simply the source size. force_divisible_by keeps the result encodable (even sides).
+            var width = maxWidth.HasValue ? $"'min(iw,{EnsureEven(maxWidth.Value, enforceEven)})'" : "iw";
+            var height = maxHeight.HasValue ? $"'min(ih,{EnsureEven(maxHeight.Value, enforceEven)})'" : "ih";
+            var divisible = enforceEven ? ":force_divisible_by=2" : string.Empty;
+            filters.Add($"scale=w={width}:h={height}:force_original_aspect_ratio=decrease{divisible}");
+        }
+        else if (enforceEven && sourceVideo is { Width: int sourceWidth, Height: int sourceHeight } && (sourceWidth % 2 != 0 || sourceHeight % 2 != 0))
+        {
+            // yuv420p needs even sides; an odd-sized crop (screen recordings) would otherwise fail to encode at all.
+            // Cropping the stray row/column loses a pixel line without resampling anything.
+            filters.Add("crop=trunc(iw/2)*2:trunc(ih/2)*2:0:0");
         }
 
-        if (playbackSpeed.HasValue && Math.Abs(playbackSpeed.Value - 1d) > 0.0001)
+        if (IsEffectiveSpeedChange(playbackSpeed))
         {
-            var factor = playbackSpeed.Value.ToString(CultureInfo.InvariantCulture);
+            var factor = playbackSpeed!.Value.ToString(CultureInfo.InvariantCulture);
             filters.Add($"setpts=PTS/{factor}");
         }
 
@@ -862,7 +905,7 @@ public sealed class VideoOptimiser : IOptimiser
         return VideoOptimiserMode.Video;
     }
 
-    private static AudioPlan BuildAudioPlan(IReadOnlyDictionary<string, object?> metadata, VideoOptimiserOptions options, bool removeAudio, string outputExtension, VideoEncoderSelection encoder, VideoProbeInfo? probe)
+    private static AudioPlan BuildAudioPlan(IReadOnlyDictionary<string, object?> metadata, VideoOptimiserOptions options, bool removeAudio, string outputExtension, VideoEncoderSelection encoder, VideoProbeInfo? probe, double? playbackSpeed = null)
     {
         if (removeAudio)
         {
@@ -874,17 +917,26 @@ public sealed class VideoOptimiser : IOptimiser
         var channels = ReadInt(metadata, "video.audioChannels") ?? options.AudioDownmixChannels;
         var normalize = ReadBool(metadata, "video.audioNormalize") ?? options.EnableAudioNormalization;
 
-        if (codecOverride is not null && codecOverride.Equals("copy", StringComparison.OrdinalIgnoreCase) && !normalize)
+        // The video is retimed with setpts, so the audio has to be retimed by the same factor or the two drift apart.
+        // That needs a filter, which a stream copy cannot apply - it overrides even an explicit "copy".
+        var tempo = IsEffectiveSpeedChange(playbackSpeed) ? playbackSpeed : null;
+
+        if (tempo is null && codecOverride is not null && codecOverride.Equals("copy", StringComparison.OrdinalIgnoreCase) && !normalize)
         {
             return AudioPlan.Copy;
         }
 
         var targetEncoder = DetermineAudioEncoder(outputExtension, codecOverride, options);
+        if (tempo is not null && codecOverride is not null && codecOverride.Equals("copy", StringComparison.OrdinalIgnoreCase))
+        {
+            targetEncoder = DetermineAudioEncoder(outputExtension, null, options);
+        }
+
         var loudness = new LoudnessProfile(options.LoudnessTargetIntegrated, options.LoudnessTargetTruePeak, options.LoudnessTargetLra);
 
         // Copying is lossless and instant. Re-encoding AAC to AAC (the common phone/screen-recorder case) only adds
         // generation loss and rarely saves anything, so streams that already fit the container are passed through.
-        var copyable = codecOverride is null && !normalize && CanCopyAudio(probe, outputExtension, options);
+        var copyable = tempo is null && codecOverride is null && !normalize && CanCopyAudio(probe, outputExtension, options);
         if (copyable)
         {
             return AudioPlan.Copy;
@@ -892,7 +944,33 @@ public sealed class VideoOptimiser : IOptimiser
 
         // Surround stays surround unless the source is huge; only mono/stereo-incompatible layouts are folded down.
         var effectiveChannels = probe?.Audio?.Channels is int sourceChannels && sourceChannels <= channels ? (int?)null : channels;
-        return new AudioPlan(false, false, targetEncoder, bitrate, effectiveChannels, normalize, loudness);
+        return new AudioPlan(false, false, targetEncoder, bitrate, effectiveChannels, normalize, loudness) { TempoFactor = tempo };
+    }
+
+    private static bool IsEffectiveSpeedChange(double? playbackSpeed)
+        => playbackSpeed is double factor && factor > 0 && Math.Abs(factor - 1d) > 0.0001;
+
+    /// <summary>
+    /// <c>atempo</c> filters for a speed factor. Each instance only accepts 0.5-2.0 on older ffmpeg builds, so larger
+    /// changes are chained (4x = 2x then 2x).
+    /// </summary>
+    internal static IReadOnlyList<string> BuildTempoFilters(double factor)
+    {
+        var filters = new List<string>();
+        while (factor > 2d)
+        {
+            filters.Add("atempo=2.0");
+            factor /= 2d;
+        }
+
+        while (factor < 0.5d)
+        {
+            filters.Add("atempo=0.5");
+            factor /= 0.5d;
+        }
+
+        filters.Add($"atempo={factor.ToString("0.######", CultureInfo.InvariantCulture)}");
+        return filters;
     }
 
     private static bool CanCopyAudio(VideoProbeInfo? probe, string outputExtension, VideoOptimiserOptions options)
@@ -912,7 +990,9 @@ public sealed class VideoOptimiser : IOptimiser
         {
             "mp4" or "m4v" or "mov" => affordable && codec is "aac" or "mp3" or "opus" or "ac3" or "eac3",
             "webm" => affordable && codec is "opus" or "vorbis",
-            "mkv" => affordable,
+            // Matroska stream headers often omit the bitrate, which reads as "cheap" above, so the codec must be checked:
+            // uncompressed PCM, FLAC, TrueHD and DTS tracks are huge and are meant to be re-encoded, not copied.
+            "mkv" => affordable && codec is "aac" or "mp3" or "opus" or "vorbis" or "ac3" or "eac3",
             _ => false
         };
     }
@@ -1136,7 +1216,24 @@ public sealed class VideoOptimiser : IOptimiser
 
     private static VideoEncoderSelection SelectEncoder(VideoOptimiserOptions options, VideoHardwareCapabilities hardware, bool aggressive, bool forceMp4, string requestedExtension, VideoCodec? overrideCodec, VideoEncoderPreset preset, VideoProbeInfo? probe)
     {
-        var candidates = BuildCodecPriorityList(options, aggressive, requestedExtension, overrideCodec, preset);
+        var candidates = BuildCodecPriorityList(options, aggressive, requestedExtension, overrideCodec, preset).ToList();
+
+        // An explicit GPU preset means "encode on the GPU". The priority list leads with AV1, and most GPUs have no AV1
+        // encoder, so walking it codec by codec would stop at software SVT-AV1 on the first entry and never reach the
+        // HEVC/H.264 hardware encoders the preset was chosen for. Offer every codec to the hardware first. A forced
+        // codec (WebM -> VP9, ProRes -> HEVC) keeps its own hardware-then-software order below.
+        var gpuPreset = preset is not (VideoEncoderPreset.Auto or VideoEncoderPreset.Cpu);
+        if (gpuPreset && overrideCodec is null)
+        {
+            foreach (var codec in candidates)
+            {
+                if (TrySelectHardwareEncoder(options, hardware, codec, aggressive, forceMp4, requestedExtension, preset, out var gpuSelection))
+                {
+                    return gpuSelection;
+                }
+            }
+        }
+
         foreach (var codec in candidates)
         {
             // Hardware AV1 encoders are far less efficient than SVT-AV1, so the automatic choice stays in software.
@@ -1329,6 +1426,9 @@ public sealed class VideoOptimiser : IOptimiser
         }
 
         var container = ResolveContainerForCodec(codec, requestedExtension, forceMp4);
+        // ffmpeg writes HEVC into MP4/MOV as "hev1", which QuickTime, iOS/macOS and the Windows shell refuse to play;
+        // "hvc1" is the tag they recognise (the software path already sets it).
+        var hevcTag = IsAppleFriendlyContainer(container) ? new[] { "-tag:v", "hvc1" } : Array.Empty<string>();
         int BuildHardwareQuality(VideoCodec targetCodec, int baseline, int offset = 2)
         {
             var adjusted = AdjustHardwareQuality(baseline, aggressive, offset);
@@ -1380,7 +1480,7 @@ public sealed class VideoOptimiser : IOptimiser
                         "cuda",
                         "cuda",
                         quality,
-                        new[] { "-preset", "p7", "-tune", "hq", "-rc", "vbr_hq" },
+                        new[] { "-preset", "p7", "-tune", "hq", "-rc", "vbr_hq" }.Concat(hevcTag).ToArray(),
                         supportsTwoPass: false,
                         suggestedLookahead: 12,
                         sceneCutAware: true);
@@ -1398,7 +1498,7 @@ public sealed class VideoOptimiser : IOptimiser
                         "d3d11va",
                         null,
                         quality,
-                        amdProfile.Arguments,
+                        amdProfile.Arguments.Concat(hevcTag).ToArray(),
                         supportsTwoPass: false,
                         suggestedLookahead: 0,
                         sceneCutAware: false,
@@ -1409,7 +1509,7 @@ public sealed class VideoOptimiser : IOptimiser
                 if (hardware.SupportsHevcQsv)
                 {
                     var quality = BuildHardwareQuality(VideoCodec.Hevc, options.HardwareQualityHevc, 3);
-                    selection = VideoEncoderSelection.Hardware(VideoCodec.Hevc, "hevc_qsv", container, "p010le", "qsv", null, quality, Array.Empty<string>(), supportsTwoPass: false, suggestedLookahead: 10, sceneCutAware: true);
+                    selection = VideoEncoderSelection.Hardware(VideoCodec.Hevc, "hevc_qsv", container, "p010le", "qsv", null, quality, hevcTag, supportsTwoPass: false, suggestedLookahead: 10, sceneCutAware: true);
                     return true;
                 }
                 break;
@@ -1520,13 +1620,18 @@ public sealed class VideoOptimiser : IOptimiser
         return IsCodecCompatibleWithExtension(codec, requestedExtension) ? requestedExtension : defaultContainer;
     }
 
+    /// <summary>
+    /// SVT-AV1 ships tuned for PSNR (tune=1) with variance boost off, which smooths fine texture and bands in flat or dark
+    /// areas. tune=0 (visual quality) plus variance boost spends bits where the eye notices, which is what the SSIMULACRA2
+    /// search rewards: the same score is reached at a higher CRF.
+    /// </summary>
+    private static readonly string[] Svtav1VisualTuning = { "-svtav1-params", "tune=0:enable-variance-boost=1" };
+
     private static VideoEncoderSelection? CreateSoftwareSelection(VideoOptimiserOptions options, VideoCodec codec, bool aggressive, bool forceMp4, string requestedExtension, VideoProbeInfo? probe)
     {
         var container = ResolveContainerForCodec(codec, requestedExtension, forceMp4);
         var wide = SourceUsesHighBitDepth(probe);
-        var appleFriendly = container.Equals("mp4", StringComparison.OrdinalIgnoreCase)
-            || container.Equals("mov", StringComparison.OrdinalIgnoreCase)
-            || container.Equals("m4v", StringComparison.OrdinalIgnoreCase);
+        var appleFriendly = IsAppleFriendlyContainer(container);
 
         return codec switch
         {
@@ -1537,7 +1642,7 @@ public sealed class VideoOptimiser : IOptimiser
             VideoCodec.Hevc => VideoEncoderSelection.Software(VideoCodec.Hevc, options.SoftwareEncoderHevc, container, wide ? "yuv420p10le" : "yuv420p", AdjustSoftwareCrf(options.SoftwareCrfHevc, aggressive, 3), additionalArgs: appleFriendly ? new[] { "-tag:v", "hvc1" } : Array.Empty<string>(), supportsTwoPass: false, suggestTwoPass: false, suggestedLookahead: options.SoftwareLookaheadFrames, sceneCutAware: true),
 
             // SVT-AV1 gains ~25% from 10-bit even for 8-bit sources (less banding, better prediction) and every AV1 decoder supports it.
-            VideoCodec.Av1 => VideoEncoderSelection.Software(VideoCodec.Av1, options.SoftwareEncoderAv1, container, "yuv420p10le", AdjustSoftwareCrf(options.SoftwareCrfAv1, aggressive, 6), additionalArgs: Array.Empty<string>(), supportsTwoPass: false, suggestTwoPass: false, suggestedLookahead: options.SoftwareLookaheadFrames, sceneCutAware: false),
+            VideoCodec.Av1 => VideoEncoderSelection.Software(VideoCodec.Av1, options.SoftwareEncoderAv1, container, "yuv420p10le", AdjustSoftwareCrf(options.SoftwareCrfAv1, aggressive, 6), additionalArgs: Svtav1VisualTuning, supportsTwoPass: false, suggestTwoPass: false, suggestedLookahead: options.SoftwareLookaheadFrames, sceneCutAware: false),
 
             // libvpx-vp9 needs -b:v 0 for constant quality, row-mt/tile columns for multi-core speed, and its own
             // speed knobs (-deadline/-cpu-used); x264-style -preset is silently ignored by it. Two-pass is the one
@@ -1546,6 +1651,11 @@ public sealed class VideoOptimiser : IOptimiser
             _ => null
         };
     }
+
+    private static bool IsAppleFriendlyContainer(string container)
+        => container.Equals("mp4", StringComparison.OrdinalIgnoreCase)
+            || container.Equals("mov", StringComparison.OrdinalIgnoreCase)
+            || container.Equals("m4v", StringComparison.OrdinalIgnoreCase);
 
     private static bool SourceUsesHighBitDepth(VideoProbeInfo? probe)
     {
@@ -1890,7 +2000,7 @@ internal sealed class ExternalVideoToolchain : IVideoToolchain
         }
     }
 
-    private List<string> BuildTranscodeArguments(VideoOptimiserPlan plan, FilePath output, bool includeAudio)
+    internal List<string> BuildTranscodeArguments(VideoOptimiserPlan plan, FilePath output, bool includeAudio)
     {
         var args = new List<string>
         {
@@ -1898,6 +2008,14 @@ internal sealed class ExternalVideoToolchain : IVideoToolchain
         };
 
         var (inputScoped, encoderScoped) = PartitionCodecArguments(plan.VideoCodecArguments);
+        if (plan.RequiresFilters)
+        {
+            // -vf filters (mpdecimate, scale, fps, ...) run on the CPU. With -hwaccel_output_format the decoded frames stay
+            // in GPU memory and the filter graph fails to negotiate a format, so the GPU encode would always crash and
+            // fall back to software. Without it ffmpeg still decodes on the GPU and downloads the frames for the filters.
+            RemoveOptionWithValue(inputScoped, "-hwaccel_output_format");
+        }
+
         if (inputScoped.Count > 0)
         {
             args.AddRange(inputScoped);
@@ -1968,6 +2086,17 @@ internal sealed class ExternalVideoToolchain : IVideoToolchain
         return (inputScoped, encoderScoped);
     }
 
+    private static void RemoveOptionWithValue(List<string> arguments, string option)
+    {
+        for (var i = arguments.Count - 1; i >= 0; i--)
+        {
+            if (arguments[i].Equals(option, StringComparison.OrdinalIgnoreCase))
+            {
+                arguments.RemoveRange(i, Math.Min(2, arguments.Count - i));
+            }
+        }
+    }
+
     private static bool IsInputScopedCodecOption(string value)
     {
         return value.Equals("-hwaccel", StringComparison.OrdinalIgnoreCase)
@@ -2028,11 +2157,22 @@ internal sealed class ExternalVideoToolchain : IVideoToolchain
             args.Add(plan.Audio.Channels.Value.ToInvariantString());
         }
 
+        var audioFilters = new List<string>();
+        if (plan.Audio.TempoFactor is double tempo)
+        {
+            audioFilters.AddRange(VideoOptimiser.BuildTempoFilters(tempo));
+        }
+
         if (plan.Audio.NormalizeLoudness)
         {
             var profile = plan.Audio.Loudness;
+            audioFilters.Add($"loudnorm=I={profile.Integrated.ToInvariantString()}:TP={profile.TruePeak.ToInvariantString()}:LRA={profile.LoudnessRange.ToInvariantString()}:print_format=summary");
+        }
+
+        if (audioFilters.Count > 0)
+        {
             args.Add("-af");
-            args.Add($"loudnorm=I={profile.Integrated.ToInvariantString()}:TP={profile.TruePeak.ToInvariantString()}:LRA={profile.LoudnessRange.ToInvariantString()}:print_format=summary");
+            args.Add(string.Join(',', audioFilters));
         }
 
         args.AddRange(new[] { "-map", "0:a?" });
@@ -2087,7 +2227,8 @@ internal sealed class ExternalVideoToolchain : IVideoToolchain
     {
         var baseFilters = BuildBaseAnimationFilters(plan);
         var chain = baseFilters.Count > 0 ? string.Join(',', baseFilters) + "," : string.Empty;
-        return chain + "split[s0][s1];[s0]palettegen=stats_mode=full[p];[s1][p]paletteuse=dither=bayer";
+        // diff_mode=rectangle only re-codes the area that changed between frames: smaller GIFs, identical pixels.
+        return chain + "split[s0][s1];[s0]palettegen=stats_mode=full[p];[s1][p]paletteuse=dither=bayer:diff_mode=rectangle";
     }
 
     private static string BuildAnimatedFilterChain(VideoOptimiserPlan plan)
@@ -2104,7 +2245,8 @@ internal sealed class ExternalVideoToolchain : IVideoToolchain
             filters.AddRange(plan.Filters);
         }
 
-        var scaleFilter = $"scale=w={plan.GifMaxWidth}:h=-2:force_original_aspect_ratio=decrease";
+        // min(iw, cap): a clip narrower than the cap must not be scaled up (bigger file, no extra detail).
+        var scaleFilter = $"scale=w='min(iw,{plan.GifMaxWidth})':h=-2:force_original_aspect_ratio=decrease";
         if (!filters.Any(f => f.StartsWith("scale=", StringComparison.OrdinalIgnoreCase)))
         {
             filters.Add(scaleFilter);
@@ -2141,8 +2283,10 @@ internal sealed class ExternalVideoToolchain : IVideoToolchain
         }
 
         using var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
-        var stdout = new StringBuilder();
-        var stderr = new StringBuilder();
+        // Only the tail is ever reported (on failure), and `-progress pipe:2` emits ~60 lines a second, so keep a bounded window
+        // of the non-progress lines instead of every line of a multi-hour encode.
+        var stdout = new TailLog(100);
+        var stderr = new TailLog(100);
         var stdoutCompletion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var stderrCompletion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -2154,7 +2298,7 @@ internal sealed class ExternalVideoToolchain : IVideoToolchain
             }
             else
             {
-                stdout.AppendLine(e.Data);
+                stdout.Add(e.Data);
             }
         };
 
@@ -2166,7 +2310,7 @@ internal sealed class ExternalVideoToolchain : IVideoToolchain
             }
             else
             {
-                stderr.AppendLine(e.Data);
+                stderr.Add(e.Data);
                 progressCallback?.Invoke(e.Data);
             }
         };
@@ -2212,6 +2356,48 @@ internal sealed class ExternalVideoToolchain : IVideoToolchain
         }
 
         return ToolchainResult.Successful();
+    }
+
+    /// <summary>Keeps the last <c>capacity</c> diagnostic lines; ffmpeg's key=value progress records are dropped.</summary>
+    private sealed class TailLog
+    {
+        private static readonly Regex ProgressLine = new(
+            @"^(frame|fps|stream_\d+_\d+_q|bitrate|total_size|out_time_us|out_time_ms|out_time|dup_frames|drop_frames|speed|progress)=",
+            RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+        private readonly int _capacity;
+        private readonly Queue<string> _lines = new();
+
+        public TailLog(int capacity)
+        {
+            _capacity = capacity;
+        }
+
+        public void Add(string line)
+        {
+            if (ProgressLine.IsMatch(line))
+            {
+                return;
+            }
+
+            lock (_lines)
+            {
+                if (_lines.Count >= _capacity)
+                {
+                    _lines.Dequeue();
+                }
+
+                _lines.Enqueue(line);
+            }
+        }
+
+        public override string ToString()
+        {
+            lock (_lines)
+            {
+                return string.Join(Environment.NewLine, _lines);
+            }
+        }
     }
 
     private sealed class FfmpegProgressTracker

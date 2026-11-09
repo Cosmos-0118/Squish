@@ -168,10 +168,11 @@ internal sealed class WatchCommandHandler
         }
 
         var imageOptions = ImageOptimiserOptionsFactory.FromSettings();
-        var videoOptions = (VideoOptimiserOptions.Default with
+        var videoOptions = (VideoOptimiserOptionsFactory.FromSettings() with
         {
             AggressiveQuality = _options.Aggressive,
-            RemoveAudio = _options.RemoveAudio
+            // The CLI flag can only add to the saved setting, never switch audio removal off.
+            RemoveAudio = _options.RemoveAudio || SettingsHost.Get(SettingsRegistry.RemoveAudioFromVideos)
         }).WithHardwareOverride();
 
         await using var coordinator = new OptimisationCoordinator(
@@ -585,6 +586,7 @@ internal sealed class WatchCommandHandler
         }
 
         OutputBehaviourSettings.ApplyTo(metadata);
+        VideoEncoderPresetSettings.ApplyTo(metadata);
         return metadata;
     }
 

@@ -250,11 +250,14 @@ public sealed class ShortcutsBridge : IAsyncDisposable
         if (payload.RemoveAudio)
         {
             metadataBase["automation.removeAudio"] = true;
+            // VideoOptimiser reads the video.* key; the automation.* one above is only informational.
+            metadataBase["video.removeAudio"] = true;
         }
 
         if (payload.PlaybackSpeedFactor.HasValue)
         {
             metadataBase["automation.playbackSpeed"] = payload.PlaybackSpeedFactor.Value;
+            metadataBase["video.playbackSpeed"] = payload.PlaybackSpeedFactor.Value;
         }
 
         foreach (var target in targets)
