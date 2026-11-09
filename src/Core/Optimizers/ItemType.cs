@@ -6,5 +6,7 @@ public enum ItemType
     Image,
     Video,
     ClipboardImage,
-    ClipboardVideo
+    ClipboardVideo,
+    Pdf,
+    Document
 }
