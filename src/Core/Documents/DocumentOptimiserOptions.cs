@@ -24,8 +24,17 @@ public sealed record DocumentOptimiserOptions
     /// <summary>Pictures smaller than this are not worth the round trip through the image pipeline.</summary>
     public long MinimumImageBytes { get; init; } = 8 * 1024;
 
-    /// <summary>Aggressive mode downsamples pictures shown at more than ~1.5x this resolution.</summary>
+    /// <summary>Pictures shown at much more than this resolution are downsampled to it (normal mode; Office's own "Print" quality).</summary>
+    public int TargetDpi { get; init; } = 220;
+
+    /// <summary>The same for aggressive mode, which downsamples pictures shown at more than ~1.5x this resolution.</summary>
     public int AggressiveTargetDpi { get; init; } = 150;
+
+    /// <summary>
+    /// Normal mode only resamples when the picture would lose at least this fraction of its linear resolution; a smaller
+    /// reduction costs quality for hardly any size.
+    /// </summary>
+    public double MinimumDownscaleFactor { get; init; } = 0.85;
 
     /// <summary>Larger inputs are skipped rather than risking the machine's memory and temp space.</summary>
     public long MaxInputBytes { get; init; } = 2L * 1024 * 1024 * 1024;
