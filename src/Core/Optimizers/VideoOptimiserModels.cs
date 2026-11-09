@@ -67,6 +67,58 @@ public sealed record FrameDecimationPlan(bool Enabled, double HighThreshold, dou
 
 public sealed record LoudnessProfile(double Integrated, double TruePeak, double LoudnessRange);
 
+/// <summary>
+/// Which subtitle streams survive into the output and how they are written. Containers differ: Matroska keeps
+/// everything as-is, MP4/MOV only take <c>mov_text</c> (so text subtitles are converted and bitmap ones cannot be kept).
+/// </summary>
+public sealed record SubtitlePlan(IReadOnlyList<int> Streams, string? Codec)
+{
+    public static SubtitlePlan None { get; } = new(Array.Empty<int>(), null);
+
+    public bool Any => Streams.Count > 0 && Codec is not null;
+
+    private static readonly HashSet<string> TextCodecs = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "subrip", "srt", "ass", "ssa", "mov_text", "webvtt", "text"
+    };
+
+    public static SubtitlePlan For(IReadOnlyList<string> sourceCodecs, string outputExtension)
+    {
+        if (sourceCodecs.Count == 0)
+        {
+            return None;
+        }
+
+        switch (outputExtension.Trim().TrimStart('.').ToLowerInvariant())
+        {
+            case "mp4":
+            case "m4v":
+            case "mov":
+                return Select(sourceCodecs, codec => TextCodecs.Contains(codec), "mov_text");
+            case "mkv":
+                return Select(sourceCodecs, _ => true, "copy");
+            case "webm":
+                return Select(sourceCodecs, codec => codec.Equals("webvtt", StringComparison.OrdinalIgnoreCase), "copy");
+            default:
+                return None;
+        }
+    }
+
+    private static SubtitlePlan Select(IReadOnlyList<string> codecs, Func<string, bool> keep, string codec)
+    {
+        var streams = new List<int>();
+        for (var i = 0; i < codecs.Count; i++)
+        {
+            if (keep(codecs[i]))
+            {
+                streams.Add(i);
+            }
+        }
+
+        return streams.Count == 0 ? None : new SubtitlePlan(streams, codec);
+    }
+}
+
 public sealed record AudioPlan(bool RemoveAudio, bool CopyStream, string? Encoder, int? BitrateKbps, int? Channels, bool NormalizeLoudness, LoudnessProfile Loudness)
 {
     /// <summary>Playback speed the video is retimed by; the audio is run through <c>atempo</c> by the same factor.</summary>
@@ -87,6 +139,9 @@ public sealed record VideoProbeInfo(
 {
     public string NormalizedVideoCodec => CodecVocabulary.NormalizeVideo(Video?.CodecName);
     public string NormalizedAudioCodec => CodecVocabulary.NormalizeAudio(Audio?.CodecName);
+
+    /// <summary>Codec names of the subtitle streams, in stream order (so index N is ffmpeg's <c>0:s:N</c>).</summary>
+    public IReadOnlyList<string> SubtitleCodecs { get; init; } = Array.Empty<string>();
 }
 
 public sealed record VideoStreamInfo(

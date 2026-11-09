@@ -22,11 +22,11 @@ public sealed class VideoPipelineFixPlanTests
         SupportsAv1Nvenc: false, SupportsAv1Amf: false, SupportsAv1Qsv: false,
         SupportsHevcNvenc: true, SupportsHevcAmf: false, SupportsHevcQsv: false);
 
-    private static VideoProbeInfo Probe(int width = 1920, int height = 1080, string audio = "aac", long? audioBitrate = 128_000, bool interlaced = false, string videoCodec = "h264")
+    private static VideoProbeInfo Probe(int width = 1920, int height = 1080, string audio = "aac", long? audioBitrate = 128_000, bool interlaced = false, string videoCodec = "h264", string[]? subtitles = null)
     {
         var video = new VideoStreamInfo(videoCodec, "", "yuv420p", "bt709", "bt709", "bt709", "tv", width, height, 8_000_000, 30, false, interlaced);
         var audioStream = string.IsNullOrEmpty(audio) ? null : new AudioStreamInfo(audio, "", 2, 48_000, audioBitrate);
-        return new VideoProbeInfo("mov,mp4,m4a,3gp,3g2,mj2", "QuickTime / MOV", 10, 8_200_000, 10_000_000, video, audioStream);
+        return new VideoProbeInfo("mov,mp4,m4a,3gp,3g2,mj2", "QuickTime / MOV", 10, 8_200_000, 10_000_000, video, audioStream) { SubtitleCodecs = subtitles ?? Array.Empty<string>() };
     }
 
     private static async Task<VideoOptimiserPlan> PlanAsync(VideoProbeInfo probe, IReadOnlyDictionary<string, object?>? metadata = null, VideoHardwareCapabilities? hardware = null, string extension = ".mp4", VideoOptimiserOptions? options = null)
@@ -230,6 +230,68 @@ public sealed class VideoPipelineFixPlanTests
         Assert.Equal(copied, plan.Audio.CopyStream);
     }
 
+    // ---- subtitles -------------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task TextSubtitlesAreConvertedToMovTextForMp4AndBitmapOnesAreLeftOut()
+    {
+        var plan = await PlanAsync(Probe(subtitles: new[] { "subrip", "hdmv_pgs_subtitle", "ass" }));
+
+        Assert.Equal(new[] { 0, 2 }, plan.Subtitles.Streams);
+        Assert.Equal("mov_text", plan.Subtitles.Codec);
+
+        var args = new ExternalVideoToolchain(VideoOptimiserOptions.Default).BuildTranscodeArguments(plan, FilePath.From(Path.Combine(Path.GetTempPath(), "out.mp4")), includeAudio: true);
+        Assert.Contains("0:s:0", args);
+        Assert.Contains("0:s:2", args);
+        Assert.DoesNotContain("0:s:1", args);
+        Assert.Equal("mov_text", args[args.IndexOf("-c:s") + 1]);
+    }
+
+    [Fact]
+    public async Task MatroskaKeepsEverySubtitleTrackUnchanged()
+    {
+        var options = VideoOptimiserOptions.Default with { ForceMp4 = false };
+        var plan = await PlanAsync(Probe(subtitles: new[] { "subrip", "hdmv_pgs_subtitle" }), extension: ".mkv", options: options);
+
+        Assert.Equal("mkv", plan.OutputExtension);
+        Assert.Equal(new[] { 0, 1 }, plan.Subtitles.Streams);
+        Assert.Equal("copy", plan.Subtitles.Codec);
+    }
+
+    [Fact]
+    public async Task SubtitlesAreDroppedWhenPlaybackSpeedChangesBecauseTheyCannotBeRetimed()
+    {
+        var plan = await PlanAsync(Probe(subtitles: new[] { "subrip" }), Meta(("video.playbackSpeed", 2.0)));
+
+        Assert.False(plan.Subtitles.Any);
+    }
+
+    [Fact]
+    public async Task SourcesWithoutSubtitlesGetNoSubtitleArguments()
+    {
+        var plan = await PlanAsync(Probe());
+
+        var args = new ExternalVideoToolchain(VideoOptimiserOptions.Default).BuildTranscodeArguments(plan, FilePath.From(Path.Combine(Path.GetTempPath(), "out.mp4")), includeAudio: true);
+        Assert.DoesNotContain("-c:s", args);
+    }
+
+    [Fact]
+    public void FirstPassOfTwoPassEncodingCarriesNoSubtitles()
+    {
+        var plan = new VideoOptimiserPlan(
+            FilePath.From(Path.Combine(Path.GetTempPath(), "in.mkv")), VideoOptimiserMode.Video, "mp4", true, false, false, 60, null, null, null,
+            Array.Empty<string>(), false, false, false, true, true, 720, 18, 85,
+            VideoEncoderSelection.Software(VideoCodec.Vp9, "libvpx-vp9", "webm", "yuv420p", 33), null, new[] { "-c:v", "libvpx-vp9" },
+            AudioPlan.Copy, FrameDecimationPlan.Disabled, AnimatedExportFormat.Gif, true, null, false, null, RemuxPlan.Disabled)
+        {
+            Subtitles = new SubtitlePlan(new[] { 0 }, "mov_text")
+        };
+
+        var firstPass = new ExternalVideoToolchain(VideoOptimiserOptions.Default).BuildTranscodeArguments(plan, FilePath.From(Path.Combine(Path.GetTempPath(), "p.mp4")), includeAudio: false);
+        Assert.DoesNotContain("-c:s", firstPass);
+        Assert.Contains("-an", firstPass);
+    }
+
     // ---- GPU decode + CPU filters ----------------------------------------------------------------------------
 
     [Fact]
@@ -290,7 +352,7 @@ public sealed class VideoPipelineFixPlanTests
         Assert.True(plan.StripMetadata);
 
         var args = new ExternalVideoToolchain(VideoOptimiserOptions.Default).BuildTranscodeArguments(plan, FilePath.From(Path.Combine(Path.GetTempPath(), "out.mp4")), includeAudio: true);
-        var index = args.IndexOf("-map_metadata");
+        var index = args.IndexOf("-map_metadata:g"); // global only: stream language/title must survive
         Assert.True(index >= 0);
         Assert.Equal("-1", args[index + 1]);
     }
@@ -434,6 +496,42 @@ public sealed class VideoPipelineFixRealFfmpegTests : IDisposable
         var smallOut = Path.Combine(_directory, "small-out.mp4");
         await Run(ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-i", small, "-vf", string.Join(',', capped.Filters), "-c:v", "libx264", "-pix_fmt", "yuv420p", smallOut);
         Assert.Equal("400x300", (await Run(ffprobe, "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=s=x:p=0", smallOut)).Trim());
+    }
+
+    [ToolFact("ffmpeg", "ffprobe")]
+    public async Task SubtitleTracksSurviveAnMkvToMp4OptimisationWithTheirLanguages()
+    {
+        var ffmpeg = ToolAvailability.Ffmpeg!;
+        var ffprobe = ToolAvailability.Ffprobe!;
+        var srt = Path.Combine(_directory, "en.srt");
+        var fre = Path.Combine(_directory, "fr.srt");
+        await File.WriteAllTextAsync(srt, "1\n00:00:00,500 --> 00:00:02,000\nHello\n\n");
+        await File.WriteAllTextAsync(fre, "1\n00:00:00,500 --> 00:00:02,000\nBonjour\n\n");
+        var source = Path.Combine(_directory, "subs.mkv");
+        await Run(ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=25", "-i", srt, "-i", fre,
+            "-t", "3", "-map", "0:v", "-map", "1", "-map", "2", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:s", "srt",
+            "-metadata:s:s:0", "language=eng", "-metadata:s:s:1", "language=fre", source);
+
+        var options = new VideoOptimiserOptions
+        {
+            FfmpegPath = ffmpeg,
+            FfprobePath = ffprobe,
+            HardwareOverride = VideoHardwareCapabilities.CpuOnly,
+            EnableQualitySearch = false,
+            RequireSmallerSize = false,
+            StripMetadata = true
+        };
+
+        using var ffmpegEnv = new EnvironmentVariableScope("SQUISH_FFMPEG", ffmpeg);
+        using var ffprobeEnv = new EnvironmentVariableScope("SQUISH_FFPROBE", ffprobe);
+        var request = new OptimisationRequest(ItemType.Video, FilePath.From(source));
+        var result = await new VideoOptimiser(options).OptimiseAsync(request, new OptimiserExecutionContext(request.RequestId, _ => { }), CancellationToken.None);
+
+        Assert.Equal(OptimisationStatus.Succeeded, result.Status);
+        var info = (await Run(ffprobe, "-v", "error", "-select_streams", "s", "-show_entries", "stream=codec_name:stream_tags=language", "-of", "compact", result.OutputPath!.Value.Value)).Replace("\r", string.Empty);
+        Assert.Contains("codec_name=mov_text|tag:language=eng", info);
+        Assert.Contains("codec_name=mov_text|tag:language=fre", info);
     }
 
     private static async Task<VideoOptimiserPlan> BuildPlanAsync(VideoOptimiserOptions options, string path, IReadOnlyDictionary<string, object?>? metadata = null)
