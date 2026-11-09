@@ -151,6 +151,13 @@ public sealed record VideoOptimiserOptions
     /// </summary>
     public double QualitySearchSkipRatio { get; init; } = 1.5;
 
+    /// <summary>
+    /// How much a sampled encode overstates the full encode's bitrate (every sample starts on a keyframe and uses a faster
+    /// preset; <see cref="QualitySearchSkipRatio"/> documents 1.1-1.7x). The grain-protection cap is raised by this factor
+    /// so it compares like with like.
+    /// </summary>
+    public double QualitySearchSampleBitrateInflation { get; init; } = 1.3;
+
     /// <summary>The chosen encode may cost at most this fraction of the source's video bitrate (grain protection).</summary>
     public double QualitySearchMaxBitrateRatio { get; init; } = 0.6;
 

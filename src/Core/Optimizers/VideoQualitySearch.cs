@@ -110,7 +110,11 @@ internal sealed class FfmpegVideoQualitySearch : IVideoQualitySearch
             {
                 var ratio = plan.AggressiveQuality ? _options.QualitySearchMaxBitrateRatioAggressive : _options.QualitySearchMaxBitrateRatio;
                 // ...but not by more than the allowance below the target: an efficient source is better kept than crushed.
-                outcome = await CrfSearch.EnforceBitrateCapAsync(outcome, source * ratio, maxCrf, Probe, cancellationToken, minScore: target - _options.QualitySearchCapAllowance).ConfigureAwait(false);
+                // The measured bitrate comes from short fast-preset samples that each start on a keyframe, so it overstates what
+                // the full encode will cost; compare it against a correspondingly raised cap or normal-mode footage is crushed
+                // for a "grain" problem it does not have.
+                var sampleCap = source * ratio * Math.Max(1.0, _options.QualitySearchSampleBitrateInflation);
+                outcome = await CrfSearch.EnforceBitrateCapAsync(outcome, sampleCap, maxCrf, Probe, cancellationToken, minScore: target - _options.QualitySearchCapAllowance).ConfigureAwait(false);
             }
 
             Log.Info($"Quality search for {plan.SourcePath.Name}: CRF {outcome.Chosen.Crf} score {outcome.Chosen.Score:0.0} (target {target:0.0}, met={outcome.TargetMet}) after {outcome.Probes.Count} probes");
@@ -187,6 +191,15 @@ internal sealed class FfmpegVideoQualitySearch : IVideoQualitySearch
     {
         var fps = plan.SourceProbe?.Video?.FrameRate is double rate && rate > 1 ? Math.Min(rate, plan.CapFps ? plan.TargetFps : rate) : 30.0;
         var expectedFrames = Math.Max(4, (int)(window.Seconds * fps));
+
+        // `select` counts frames *after* the plan's filters. Frame decimation (on by default) drops most of a static screen
+        // recording, so picks derived from the source frame rate can lie past the last frame that exists, leaving no
+        // reference at all and silently disabling the whole search. Count what the filters really leave.
+        if (plan.Filters.Any(f => f.StartsWith("mpdecimate", StringComparison.Ordinal)) && await CountFilteredFramesAsync(plan, window, token).ConfigureAwait(false) is int counted && counted > 0)
+        {
+            expectedFrames = Math.Min(expectedFrames, counted);
+        }
+
         var picks = Enumerable.Range(0, _options.QualitySearchFramesPerSample)
             .Select(i => (int)((i + 0.5) * expectedFrames / _options.QualitySearchFramesPerSample))
             .Distinct()
@@ -208,11 +221,43 @@ internal sealed class FfmpegVideoQualitySearch : IVideoQualitySearch
         return new SampleReference(window, picks, references, frameWidth, frameHeight);
     }
 
+    /// <summary>Number of frames the window has once the plan's filters have run, or null when ffmpeg could not tell.</summary>
+    private async Task<int?> CountFilteredFramesAsync(VideoOptimiserPlan plan, SampleWindow window, CancellationToken token)
+    {
+        var args = new List<string>
+        {
+            "-hide_banner", "-loglevel", "error", "-nostdin", "-nostats", "-progress", "pipe:1",
+            "-ss", window.Start.ToString("0.###", CultureInfo.InvariantCulture),
+            "-t", window.Seconds.ToString("0.###", CultureInfo.InvariantCulture),
+            "-i", plan.SourcePath.Value, "-map", "0:v:0", "-an", "-sn",
+            "-vf", string.Join(',', plan.Filters), "-fps_mode", "passthrough", "-f", "null", "-"
+        };
+
+        var run = await ProcessRunner.RunAsync(_options.FfmpegPath, args, ProcessRunnerOptions.Create(throwOnError: false), token).ConfigureAwait(false);
+        if (run.ExitCode != 0)
+        {
+            return null;
+        }
+
+        // -progress prints "frame=N" repeatedly; the last one is the total.
+        int? total = null;
+        foreach (var line in run.StandardOutput.Split('\n'))
+        {
+            var trimmed = line.Trim();
+            if (trimmed.StartsWith("frame=", StringComparison.Ordinal) && int.TryParse(trimmed.AsSpan(6), NumberStyles.Integer, CultureInfo.InvariantCulture, out var frames))
+            {
+                total = frames;
+            }
+        }
+
+        return total;
+    }
+
     /// <summary>
     /// Streams the selected frames from ffmpeg, handing each one to <paramref name="project"/> (frame position, frame) and
     /// keeping only what it returns. The frame must not be retained: a 4K RGBA frame is 33 MB on the Large Object Heap.
     /// </summary>
-    private async Task<List<T>> ReadFramesAsync<T>(VideoOptimiserPlan plan, string input, SampleWindow window, int[] frameIndexes, Func<int, RasterImage, T> project, CancellationToken token, bool inputIsSample = false)
+    private async Task<List<T>> ReadFramesAsync<T>(VideoOptimiserPlan plan, string input, SampleWindow window, int[] frameIndexes, Func<int, RasterImage, T> project, CancellationToken token, bool inputIsSample = false, (int Width, int Height)? knownSize = null)
     {
         var width = 0;
         var height = 0;
@@ -235,8 +280,9 @@ internal sealed class FfmpegVideoQualitySearch : IVideoQualitySearch
 
         args.AddRange(new[] { "-i", input, "-map", "0:v:0", "-an", "-sn", "-vf", string.Join(',', filters), "-fps_mode", "passthrough", "-f", "rawvideo", "-pix_fmt", "rgba", "pipe:1" });
 
-        // Frame geometry is unknown until ffmpeg has run the filters, so probe it from a one-frame dry run.
-        (width, height) = await ProbeFrameSizeAsync(input, filters, window, inputIsSample, token).ConfigureAwait(false);
+        // Frame geometry is unknown until ffmpeg has run the filters, so probe it from a one-frame dry run - unless the
+        // caller already knows it (an encoded sample has exactly the geometry of the reference it is scored against).
+        (width, height) = knownSize ?? await ProbeFrameSizeAsync(input, filters, window, inputIsSample, token).ConfigureAwait(false);
         if (width <= 0 || height <= 0)
         {
             return new List<T>();
@@ -419,7 +465,7 @@ internal sealed class FfmpegVideoQualitySearch : IVideoQualitySearch
             var frameScores = await ReadFramesAsync(plan, samplePath, reference.Window, reference.FrameIndexes, (i, frame) =>
                 i < reference.Tiles.Count && frame.Width == reference.Width && frame.Height == reference.Height
                     ? reference.Tiles[i].Score(frame, token)
-                    : (double?)null, token, inputIsSample: true).ConfigureAwait(false);
+                    : (double?)null, token, inputIsSample: true, knownSize: (reference.Width, reference.Height)).ConfigureAwait(false);
             if (frameScores.Count == 0)
             {
                 return null;

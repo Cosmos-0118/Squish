@@ -172,10 +172,11 @@ internal sealed class OptimiseCommandHandler
 
         // Aggressive image mode is requested per file through the image.aggressive metadata flag (see BuildMetadata).
         var imageOptions = ImageOptimiserOptionsFactory.FromSettings();
-        var videoOptions = (VideoOptimiserOptions.Default with
+        var videoOptions = (VideoOptimiserOptionsFactory.FromSettings() with
         {
             AggressiveQuality = _options.Aggressive,
-            RemoveAudio = _options.RemoveAudio
+            // The CLI flag can only add to the saved setting, never switch audio removal off.
+            RemoveAudio = _options.RemoveAudio || SettingsHost.Get(SettingsRegistry.RemoveAudioFromVideos)
         }).WithHardwareOverride();
 
         await using var coordinator = new OptimisationCoordinator(
@@ -256,7 +257,12 @@ internal sealed class OptimiseCommandHandler
         var metadata = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
         if (type == ItemType.Video)
         {
-            metadata["video.removeAudio"] = _options.RemoveAudio;
+            if (_options.RemoveAudio)
+            {
+                // Only an explicit flag overrides; otherwise the saved "remove audio" setting decides.
+                metadata["video.removeAudio"] = true;
+            }
+
             metadata["video.aggressive"] = _options.Aggressive;
             if (_options.PlaybackSpeedFactor.HasValue)
             {
@@ -270,6 +276,12 @@ internal sealed class OptimiseCommandHandler
 
         // Same output rules as the app: replace-in-place, delete-after-conversion, always re-encode.
         OutputBehaviourSettings.ApplyTo(metadata);
+        if (type == ItemType.Video)
+        {
+            // ...and the same encoder choice (e.g. a GPU preset) as the app.
+            VideoEncoderPresetSettings.ApplyTo(metadata);
+        }
+
         return metadata.Count > 0 ? metadata : null;
     }
 
@@ -343,6 +355,13 @@ internal sealed class TargetResolver
                 var searchOption = _options.Recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
                 foreach (var file in Directory.EnumerateFiles(expanded, "*", searchOption))
                 {
+                    // A folder sweep must not re-encode what Squish already produced or optimised (re-running ffprobe,
+                    // sampling and a full encode per video). Files named explicitly on the command line are still processed.
+                    if (IsAlreadyOptimised(file))
+                    {
+                        continue;
+                    }
+
                     AddFile(file, files);
                 }
             }
@@ -357,6 +376,19 @@ internal sealed class TargetResolver
         }
 
         return files;
+    }
+
+    private static bool IsAlreadyOptimised(string file)
+    {
+        var path = new Squish.Core.Shared.FilePath(file);
+        if (Squish.Core.Shared.SquishFileGuards.IsSquishGenerated(path))
+        {
+            return true;
+        }
+
+        // "Always re-encode" is the user's explicit request to ignore the optimised marker.
+        return !SettingsHost.Get(SettingsRegistry.ForceFullImageOptimisations)
+            && Squish.Core.Shared.SquishOptimisationMarker.HasValidMarker(path);
     }
 
     private void AddFile(string file, ICollection<TargetFile> files)

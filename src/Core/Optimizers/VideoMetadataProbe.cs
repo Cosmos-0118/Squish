@@ -136,7 +136,9 @@ internal static class VideoProbeParser
         var isHdr = colorTransfer is not null
             && (colorTransfer.Contains("smpte2084", StringComparison.OrdinalIgnoreCase)
                 || colorTransfer.Contains("arib-std-b67", StringComparison.OrdinalIgnoreCase));
-        var isInterlaced = stream.TryGetProperty("field_order", out var field) && !string.Equals(field.GetString(), "progressive", StringComparison.OrdinalIgnoreCase);
+        // "unknown" and a missing value are not evidence of interlacing; only the explicit field orders are.
+        var isInterlaced = stream.TryGetProperty("field_order", out var field)
+            && field.GetString()?.ToLowerInvariant() is "tt" or "bb" or "tb" or "bt";
 
         return new VideoStreamInfo(codec, profile, pixFmt, colorSpace, colorTransfer, colorPrimaries, colorRange, width, height, bitrate, frameRate, isHdr, isInterlaced);
     }
