@@ -22,6 +22,8 @@ internal static class ToolAvailability
 
     public static string? Avifenc => ExternalToolResolver.Resolve("avifenc", "libavif", "SQUISH_AVIFENC");
 
+    public static string? Qpdf => ExternalToolResolver.Resolve("qpdf", "qpdf", "SQUISH_QPDF");
+
     public static string? Gifsicle => ExternalToolResolver.Resolve("gifsicle", "gifsicle", "SQUISH_GIFSICLE");
 
     public static string? Ffmpeg
@@ -62,6 +64,7 @@ internal static class ToolAvailability
         "cwebp" => Cwebp,
         "avifenc" => Avifenc,
         "gifsicle" => Gifsicle,
+        "qpdf" => Qpdf,
         "ffmpeg" => Ffmpeg,
         "ffprobe" => Ffprobe,
         _ => null

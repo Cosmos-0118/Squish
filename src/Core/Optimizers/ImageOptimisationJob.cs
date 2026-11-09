@@ -478,7 +478,7 @@ internal sealed class ImageOptimisationJob : IDisposable
                 }
             }
 
-            if (wantsJpeg && !hasAlpha && content.IsPhotographic && reference.PixelCount >= 1_000_000 && PerceptualReference.IsSupported(reference))
+            if (wantsJpeg && !hasAlpha && content.IsPhotographic && reference.PixelCount >= _options.JpegConversionMinimumPixels && PerceptualReference.IsSupported(reference))
             {
                 var jpeg = await ConvertToJpegAsync(reference, content, blobs, "Converted photographic PNG to JPEG").ConfigureAwait(false);
                 if (jpeg is not null)
