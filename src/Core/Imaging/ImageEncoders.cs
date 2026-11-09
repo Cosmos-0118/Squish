@@ -263,9 +263,11 @@ internal sealed class ImageEncoders
         }
 
         var output = _temp.New("squish-webp", "webp");
-        var args = new List<string> { "-quiet", "-mt", "-m", "6", "-metadata", "none" };
+        var args = new List<string> { "-quiet", "-mt", "-metadata", "none" };
         if (lossless)
         {
+            // -z 9 already means method 6 at quality 100. An explicit -m before it overrides part of the preset and
+            // measured 0.4-4% larger on graphics, so the method is left to -z.
             // No -exact: it keeps the colour hidden under fully transparent pixels, which costs bytes for nothing visible.
             args.AddRange(new[] { "-lossless", "-z", "9" });
         }
@@ -273,6 +275,7 @@ internal sealed class ImageEncoders
         {
             args.AddRange(new[]
             {
+                "-m", "6",
                 "-q", Math.Clamp(quality, 0, 100).ToString(CultureInfo.InvariantCulture),
                 "-sharp_yuv", "-af", "-alpha_q", "100"
             });

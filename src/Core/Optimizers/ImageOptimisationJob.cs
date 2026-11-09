@@ -454,9 +454,7 @@ internal sealed class ImageOptimisationJob : IDisposable
         // Screenshots and UI graphics usually fit a 256-colour palette at the perceptual target for a fraction of the
         // lossless size; the guard rejects it where banding or dithering would show. An already-indexed source was
         // quantised before (possibly by us), so only aggressive mode may squeeze its palette further.
-        // pngquant writes a fresh PNG with every ancillary chunk (EXIF, text, pHYs DPI) gone, so it is off when the user
-        // asked to keep metadata.
-        var wantsLossyPalette = _encoders.HasPngquant && info is not { BitDepth: 16 } && !_options.MetadataPolicy.PreserveMetadata
+        var wantsLossyPalette = _encoders.HasPngquant && info is not { BitDepth: 16 }
             && (_aggressive || _forceFull || info is not { IsIndexed: true });
         var wantsModern = _options.AdvancedCodecs.AllowWebpOutput || _options.AdvancedCodecs.AllowAvifOutput;
 
@@ -492,7 +490,11 @@ internal sealed class ImageOptimisationJob : IDisposable
             // A large continuous-tone photo cannot hold 256 colours at the perceptual target; skip the two pngquant runs
             // and full-frame scoring that would only confirm it (aggressive/forced runs still try).
             var photoTooRich = content.IsPhotographic && reference.PixelCount >= 1_000_000 && !_aggressive && !_forceFull;
-            if (wantsLossyPalette && !photoTooRich && PerceptualReference.IsSupported(reference) && !HasNonSrgbProfile(blobs))
+            // pngquant writes a fresh PNG without EXIF/XMP/IPTC, so it is only off when the user wants metadata kept AND
+            // this file has some. A screenshot with nothing to lose can still be quantised.
+            var wouldLoseMetadata = _options.MetadataPolicy.PreserveMetadata
+                && (blobs.Exif is { Length: > 0 } || blobs.Xmp is { Length: > 0 } || blobs.Iptc is { Length: > 0 });
+            if (wantsLossyPalette && !photoTooRich && !wouldLoseMetadata && PerceptualReference.IsSupported(reference) && !HasNonSrgbProfile(blobs))
             {
                 var palette = await QuantisedPngAsync(reference, strip).ConfigureAwait(false);
                 if (palette is not null)
@@ -645,6 +647,15 @@ internal sealed class ImageOptimisationJob : IDisposable
             return null;
         }
 
+        // AVIF and HEIC can describe their colours with CICP code points instead of an ICC profile. Everything below
+        // goes through 8-bit sRGB, so BT.2020, Display P3 or PQ/HLG files would silently change meaning; leave them.
+        if (probe.Format is SourceFormat.Avif or SourceFormat.Heic
+            && IsoBmffColour.TryRead(_source.Value) is { } cicp && IsoBmffColour.IsBeyondSrgb(cicp))
+        {
+            _notes.Add($"HDR or wide-gamut colour signalling (CICP {cicp.Primaries}/{cicp.Transfer}/{cicp.Matrix}); left untouched to protect colours");
+            return null;
+        }
+
         var downscale = NeedsDownscale(probe);
         using var decoded = ImageIO.Decode(_source.Value, probe.Format, autoOrient: true);
         if (decoded.ColorKind is ImageColorKind.Cmyk or ImageColorKind.Other)
@@ -736,51 +747,52 @@ internal sealed class ImageOptimisationJob : IDisposable
         var allowWebp = onlyFormat is null ? _options.AdvancedCodecs.AllowWebpOutput : onlyFormat == SourceFormat.WebP;
         var allowAvif = onlyFormat is null ? _options.AdvancedCodecs.AllowAvifOutput : onlyFormat == SourceFormat.Avif;
         var chroma = content.Kind == ImageContentKind.Photograph ? ChromaSubsampling.Subsampled420 : ChromaSubsampling.Full444;
-        ImageCandidate? best = null;
+        ImageCandidate? webp = null;
+        ImageCandidate? avif = null;
+        // One cache for the whole method, so the lossless encode and a whole-image lossy search share a staging PNG.
+        using var stagingCache = new StagingCache(_encoders);
 
         if (allowWebp && _encoders.HasWebp)
         {
-            ImageCandidate? webp = null;
+            ImageCandidate? losslessWebp = null;
             if (content.Kind != ImageContentKind.Photograph)
             {
-                var staging = _encoders.WritePngStaging(reference);
-                var lossless = await _encoders.EncodeWebpAsync(staging, 100, lossless: true, _token).ConfigureAwait(false);
+                var lossless = await _encoders.EncodeWebpAsync(stagingCache.Get(reference), 100, lossless: true, _token).ConfigureAwait(false);
                 if (lossless is not null)
                 {
-                    webp = new ImageCandidate(lossless.Value, "webp", "Lossless WebP", SafeSize(lossless.Value), false, null);
+                    losslessWebp = new ImageCandidate(lossless.Value, "webp", "Lossless WebP", SafeSize(lossless.Value), false, null);
                 }
             }
 
-            // Lossless is only the baseline for graphics: a guarded lossy encode is often smaller (and is the only
-            // option that can beat a source that was already lossy WebP), so both compete and the smaller one wins.
+            ImageCandidate? lossyWebp = null;
             if (GuardEnabled && PerceptualReference.IsSupported(reference))
             {
-                using var stagingCache = new StagingCache(_encoders);
                 var perceptual = PerceptualReference.Create(reference);
                 var encoded = await SearchLossyAsync(reference, perceptual, _options.MinimumLossyQuality, _options.MaximumLossyQuality,
                     async (image, quality, token) => await _encoders.EncodeWebpAsync(stagingCache.Get(image), quality, lossless: false, token).ConfigureAwait(false)).ConfigureAwait(false);
                 if (encoded is not null)
                 {
-                    var lossy = new ImageCandidate(encoded.File, "webp", $"WebP q{encoded.Quality}", SafeSize(encoded.File), true, encoded.Score);
-                    webp = Smaller(webp, lossy);
+                    lossyWebp = new ImageCandidate(encoded.File, "webp", $"WebP q{encoded.Quality}", SafeSize(encoded.File), true, encoded.Score);
                 }
             }
 
-            best = Smaller(best, webp);
+            // Lossless is the baseline for graphics; the guarded lossy encode has to beat it by the usual margin.
+            webp = PickBest(losslessWebp, lossyWebp);
         }
 
         if (allowAvif && _encoders.HasAvif && GuardEnabled && PerceptualReference.IsSupported(reference))
         {
-            using var stagingCache = new StagingCache(_encoders);
             var perceptual = PerceptualReference.Create(reference);
             var encoded = await SearchLossyAsync(reference, perceptual, _options.MinimumLossyQuality, _options.MaximumLossyQuality,
                 async (image, quality, token) => await _encoders.EncodeAvifAsync(stagingCache.Get(image), quality, chroma, speed: 6, token).ConfigureAwait(false),
                 iterations: 5).ConfigureAwait(false);
             if (encoded is not null)
             {
-                best = Smaller(best, new ImageCandidate(encoded.File, "avif", $"AVIF q{encoded.Quality}", SafeSize(encoded.File), true, encoded.Score));
+                avif = new ImageCandidate(encoded.File, "avif", $"AVIF q{encoded.Quality}", SafeSize(encoded.File), true, encoded.Score);
             }
         }
+
+        var best = PickBest(webp, avif);
 
         if (best is null && onlyFormat is not null)
         {

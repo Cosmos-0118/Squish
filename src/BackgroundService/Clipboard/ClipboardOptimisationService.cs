@@ -678,8 +678,6 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
             var imageBytes = Squish.Core.Imaging.ClipboardImageConverter.ToGdiCompatibleBytes(path.Value, fileBytes, out _);
             var copyPath = _copyImageFilePath;
             var includePng = imageBytes.Length >= PngSignature.Length && imageBytes.AsSpan(0, PngSignature.Length).SequenceEqual(PngSignature);
-            var includeJpeg = !includePng && imageBytes.Length >= 3 && imageBytes[0] == 0xFF && imageBytes[1] == 0xD8 && imageBytes[2] == 0xFF;
-            MemoryStream? jpegStream = null;
 
             var sequence = await _monitor.WriteAsync(
                 () =>
@@ -693,13 +691,6 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
                     {
                         pngStream = new MemoryStream(imageBytes, writable: false);
                         data.SetData("PNG", false, pngStream);
-                    }
-                    else if (includeJpeg)
-                    {
-                        // Offer the compressed JPEG too, so apps that read "JFIF" paste the optimised bytes
-                        // instead of re-encoding the uncompressed CF_DIB.
-                        jpegStream = new MemoryStream(imageBytes, writable: false);
-                        data.SetData("JFIF", false, jpegStream);
                     }
 
                     data.SetData(DataFormats.Bitmap, true, bitmap);
@@ -718,7 +709,6 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
                     bitmap?.Dispose();
                     bitmapStream?.Dispose();
                     pngStream?.Dispose();
-                    jpegStream?.Dispose();
                 }).ConfigureAwait(false);
 
             RememberOwnWrite(item, sequence);
