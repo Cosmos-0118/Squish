@@ -67,8 +67,8 @@ function Invoke-FileDownload {
         [string[]]$Urls,
         [Parameter(Mandatory = $true)]
         [string]$OutFile,
-        [int]$MaxAttemptsPerUrl = 4,
-        [int]$BaseDelaySeconds = 3
+        [int]$MaxAttemptsPerUrl = 6,
+        [int]$BaseDelaySeconds = 5
     )
 
     $candidateUrls = @($Urls | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)
@@ -108,6 +108,10 @@ function Invoke-FileDownload {
                 }
 
                 if ($attempt -lt $MaxAttemptsPerUrl) {
+                    # Why the waits are this long: a rarely downloaded GitHub release asset is cold at GitHub's edge. The first
+                    # request waits about 11 seconds for storage and gets "504 Gateway Time-out", and that failure is then
+                    # served again within a second or two. So quick retries (and a changed query string, which is another
+                    # cold URL) all fail; the same URL succeeds once the edge has fetched the file.
                     $delaySeconds = [Math]::Min(60, [int]([Math]::Pow(2, ($attempt - 1)) * $BaseDelaySeconds))
                     Write-Warning "    Download failed. Retrying in $delaySeconds seconds..."
                     Start-Sleep -Seconds $delaySeconds
