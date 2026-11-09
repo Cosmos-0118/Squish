@@ -253,29 +253,24 @@ internal sealed class OptimiseCommandHandler
 
     private IReadOnlyDictionary<string, object?>? BuildMetadata(ItemType type)
     {
+        var metadata = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
         if (type == ItemType.Video)
         {
-            var metadata = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["video.removeAudio"] = _options.RemoveAudio,
-                ["video.aggressive"] = _options.Aggressive
-            };
+            metadata["video.removeAudio"] = _options.RemoveAudio;
+            metadata["video.aggressive"] = _options.Aggressive;
             if (_options.PlaybackSpeedFactor.HasValue)
             {
                 metadata["video.playbackSpeed"] = _options.PlaybackSpeedFactor.Value;
             }
-            return metadata;
         }
-
-        if (type == ItemType.Image && _options.Aggressive)
+        else if (type == ItemType.Image && _options.Aggressive)
         {
-            return new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
-            {
-                [OptimisationMetadata.ImageAggressive] = true
-            };
+            metadata[OptimisationMetadata.ImageAggressive] = true;
         }
 
-        return null;
+        // Same output rules as the app: replace-in-place, delete-after-conversion, always re-encode.
+        OutputBehaviourSettings.ApplyTo(metadata);
+        return metadata.Count > 0 ? metadata : null;
     }
 
     private static void PrintSummary(IReadOnlyCollection<CliSuccess> successes)

@@ -32,6 +32,9 @@ internal sealed class ImageOptimisationJob : IDisposable
     private readonly TempFileScope _temp = new();
     private readonly ImageEncoders _encoders;
     private readonly bool _aggressive;
+
+    /// <summary>"Always re-encode images": ignore the already-optimised shortcuts (Squish marker, quality ceiling, indexed PNG).</summary>
+    private readonly bool _forceFull;
     private readonly double _targetScore;
     private readonly FilePath _source;
     private readonly long _originalSize;
@@ -46,6 +49,7 @@ internal sealed class ImageOptimisationJob : IDisposable
         _source = request.SourcePath;
         _originalSize = SafeSize(_source);
         _aggressive = OptimisationMetadata.GetFlag(request.Metadata, OptimisationMetadata.ImageAggressive);
+        _forceFull = OptimisationMetadata.GetFlag(request.Metadata, OptimisationMetadata.ImageForceFullOptimisation);
         _targetScore = _aggressive ? options.PerceptualGuard.AggressiveMinimumScore : options.PerceptualGuard.MinimumScore;
         _encoders = new ImageEncoders(ImageToolset.Resolve(options.AdvancedCodecs), _temp);
     }
@@ -118,7 +122,15 @@ internal sealed class ImageOptimisationJob : IDisposable
         var plan = OptimisedOutputPlanner.Plan(_source, best.Extension, _request.Metadata, BuildOutputPath);
         var destination = plan.Destination;
         destination.EnsureParentDirectoryExists();
+
+        // Read before the copy: replacing the source in place would otherwise overwrite the timestamps we want to keep.
+        var originalTimes = _options.PreserveDates ? ReadTimestamps(_source) : null;
         File.Copy(best.File.Value, destination.Value, overwrite: true);
+        if (originalTimes is { } times)
+        {
+            // Must happen before the caller writes the optimisation marker, which records the file's last-write time.
+            RestoreTimestamps(destination, times);
+        }
 
         if (plan.RequiresSourceDeletion(_source))
         {
@@ -128,6 +140,31 @@ internal sealed class ImageOptimisationJob : IDisposable
         var message = DescribeImprovement(best);
         _context.ReportProgress(100, message);
         return new OptimisationResult(_request.RequestId, OptimisationStatus.Succeeded, destination, message, elapsed);
+    }
+
+    private static (DateTime Created, DateTime Modified)? ReadTimestamps(FilePath path)
+    {
+        try
+        {
+            return (File.GetCreationTimeUtc(path.Value), File.GetLastWriteTimeUtc(path.Value));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    private static void RestoreTimestamps(FilePath path, (DateTime Created, DateTime Modified) times)
+    {
+        try
+        {
+            File.SetCreationTimeUtc(path.Value, times.Created);
+            File.SetLastWriteTimeUtc(path.Value, times.Modified);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Timestamps are a nicety; a locked or read-only file must not fail an otherwise finished optimisation.
+        }
     }
 
     private string DescribeImprovement(ImageCandidate best)
@@ -186,7 +223,7 @@ internal sealed class ImageOptimisationJob : IDisposable
         ImageCandidate? lossy = null;
         try
         {
-            if (hasSquishMarker)
+            if (hasSquishMarker && !_forceFull)
             {
                 // Already squeezed once: only the lossless pass may touch it, otherwise repeated runs keep eroding quality.
                 _notes.Add("Already optimised by Squish; lossless pass only");
@@ -256,7 +293,7 @@ internal sealed class ImageOptimisationJob : IDisposable
         }
 
         var lowest = Math.Min(_options.MinimumLossyQuality, highest);
-        if (GuardEnabled && highest <= lowest + 2 && !downscale)
+        if (GuardEnabled && highest <= lowest + 2 && !downscale && !_forceFull)
         {
             _notes.Add("JPEG is already heavily compressed; lossless pass only");
             return null;
@@ -417,7 +454,10 @@ internal sealed class ImageOptimisationJob : IDisposable
         // Screenshots and UI graphics usually fit a 256-colour palette at the perceptual target for a fraction of the
         // lossless size; the guard rejects it where banding or dithering would show. An already-indexed source was
         // quantised before (possibly by us), so only aggressive mode may squeeze its palette further.
-        var wantsLossyPalette = _encoders.HasPngquant && info is not { BitDepth: 16 } && (_aggressive || info is not { IsIndexed: true });
+        // pngquant writes a fresh PNG with every ancillary chunk (EXIF, text, pHYs DPI) gone, so it is off when the user
+        // asked to keep metadata.
+        var wantsLossyPalette = _encoders.HasPngquant && info is not { BitDepth: 16 } && !_options.MetadataPolicy.PreserveMetadata
+            && (_aggressive || _forceFull || info is not { IsIndexed: true });
         var wantsModern = _options.AdvancedCodecs.AllowWebpOutput || _options.AdvancedCodecs.AllowAvifOutput;
 
         if (downscale || wantsJpeg || wantsLossyPalette || wantsModern)
@@ -449,7 +489,10 @@ internal sealed class ImageOptimisationJob : IDisposable
                 }
             }
 
-            if (wantsLossyPalette && PerceptualReference.IsSupported(reference) && !HasNonSrgbProfile(blobs))
+            // A large continuous-tone photo cannot hold 256 colours at the perceptual target; skip the two pngquant runs
+            // and full-frame scoring that would only confirm it (aggressive/forced runs still try).
+            var photoTooRich = content.IsPhotographic && reference.PixelCount >= 1_000_000 && !_aggressive && !_forceFull;
+            if (wantsLossyPalette && !photoTooRich && PerceptualReference.IsSupported(reference) && !HasNonSrgbProfile(blobs))
             {
                 var palette = await QuantisedPngAsync(reference, strip).ConfigureAwait(false);
                 if (palette is not null)
@@ -622,6 +665,15 @@ internal sealed class ImageOptimisationJob : IDisposable
         var keepModernFormat = probe.Format is SourceFormat.WebP or SourceFormat.Avif
             && !convertToJpeg && !_options.FormatsToConvertToPng.Contains(extension);
 
+        // cwebp/avifenc are run without the source's ICC profile, so re-encoding a wide-gamut (Display P3, Adobe RGB)
+        // WebP/AVIF would silently turn its colours into untagged sRGB. Leave those files as they are.
+        var wideGamut = HasNonSrgbProfile(blobs);
+        if (keepModernFormat && wideGamut)
+        {
+            _notes.Add("Wide-gamut colour profile; left untouched to protect colours");
+            return null;
+        }
+
         if (keepModernFormat)
         {
             var inFormat = await ModernFormatAsync(reference, content, hasAlpha, probe.Format).ConfigureAwait(false);
@@ -652,7 +704,7 @@ internal sealed class ImageOptimisationJob : IDisposable
 
         // WebP and AVIF already beat JPEG and PNG at the same quality, so a conversion rarely shrinks them. When none
         // does, re-encode in the original format instead (Finish keeps the original if that is not smaller either).
-        if (probe.Format is SourceFormat.WebP or SourceFormat.Avif && !keepModernFormat && !candidates.Any(c => c.Size < _originalSize))
+        if (probe.Format is SourceFormat.WebP or SourceFormat.Avif && !keepModernFormat && !wideGamut && !candidates.Any(c => c.Size < _originalSize))
         {
             var inFormat = await ModernFormatAsync(reference, content, hasAlpha, probe.Format).ConfigureAwait(false);
             if (inFormat is not null)
@@ -699,7 +751,9 @@ internal sealed class ImageOptimisationJob : IDisposable
                 }
             }
 
-            if (webp is null && GuardEnabled && PerceptualReference.IsSupported(reference))
+            // Lossless is only the baseline for graphics: a guarded lossy encode is often smaller (and is the only
+            // option that can beat a source that was already lossy WebP), so both compete and the smaller one wins.
+            if (GuardEnabled && PerceptualReference.IsSupported(reference))
             {
                 using var stagingCache = new StagingCache(_encoders);
                 var perceptual = PerceptualReference.Create(reference);
@@ -707,7 +761,8 @@ internal sealed class ImageOptimisationJob : IDisposable
                     async (image, quality, token) => await _encoders.EncodeWebpAsync(stagingCache.Get(image), quality, lossless: false, token).ConfigureAwait(false)).ConfigureAwait(false);
                 if (encoded is not null)
                 {
-                    webp = new ImageCandidate(encoded.File, "webp", $"WebP q{encoded.Quality}", SafeSize(encoded.File), true, encoded.Score);
+                    var lossy = new ImageCandidate(encoded.File, "webp", $"WebP q{encoded.Quality}", SafeSize(encoded.File), true, encoded.Score);
+                    webp = Smaller(webp, lossy);
                 }
             }
 
@@ -1135,9 +1190,10 @@ internal sealed class ImageOptimisationJob : IDisposable
     private static FilePath BuildOutputPath(FilePath sourcePath, string extension)
     {
         var stem = sourcePath.Stem;
-        if (stem.EndsWith(".squish", StringComparison.OrdinalIgnoreCase))
+        const string suffix = ".squish";
+        if (stem.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
         {
-            stem = stem[..^5];
+            stem = stem[..^suffix.Length];
         }
 
         return sourcePath.Parent.Append($"{stem}.squish.{extension}");

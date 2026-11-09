@@ -32,9 +32,16 @@ public static class SquishOptimisationMarker
             }
 
             var payload = string.Format(CultureInfo.InvariantCulture, "{0}{1}|{2}", MarkerPrefix, info.Length, info.LastWriteTimeUtc.Ticks);
-            using var stream = new FileStream(BuildStreamPath(path.Value), FileMode.Create, FileAccess.Write, FileShare.Read);
-            using var writer = new StreamWriter(stream, Encoding.UTF8, leaveOpen: false);
-            writer.Write(payload);
+            using (var stream = new FileStream(BuildStreamPath(path.Value), FileMode.Create, FileAccess.Write, FileShare.Read))
+            using (var writer = new StreamWriter(stream, Encoding.UTF8, leaveOpen: false))
+            {
+                writer.Write(payload);
+            }
+
+            // On NTFS, writing an alternate data stream bumps the file's last-write time. The marker records that time
+            // (and is only valid while it matches), so without this it would invalidate itself the moment it was written,
+            // and it would also undo "preserve original timestamps".
+            File.SetLastWriteTimeUtc(path.Value, info.LastWriteTimeUtc);
             return true;
         }
         catch (IOException)

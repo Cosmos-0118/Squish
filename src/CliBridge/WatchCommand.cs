@@ -281,6 +281,13 @@ internal sealed class WatchCommandHandler
                 continue;
             }
 
+            // Never re-process Squish's own output (photo.squish.jpg) or a file it already optimised in place;
+            // otherwise each result is picked up as a new input and the folder fills with photo.squish.squish.jpg.
+            if (SquishFileGuards.IsSquishGenerated(watchEvent.Path) || SquishOptimisationMarker.HasValidMarker(watchEvent.Path))
+            {
+                continue;
+            }
+
             if (!_inFlight.TryAdd(path, 0))
             {
                 continue;
@@ -577,6 +584,7 @@ internal sealed class WatchCommandHandler
             metadata["video.playbackSpeed"] = _options.PlaybackSpeedFactor.Value;
         }
 
+        OutputBehaviourSettings.ApplyTo(metadata);
         return metadata;
     }
 

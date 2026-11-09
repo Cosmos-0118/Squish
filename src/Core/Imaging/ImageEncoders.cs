@@ -148,29 +148,52 @@ internal sealed class ImageEncoders
 
         if (_tools.Oxipng is { } oxipng)
         {
-            var args = new List<string>
+            List<string> BuildArgs(bool tuned)
             {
-                "--opt", Math.Clamp(level, 0, 6).ToString(CultureInfo.InvariantCulture),
-                "--interlace", "0",
-                "--quiet"
-            };
+                var args = new List<string>
+                {
+                    "--opt", Math.Clamp(level, 0, 6).ToString(CultureInfo.InvariantCulture),
+                    "--interlace", "0",
+                    "--quiet"
+                };
 
-            if (!string.Equals(strip, "none", StringComparison.OrdinalIgnoreCase))
-            {
-                args.Add("--strip");
-                args.Add(strip);
+                if (!string.Equals(strip, "none", StringComparison.OrdinalIgnoreCase))
+                {
+                    args.Add("--strip");
+                    args.Add(strip);
+                }
+
+                if (zopfli)
+                {
+                    args.Add("--zopfli");
+                    if (tuned)
+                    {
+                        // Pick the winning filter with the fast deflater, then run Zopfli on that one only (oxipng's own
+                        // recommendation); without it Zopfli is repeated for every filter at the same final size.
+                        args.Add("--fast");
+                    }
+                }
+
+                if (tuned)
+                {
+                    // Rewrites the colour of fully transparent pixels (invisible; every visible pixel is unchanged) so
+                    // erased areas stop costing bytes.
+                    args.Add("--alpha");
+                }
+
+                args.Add("--out");
+                args.Add(output.Value);
+                args.Add(source.Value);
+                return args;
             }
 
-            if (zopfli)
+            var result = await ProcessRunner.RunAsync(oxipng, BuildArgs(tuned: true), Quiet, token).ConfigureAwait(false);
+            if (result.ExitCode != 0)
             {
-                args.Add("--zopfli");
+                // An oxipng build that does not know one of the tuning flags must not cost the whole lossless pass.
+                result = await ProcessRunner.RunAsync(oxipng, BuildArgs(tuned: false), Quiet, token).ConfigureAwait(false);
             }
 
-            args.Add("--out");
-            args.Add(output.Value);
-            args.Add(source.Value);
-
-            var result = await ProcessRunner.RunAsync(oxipng, args, Quiet, token).ConfigureAwait(false);
             return Succeeded(result, output) ? output : null;
         }
 
@@ -243,7 +266,8 @@ internal sealed class ImageEncoders
         var args = new List<string> { "-quiet", "-mt", "-m", "6", "-metadata", "none" };
         if (lossless)
         {
-            args.AddRange(new[] { "-lossless", "-z", "9", "-exact" });
+            // No -exact: it keeps the colour hidden under fully transparent pixels, which costs bytes for nothing visible.
+            args.AddRange(new[] { "-lossless", "-z", "9" });
         }
         else
         {

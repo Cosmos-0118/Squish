@@ -47,6 +47,9 @@ public sealed record ImageOptimiserOptions
 
     public bool RequireSizeImprovement { get; init; } = true;
 
+    /// <summary>Give the written file the source's creation and modification times (the "Preserve original timestamps" setting).</summary>
+    public bool PreserveDates { get; init; }
+
     /// <summary>Minimum relative saving (percent) for a result to replace the original.</summary>
     public double MinimumSavingsPercent { get; init; } = 1.0;
 
