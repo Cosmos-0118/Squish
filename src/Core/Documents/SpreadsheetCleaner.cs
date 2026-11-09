@@ -68,6 +68,14 @@ internal sealed class SpreadsheetStyles
     private static int ParseInt(string? value) => int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) ? n : 0;
 }
 
+internal static class SpreadsheetNamespaces
+{
+    public const string Transitional = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+    public const string Strict = "http://purl.oclc.org/ooxml/spreadsheetml/main";
+
+    public static bool IsMain(string ns) => ns == Transitional || ns == Strict;
+}
+
 internal sealed class SheetScan
 {
     public int LastContentRow { get; set; }
@@ -125,6 +133,7 @@ internal sealed class SpreadsheetCleaner : XmlPartRewriter
     private readonly int _cutoffRow;
     private readonly string? _dimensionOverride;
     private readonly List<(int Min, int Max, int Style)> _columnStyles = new();
+    private int _sheetDataDepth = -1;
 
     public SpreadsheetCleaner(SpreadsheetStyles styles, bool aggressive, int cutoffRow, string? dimensionOverride)
     {
@@ -142,16 +151,23 @@ internal sealed class SpreadsheetCleaner : XmlPartRewriter
     {
         var scan = new SheetScan();
         using var reader = XmlReader.Create(stream, new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null, CheckCharacters = false });
+        var sheetDataDepth = -1;
         while (reader.Read())
         {
-            if (reader.NodeType != XmlNodeType.Element)
+            if (reader.NodeType != XmlNodeType.Element || !SpreadsheetNamespaces.IsMain(reader.NamespaceURI))
             {
+                continue;
+            }
+
+            if (reader.LocalName == "sheetData")
+            {
+                sheetDataDepth = reader.Depth;
                 continue;
             }
 
             switch (reader.LocalName)
             {
-                case "c":
+                case "c" when sheetDataDepth >= 0 && reader.Depth == sheetDataDepth + 2:
                     if (!TryParseCellRef(reader.GetAttribute("r"), out _, out var row))
                     {
                         scan.HasImplicitReferences = true;
@@ -181,8 +197,18 @@ internal sealed class SpreadsheetCleaner : XmlPartRewriter
 
     protected override bool OnElement(XmlReader reader, XmlWriter writer)
     {
+        // Other vocabularies reuse these names (drawing anchors have <xdr:row>40</xdr:row>); only spreadsheetml counts.
+        if (!SpreadsheetNamespaces.IsMain(reader.NamespaceURI))
+        {
+            return false;
+        }
+
         switch (reader.LocalName)
         {
+            case "sheetData":
+                _sheetDataDepth = reader.Depth;
+                return false;
+
             case "col":
                 RecordColumnStyle(reader);
                 return false;
@@ -194,17 +220,19 @@ internal sealed class SpreadsheetCleaner : XmlPartRewriter
                 SkipElement(reader);
                 return true;
 
-            case "row" when !reader.IsEmptyElement:
+            case "row" when IsSheetRow(reader) && !reader.IsEmptyElement:
                 RewriteRow(reader, writer);
                 return true;
 
-            case "row":
+            case "row" when IsSheetRow(reader):
                 RewriteEmptyRow(reader, writer);
                 return true;
         }
 
         return false;
     }
+
+    private bool IsSheetRow(XmlReader reader) => _sheetDataDepth >= 0 && reader.Depth == _sheetDataDepth + 1;
 
     private void RecordColumnStyle(XmlReader reader)
     {
@@ -268,7 +296,7 @@ internal sealed class SpreadsheetCleaner : XmlPartRewriter
         var more = row.Read();
         while (more)
         {
-            if (row.NodeType == XmlNodeType.Element && row.LocalName == "c" && row.Depth == 1)
+            if (row.NodeType == XmlNodeType.Element && row.LocalName == "c" && row.Depth == 1 && SpreadsheetNamespaces.IsMain(row.NamespaceURI))
             {
                 var keep = ShouldKeepCell(row, rowStyleVisible, pastData, out var column, out var cellRow);
                 if (!keep)

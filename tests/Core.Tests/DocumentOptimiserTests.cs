@@ -364,6 +364,98 @@ public sealed class DocumentOptimiserTests
     }
 
     [Fact]
+    public async Task OnlyTreatsSpreadsheetMlRowsAsRows()
+    {
+        // A drawing anchor inside a worksheet also has an element called "row"; its text must survive.
+        var path = DocumentFixtures.NewPath("xlsx");
+        const string main = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+        var sheet = new StringBuilder($"<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<worksheet xmlns=\"{main}\" xmlns:xdr=\"http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing\">\n<dimension ref=\"A1:A500\"/><sheetData>\n");
+        sheet.Append("<row r=\"1\"><c r=\"A1\"><v>1</v></c></row>\n");
+        for (var row = 2; row <= 500; row++)
+        {
+            sheet.Append($"<row r=\"{row}\"><c r=\"A{row}\" s=\"0\"/></row>\n");
+        }
+
+        sheet.Append("</sheetData><extLst><ext><xdr:from><xdr:col>3</xdr:col><xdr:row>40</xdr:row></xdr:from></ext></extLst></worksheet>");
+        DocumentFixtures.Zip(path, new (string, byte[])[]
+        {
+            ("[Content_Types].xml", DocumentFixtures.Text(DocumentFixtures.ContentTypes(false, false,
+                "/xl/workbook.xml|application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml",
+                "/xl/worksheets/sheet1.xml|application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml",
+                "/xl/styles.xml|application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"))),
+            ("_rels/.rels", DocumentFixtures.Text(DocumentFixtures.Rels("rId1|http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument|xl/workbook.xml"))),
+            ("xl/workbook.xml", DocumentFixtures.Text($"<?xml version=\"1.0\"?>\n<workbook xmlns=\"{main}\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><sheets><sheet name=\"S\" sheetId=\"1\" r:id=\"rId1\"/></sheets></workbook>")),
+            ("xl/_rels/workbook.xml.rels", DocumentFixtures.Text(DocumentFixtures.Rels(
+                "rId1|http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet|worksheets/sheet1.xml",
+                "rId2|http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles|styles.xml"))),
+            ("xl/styles.xml", DocumentFixtures.Text(DocumentFixtures.Styles)),
+            ("xl/worksheets/sheet1.xml", DocumentFixtures.Text(sheet.ToString()))
+        });
+        try
+        {
+            var result = await RunAsync(path, ReplaceInPlace);
+
+            Assert.Equal(OptimisationStatus.Succeeded, result.Status);
+            var xml = DocumentFixtures.ReadText(path.Value, "xl/worksheets/sheet1.xml");
+            Assert.Contains("<xdr:row>40</xdr:row>", xml);
+            Assert.Contains("<xdr:col>3</xdr:col>", xml);
+            var cells = XDocument.Parse(xml, LoadOptions.PreserveWhitespace).Descendants(Main + "c").ToList();
+            Assert.Single(cells);
+        }
+        finally
+        {
+            TestImages.TryDelete(path);
+        }
+    }
+
+    [Fact]
+    public async Task EmptyXmlPartsAlreadyInTheSourceDoNotBlockTheRewrite()
+    {
+        // Real OpenDocument files from LibreOffice contain zero-byte .xml parts (e.g. Configurations2/accelerator/current.xml).
+        var photo = TestImages.SaveJpeg(TestImages.PhotoLikeRgba(1000, 750, seed: 8), 1000, 750, quality: 98);
+        var source = DocumentFixtures.Odt(File.ReadAllBytes(photo.Value));
+        using (var zip = ZipFile.Open(source.Value, ZipArchiveMode.Update))
+        {
+            zip.CreateEntry("Configurations2/accelerator/current.xml");
+        }
+
+        try
+        {
+            var result = await RunAsync(source, ReplaceInPlace);
+
+            Assert.Equal(OptimisationStatus.Succeeded, result.Status);
+            Assert.True(DocumentFixtures.HasEntry(source.Value, "Configurations2/accelerator/current.xml"));
+            Assert.False(DocumentFixtures.HasEntry(source.Value, "Thumbnails/thumbnail.png"));
+        }
+        finally
+        {
+            TestImages.TryDelete(source, photo);
+        }
+    }
+
+    [Fact]
+    public async Task LeavesDocumentsThatAreOpenInAnEditorUntouched()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "squish-open-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        var source = new FilePath(Path.Combine(directory, "Quarterly report.xlsx"));
+        File.Copy(DocumentFixtures.Xlsx(800, 40).Value, source.Value);
+        File.WriteAllBytes(Path.Combine(directory, "~$arterly report.xlsx"), new byte[] { 1 });
+        var before = File.ReadAllBytes(source.Value);
+        try
+        {
+            var result = await RunAsync(source, ReplaceInPlace);
+
+            Assert.Contains("open in an application", result.Message);
+            Assert.Equal(before, File.ReadAllBytes(source.Value));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task WritesNextToTheOriginalWhenNotReplacingInPlace()
     {
         var source = DocumentFixtures.Xlsx(1000, 50);

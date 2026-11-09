@@ -158,6 +158,16 @@ public sealed class CompareViewModel : ObservableObject, IDisposable
             return ItemType.Video;
         }
 
+        if (MediaFormats.IsPdf(path))
+        {
+            return ItemType.Pdf;
+        }
+
+        if (MediaFormats.IsDocument(path))
+        {
+            return ItemType.Document;
+        }
+
         return null;
     }
 
@@ -214,6 +224,8 @@ public sealed class CompareViewModel : ObservableObject, IDisposable
 
         var patterns = ToPatterns(MediaFormats.ImageExtensionNames)
             .Concat(ToPatterns(MediaFormats.VideoExtensionNames))
+            .Concat(ToPatterns(MediaFormats.PdfExtensionNames))
+            .Concat(ToPatterns(MediaFormats.DocumentExtensionNames))
             .Distinct(StringComparer.OrdinalIgnoreCase);
 
         return string.Join(';', patterns);

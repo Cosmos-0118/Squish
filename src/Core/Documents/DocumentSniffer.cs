@@ -56,6 +56,37 @@ internal static class DocumentSniffer
     public static bool IsOfficeLockFile(string path)
         => Path.GetFileName(path).StartsWith("~$", StringComparison.Ordinal);
 
+    /// <summary>
+    /// Word, Excel and PowerPoint drop a hidden <c>~$</c> file next to a document while it is open (the first two characters of the
+    /// name are replaced for longer names); LibreOffice writes <c>.~lock.name#</c>. Rewriting a document under its editor loses
+    /// the editor's changes or fails on the sharing violation, so such files are left alone.
+    /// </summary>
+    public static bool IsOpenInAnApplication(string path)
+    {
+        var directory = Path.GetDirectoryName(path);
+        var name = Path.GetFileName(path);
+        if (string.IsNullOrEmpty(directory) || string.IsNullOrEmpty(name))
+        {
+            return false;
+        }
+
+        var candidates = new List<string> { "~$" + name, ".~lock." + name + "#" };
+        if (name.Length > 2)
+        {
+            candidates.Add("~$" + name[2..]);
+        }
+
+        foreach (var candidate in candidates)
+        {
+            if (File.Exists(Path.Combine(directory, candidate)))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public static DocumentSniffResult Sniff(string path)
     {
         if (IsOfficeLockFile(path))

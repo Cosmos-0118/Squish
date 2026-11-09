@@ -69,7 +69,7 @@ internal static class DocumentPackageValidator
     }
 
     /// <returns>null when the package is sound; otherwise what is wrong with it.</returns>
-    public static string? Validate(string path, DocumentFormat format, IReadOnlySet<string> sourceDangling)
+    public static string? Validate(string path, DocumentFormat format, IReadOnlySet<string> sourceDangling, IReadOnlySet<string> rewrittenParts)
     {
         try
         {
@@ -96,7 +96,9 @@ internal static class DocumentPackageValidator
 
             foreach (var entry in archive.Entries)
             {
-                if (!IsXml(entry.FullName))
+                // Parts copied byte for byte keep whatever state they were in (some real files carry empty .xml parts);
+                // only what this tool wrote has to parse.
+                if (!IsXml(entry.FullName) || !rewrittenParts.Contains(entry.FullName))
                 {
                     // Reading to the end verifies the deflate stream and CRC of binary parts too.
                     using var raw = entry.Open();

@@ -34,6 +34,10 @@ internal sealed class DocumentOptimisationJob : IDisposable
 
     private const long InMemoryPartLimit = 16L * 1024 * 1024;
 
+    // A hostile archive can claim gigabytes of uncompressed data per entry; bound what is staged on disk.
+    private const long MaxStagedMediaBytes = 1536L * 1024 * 1024;
+    private const long MaxRewrittenPartBytes = 1024L * 1024 * 1024;
+
     private readonly OptimisationRequest _request;
     private readonly DocumentOptimiserOptions _options;
     private readonly OptimiserExecutionContext _context;
@@ -42,6 +46,7 @@ internal sealed class DocumentOptimisationJob : IDisposable
     private readonly FilePath _source;
     private readonly bool _aggressive;
     private readonly List<string> _notes = new();
+    private readonly HashSet<string> _rewrittenParts = new(StringComparer.Ordinal);
 
     public DocumentOptimisationJob(OptimisationRequest request, DocumentOptimiserOptions options, OptimiserExecutionContext context, CancellationToken token)
     {
@@ -75,6 +80,11 @@ internal sealed class DocumentOptimisationJob : IDisposable
             });
         }
 
+        if (DocumentSniffer.IsOpenInAnApplication(_source.Value))
+        {
+            return Untouched(started, "Document is open in an application; left untouched");
+        }
+
         var originalSize = new FileInfo(_source.Value).Length;
         if (originalSize > _options.MaxInputBytes)
         {
@@ -104,7 +114,7 @@ internal sealed class DocumentOptimisationJob : IDisposable
         }
 
         _context.ReportProgress(90, "Checking result");
-        var problem = DocumentPackageValidator.Validate(output.Value, format, sourceDangling);
+        var problem = DocumentPackageValidator.Validate(output.Value, format, sourceDangling, _rewrittenParts);
         if (problem is not null)
         {
             Log.Warning($"Document result rejected for {_source.Value}: {problem}");
@@ -210,9 +220,17 @@ internal sealed class DocumentOptimisationJob : IDisposable
 
         // Stage each picture once; identical bytes (very common: the same logo on every slide) share one optimisation run.
         var groups = new Dictionary<string, List<(ZipArchiveEntry Entry, FilePath Staged)>>(StringComparer.Ordinal);
+        var stagedBytes = 0L;
         foreach (var entry in candidates)
         {
             _token.ThrowIfCancellationRequested();
+            stagedBytes += entry.Length;
+            if (stagedBytes > MaxStagedMediaBytes)
+            {
+                _notes.Add("skipped some pictures (too much embedded media)");
+                break;
+            }
+
             var staged = _temp.New("squish-docimg", CanonicalExtension(PackagePaths.ExtensionOf(entry.FullName)));
             string hash;
             using (var input = entry.Open())
@@ -447,6 +465,7 @@ internal sealed class DocumentOptimisationJob : IDisposable
         SpreadsheetStyles? styles = null;
         var rewritten = 0;
         var cleanedSheets = 0;
+        _rewrittenParts.Clear();
         var strippedMetadata = false;
 
         using var outputStream = new FileStream(outputPath.Value, FileMode.Create, FileAccess.ReadWrite, FileShare.None);
@@ -480,6 +499,12 @@ internal sealed class DocumentOptimisationJob : IDisposable
             }
 
             var level = LevelFor(name);
+            if (entry.Length > MaxRewrittenPartBytes)
+            {
+                CopyRaw(entry, output, name, level);
+                continue;
+            }
+
             var transform = SelectTransform(format, entry, removed, renamed, missingDefaults, ref styles, archive, out var isSheet);
             if (transform is null)
             {
@@ -490,6 +515,7 @@ internal sealed class DocumentOptimisationJob : IDisposable
             if (TryTransform(entry, output, level, transform))
             {
                 rewritten++;
+                _rewrittenParts.Add(name);
                 if (isSheet)
                 {
                     cleanedSheets++;
