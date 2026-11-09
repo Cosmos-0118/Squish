@@ -1,0 +1,5 @@
+# Files that run under bash (MSYS2, Linux) must keep LF line endings on every platform. Git for Windows would
+# otherwise convert them to CRLF on checkout (core.autocrlf=true), which breaks "#!/bin/bash\r" scripts and turns the
+# package names in msys2-packages.txt into "make\r".
+*.sh text eol=lf
+scripts/ffmpeg-slim/** text eol=lf

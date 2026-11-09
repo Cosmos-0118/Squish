@@ -36,7 +36,14 @@ missing="$(grep -v -E '^\s*(#|$)' "$here/msys2-packages.txt" | xargs pacman -Q 2
 
 mkdir -p "$work"
 cd "$work"
-[ -d ffmpeg ] || git clone -q --depth 1 --branch "$tag" https://github.com/FFmpeg/FFmpeg.git ffmpeg
+# Fetch the tag directly instead of "git clone --branch <tag>": that prints "refs/tags/... is not a commit!" for FFmpeg's
+# annotated tags and a long detached-HEAD hint.
+if [ ! -d ffmpeg ]; then
+  git init -q ffmpeg
+  git -C ffmpeg remote add origin https://github.com/FFmpeg/FFmpeg.git
+  git -C ffmpeg fetch -q --depth 1 origin "refs/tags/$tag"
+  git -C ffmpeg -c advice.detachedHead=false checkout -q FETCH_HEAD
+fi
 prefix="$work/prefix"
 
 # The explicit --disable-* flags stop MSYS2 libraries that happen to be installed (SDL2, lzma, ...) from being picked up.

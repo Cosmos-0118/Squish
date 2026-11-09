@@ -78,6 +78,7 @@ Assert-Plan 'Publish script' -Files 'scripts/publish-layout.ps1' -Publish $true
 Assert-Plan 'Tool manifest re-runs the encoder tests and publish' -Files 'tools/tools-manifest.json' -Tests 'Core.Tests' -Tools 'Core.Tests' -Publish $true
 Assert-Plan 'ffmpeg build recipe re-runs the encoder tests and publish' -Files 'scripts/ffmpeg-slim/build-local.sh' -Tests 'Core.Tests' -Tools 'Core.Tests' -Publish $true
 Assert-Plan 'ffmpeg toolchain action re-runs the encoder tests and publish' -Files '.github/actions/prepare-ffmpeg-build/action.yml' -Tests 'Core.Tests' -Tools 'Core.Tests' -Publish $true
+Assert-Plan 'ffmpeg staging action re-runs the encoder tests and publish' -Files '.github/actions/stage-ffmpeg/action.yml' -Tests 'Core.Tests' -Tools 'Core.Tests' -Publish $true
 
 # Workflow plumbing.
 Assert-Plan 'Another workflow lints only' -Files '.github/workflows/codeql.yml' -Lint $true

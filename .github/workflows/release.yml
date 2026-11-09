@@ -47,21 +47,21 @@ jobs:
         run: dotnet build src/Squish.sln --configuration Release --no-restore
 
       # Tools are staged before the tests, as in ci, so the encoder tests run for real instead of skipping.
+      - name: Stage ffmpeg
+        uses: ./.github/actions/stage-ffmpeg
+
       - name: Cache third-party tools
-        id: tools-cache
         uses: actions/cache@v6
         with:
-          path: tools
-          key: tools-${{ runner.os }}-${{ hashFiles('tools/tools-manifest.json', 'scripts/fetch-tools.ps1', 'scripts/ffmpeg-slim/*') }}
-
-      # ffmpeg is compiled, not downloaded. MSYS2 is only set up when the cache above missed (a changed manifest or recipe).
-      - name: Prepare the ffmpeg build
-        if: steps.tools-cache.outputs.cache-hit != 'true'
-        uses: ./.github/actions/prepare-ffmpeg-build
+          # ffmpeg has its own cache (stage-ffmpeg), so it is left out here.
+          path: |
+            tools
+            !tools/ffmpeg
+          key: tools-${{ runner.os }}-${{ hashFiles('tools/tools-manifest.json', 'scripts/fetch-tools.ps1') }}
 
       - name: Stage third-party tools
         shell: pwsh
-        run: ./scripts/fetch-tools.ps1
+        run: ./scripts/fetch-tools.ps1 -Exclude ffmpeg
 
       - name: Run tests
         env:
