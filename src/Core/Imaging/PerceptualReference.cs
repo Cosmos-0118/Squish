@@ -447,6 +447,9 @@ internal sealed class PerceptualReference : IDisposable
     internal static double ScorePair(RasterImage reference, RasterImage candidate, CancellationToken token)
         => ScoreSpans(reference.Span, candidate.Span, reference.Width, reference.Height, token);
 
+    internal static double ScorePair(ReadOnlySpan<byte> reference, ReadOnlySpan<byte> candidate, int width, int height, CancellationToken token)
+        => ScoreSpans(reference, candidate, width, height, token);
+
     private static double ScoreSpans(ReadOnlySpan<byte> reference, ReadOnlySpan<byte> candidate, int width, int height, CancellationToken token)
     {
         var alpha = HasTransparency(reference) || HasTransparency(candidate);

@@ -57,17 +57,36 @@ public sealed class VideoOptimiser : IOptimiser
         }
 
         var probe = await _metadataProbe.ProbeAsync(source, cancellationToken).ConfigureAwait(false);
+
+        // One job's searches share frame counts and decoded reference frames (see VideoSearchCache).
+        using var searchCache = new VideoSearchCache();
         var plan = BuildPlan(request, _options, probe);
+
+        // Auto weighs the job by the frames the encoder will actually receive. A static screen recording loses most of its
+        // frames to decimation and is cheap in software whatever its resolution, so when Auto leans towards the GPU on raw
+        // size, look at the footage before committing.
+        if (probe is not null
+            && plan.Mode == VideoOptimiserMode.Video
+            && plan.UseHardwareAcceleration
+            && plan.FrameDecimation.Enabled
+            && _options.EnableAdaptiveAutoEncoder
+            && ParseEncoderPreset(request.Metadata, _options.EncoderPreset) == VideoEncoderPreset.Auto
+            && await _qualitySearch.MeasureDuplicateFrameRatioAsync(source, probe, searchCache, cancellationToken).ConfigureAwait(false) is double duplicates
+            && duplicates > 0)
+        {
+            plan = BuildPlan(request, _options, probe, duplicates);
+        }
+
         return plan.Mode switch
         {
             VideoOptimiserMode.Gif when !_options.EnableGifExport
                 => OptimisationResult.Failure(request.RequestId, "GIF export disabled in configuration."),
             VideoOptimiserMode.Gif => await RunAnimatedOptimisationAsync(request, plan, context, cancellationToken).ConfigureAwait(false),
-            _ => await RunVideoOptimisationAsync(request, plan, context, cancellationToken).ConfigureAwait(false)
+            _ => await RunVideoOptimisationAsync(request, plan, context, searchCache, cancellationToken).ConfigureAwait(false)
         };
     }
 
-    private async Task<OptimisationResult> RunVideoOptimisationAsync(OptimisationRequest request, VideoOptimiserPlan plan, OptimiserExecutionContext context, CancellationToken cancellationToken)
+    private async Task<OptimisationResult> RunVideoOptimisationAsync(OptimisationRequest request, VideoOptimiserPlan plan, OptimiserExecutionContext context, VideoSearchCache searchCache, CancellationToken cancellationToken)
     {
         if (plan.ShouldRemux)
         {
@@ -76,7 +95,14 @@ public sealed class VideoOptimiser : IOptimiser
 
         context.ReportProgress(5, "Preparing encoder");
 
-        var search = await _qualitySearch.SearchAsync(plan, context, cancellationToken).ConfigureAwait(false);
+        var search = await _qualitySearch.SearchAsync(plan, context, searchCache, cancellationToken).ConfigureAwait(false);
+        if (search is not null && IsAutoHardwareCompressionPoor(_options, plan, search))
+        {
+            Log.Info($"Auto chose the GPU, but its searched encode would still cost {search.PredictedBitrateKbps / _options.QualitySearchSampleBitrateInflation:0} kbps against the source's {EstimateSourceBitrateKbps(plan.SourceProbe)} kbps; using software instead.");
+            plan = SwitchToSoftware(plan);
+            search = await _qualitySearch.SearchAsync(plan, context, searchCache, cancellationToken).ConfigureAwait(false);
+        }
+
         if (search is not null)
         {
             plan = ApplyQualitySearch(plan, search);
@@ -85,6 +111,8 @@ public sealed class VideoOptimiser : IOptimiser
                 context.ReportProgress(100, "Already efficiently encoded");
                 return new OptimisationResult(request.RequestId, OptimisationStatus.Succeeded, plan.SourcePath, "Original already optimal (efficient encode)");
             }
+
+            plan = ApplyZeroCopyGate(plan, search);
         }
 
         var tempOutput = FilePath.TempFile("squish-video", plan.OutputExtension, addUniqueSuffix: true);
@@ -216,6 +244,124 @@ public sealed class VideoOptimiser : IOptimiser
         var encoder = WithSearchedQuality(plan.Encoder, search.Crf);
         var arguments = BuildVideoCodecArguments(_options, encoder, plan.AggressiveQuality, plan.LookaheadFrames, plan.SourceProbe);
         return plan with { Encoder = encoder, VideoCodecArguments = arguments };
+    }
+
+    /// <summary>
+    /// True when the adaptive Auto policy sent a job to the GPU and the perceptual search shows the GPU compressing it
+    /// poorly. The sample bitrate overstates the full encode (see <see cref="VideoOptimiserOptions.QualitySearchSampleBitrateInflation"/>),
+    /// so it is scaled back before comparing with the source.
+    /// </summary>
+    internal static bool IsAutoHardwareCompressionPoor(VideoOptimiserOptions options, VideoOptimiserPlan plan, VideoQualitySearchResult search)
+    {
+        if (!plan.AutoSelectedHardware || plan.SoftwareFallback is null || options.AutoHardwareMaxSourceBitrateRatio <= 0)
+        {
+            return false;
+        }
+
+        if (EstimateSourceBitrateKbps(plan.SourceProbe) is not int source || source <= 0)
+        {
+            return false;
+        }
+
+        var predicted = search.PredictedBitrateKbps / Math.Max(1.0, options.QualitySearchSampleBitrateInflation);
+        return predicted > source * options.AutoHardwareMaxSourceBitrateRatio;
+    }
+
+    private VideoOptimiserPlan SwitchToSoftware(VideoOptimiserPlan plan)
+    {
+        var software = plan.SoftwareFallback!;
+        return plan with
+        {
+            Encoder = software,
+            SoftwareFallback = null,
+            UseHardwareAcceleration = false,
+            AutoSelectedHardware = false,
+            FiltersBeforeZeroCopy = null,
+            VideoCodecArguments = BuildVideoCodecArguments(_options, software, plan.AggressiveQuality, plan.LookaheadFrames, plan.SourceProbe)
+        };
+    }
+
+    /// <summary>
+    /// Frame decimation (<c>mpdecimate</c>) is a CPU filter, so with it in the chain every frame a GPU decoder produces is
+    /// copied back to system memory, filtered, converted and uploaded again, which costs a GPU encode 2-4x of its speed.
+    /// The sampled windows measured how many frames it would actually drop; when that is almost none (camera, phone and
+    /// game footage), the filter is dropped and the frames stay on the GPU. Only for encoders that decode into GPU memory.
+    /// </summary>
+    internal VideoOptimiserPlan ApplyZeroCopyGate(VideoOptimiserPlan plan, VideoQualitySearchResult search)
+    {
+        if (!plan.UseHardwareAcceleration
+            || string.IsNullOrEmpty(plan.Encoder.HardwareOutputFormat)
+            || search.DuplicateFrameRatio is not double duplicates
+            || duplicates >= _options.ZeroCopyMaxDuplicateFrameRatio
+            || plan.RequiresFiltersBeyondDecimation
+            || !plan.Filters.Any(filter => filter.StartsWith("mpdecimate", StringComparison.Ordinal)))
+        {
+            return plan;
+        }
+
+        Log.Info($"Frame decimation would drop {duplicates:P1} of frames; skipping it to keep the GPU pipeline zero-copy.");
+        return plan with
+        {
+            Filters = Array.Empty<string>(),
+            FrameDecimation = FrameDecimationPlan.Disabled,
+            FiltersBeforeZeroCopy = plan.Filters
+        };
+    }
+
+    /// <summary>
+    /// The same GPU encode with the plainest profile and the original filter chain: what runs when the tuned or zero-copy
+    /// attempt is refused, before giving up on the GPU altogether. Null when it would be identical to what already failed.
+    /// </summary>
+    internal static VideoOptimiserPlan? BuildConservativeHardwarePlan(VideoOptimiserOptions options, VideoOptimiserPlan plan)
+    {
+        if (!plan.UseHardwareAcceleration || !plan.Encoder.UseHardwareEncoder)
+        {
+            return null;
+        }
+
+        var safeArguments = ConservativeHardwareArguments(plan.Encoder);
+        var argumentsChanged = !safeArguments.SequenceEqual(plan.Encoder.AdditionalArguments);
+        if (!argumentsChanged && plan.FiltersBeforeZeroCopy is null)
+        {
+            return null;
+        }
+
+        var encoder = plan.Encoder with { AdditionalArguments = safeArguments };
+        return plan with
+        {
+            Encoder = encoder,
+            Filters = plan.FiltersBeforeZeroCopy ?? plan.Filters,
+            FiltersBeforeZeroCopy = null,
+            VideoCodecArguments = BuildVideoCodecArguments(options, encoder, plan.AggressiveQuality, plan.LookaheadFrames, plan.SourceProbe)
+        };
+    }
+
+    internal static IReadOnlyList<string> ConservativeHardwareArguments(VideoEncoderSelection encoder)
+    {
+        var isNvenc = encoder.VideoEncoder.EndsWith("_nvenc", StringComparison.Ordinal);
+        var isQsv = encoder.VideoEncoder.EndsWith("_qsv", StringComparison.Ordinal);
+        if (!isNvenc && !isQsv)
+        {
+            return encoder.AdditionalArguments;
+        }
+
+        // Keep only what the output needs (the hvc1 tag); everything else is performance tuning that a driver may refuse.
+        var result = new List<string>();
+        if (isNvenc)
+        {
+            result.AddRange(new[] { "-preset", "p5", "-tune", "hq" });
+        }
+
+        for (var i = 0; i + 1 < encoder.AdditionalArguments.Count; i++)
+        {
+            if (encoder.AdditionalArguments[i].Equals("-tag:v", StringComparison.Ordinal))
+            {
+                result.Add(encoder.AdditionalArguments[i]);
+                result.Add(encoder.AdditionalArguments[i + 1]);
+            }
+        }
+
+        return result;
     }
 
     /// <summary>
@@ -484,7 +630,7 @@ public sealed class VideoOptimiser : IOptimiser
         }
     }
 
-    private static VideoOptimiserPlan BuildPlan(OptimisationRequest request, VideoOptimiserOptions options, VideoProbeInfo? probeInfo)
+    private static VideoOptimiserPlan BuildPlan(OptimisationRequest request, VideoOptimiserOptions options, VideoProbeInfo? probeInfo, double? duplicateFrameRatio = null)
     {
         var metadata = request.Metadata;
         var mode = ParseMode(metadata, options);
@@ -515,7 +661,8 @@ public sealed class VideoOptimiser : IOptimiser
 
         var animatedFormat = DetermineAnimatedFormat(mode, metadata, options);
         var hardware = options.HardwareOverride ?? VideoHardwareDetector.Detect(options.FfmpegPath, options.ProbeHardwareCapabilities);
-        var encoderSelection = SelectEncoder(options, hardware, aggressive, forceMp4, requestedExtension, codecOverride, encoderPreset, probeInfo);
+        var autoPrefersHardware = DecideAutoHardware(options, hardware, encoderPreset, mode, probeInfo, capFps, targetFps, maxWidth, maxHeight, playbackSpeed, duplicateFrameRatio);
+        var encoderSelection = SelectEncoder(options, hardware, aggressive, forceMp4, requestedExtension, codecOverride, encoderPreset, probeInfo, autoPrefersHardware);
         // "GPU · Constant quality" means fixed quantisers. A bitrate target would replace them (the bitrate branch of
         // BuildVideoCodecArguments never emits the preset's -rc cqp), which is what happened whenever the quality search
         // did not run, e.g. for clips under four seconds. The other presets are bitrate-driven by design.
@@ -585,6 +732,11 @@ public sealed class VideoOptimiser : IOptimiser
             plan = plan with { Subtitles = SubtitlePlan.For(probeInfo.SubtitleCodecs, outputExtension) };
         }
 
+        if (autoPrefersHardware && encoderSelection.UseHardwareEncoder)
+        {
+            plan = plan with { AutoSelectedHardware = true };
+        }
+
         if (options.EnableContainerAwareRemux)
         {
             var remux = DetermineRemuxPlan(plan, options, probeInfo);
@@ -592,6 +744,29 @@ public sealed class VideoOptimiser : IOptimiser
         }
 
         return plan;
+    }
+
+    /// <summary>
+    /// For the "Auto" preset: does this job justify the GPU? Small jobs stay on software SVT-AV1 (smallest files, and the
+    /// wait is short); big ones, or any real video on battery, go to the GPU. See <see cref="VideoAutoEncoderPolicy"/>.
+    /// </summary>
+    private static bool DecideAutoHardware(VideoOptimiserOptions options, VideoHardwareCapabilities hardware, VideoEncoderPreset preset, VideoOptimiserMode mode, VideoProbeInfo? probe, bool capFps, int targetFps, int? maxWidth, int? maxHeight, double? playbackSpeed, double? duplicateFrameRatio)
+    {
+        if (preset != VideoEncoderPreset.Auto || mode == VideoOptimiserMode.Gif || !options.EnableAdaptiveAutoEncoder || !hardware.HasAnyHardware)
+        {
+            return false;
+        }
+
+        var workload = VideoWorkload.Measure(probe, capFps, targetFps, maxWidth, maxHeight, playbackSpeed);
+        if (workload is { } raw && duplicateFrameRatio is > 0)
+        {
+            workload = new VideoWorkload(raw.TotalMegapixels * (1.0 - duplicateFrameRatio.Value));
+        }
+
+        var power = options.PowerStateOverride ?? VideoPowerStatus.Current();
+        var decision = VideoAutoEncoderPolicy.Decide(options, hardware, workload, power);
+        Log.Info($"Auto encoder: {(decision.UseHardware ? "GPU" : "software")} ({decision.Reason}; power {power}{(duplicateFrameRatio is > 0 ? $"; decimation drops {duplicateFrameRatio:P0}" : string.Empty)})");
+        return decision.UseHardware;
     }
 
     private static VideoEncoderPreset ParseEncoderPreset(IReadOnlyDictionary<string, object?> metadata, VideoEncoderPreset fallback)
@@ -1051,32 +1226,30 @@ public sealed class VideoOptimiser : IOptimiser
             {
                 AppendBitrateArguments(args, selection.TargetBitrateKbps!.Value, options);
             }
-            else
+            else if (selection.RateControlFlag.Equals("-cq", StringComparison.OrdinalIgnoreCase) && !selection.VideoEncoder.EndsWith("_nvenc", StringComparison.Ordinal))
             {
-                if (!string.IsNullOrWhiteSpace(selection.RateControlFlag))
-                {
-                    args.Add(selection.RateControlFlag);
-                    var rateControlValue = selection.RateControlValueOverride ?? selection.Quality.ToInvariantString();
-                    args.Add(rateControlValue);
+                // "-cq" is an NVENC option; AMF and QSV accept it on the command line and then ignore it, encoding at their
+                // default bitrate. Give them their own constant-quality mode instead (CQP / ICQ).
+                args.AddRange(HardwareConstantQuality.Arguments(selection, HardwareConstantQuality.FixedQuality(selection)));
+            }
+            else if (!string.IsNullOrWhiteSpace(selection.RateControlFlag))
+            {
+                args.Add(selection.RateControlFlag);
+                var rateControlValue = selection.RateControlValueOverride ?? selection.Quality.ToInvariantString();
+                args.Add(rateControlValue);
 
-                    if (selection.RateControlFlag.Equals("-cq", StringComparison.OrdinalIgnoreCase))
-                    {
-                        args.Add("-b:v");
-                        args.Add("0");
-                    }
+                if (selection.RateControlFlag.Equals("-cq", StringComparison.OrdinalIgnoreCase))
+                {
+                    args.Add("-b:v");
+                    args.Add("0");
                 }
             }
 
-            if (lookahead.HasValue && lookahead.Value > 0)
+            // Look-ahead is an NVENC option; AMF and QSV ignore it, and -sc_threshold is an x264 concept no GPU encoder reads.
+            if (lookahead.HasValue && lookahead.Value > 0 && selection.VideoEncoder.EndsWith("_nvenc", StringComparison.Ordinal))
             {
                 args.Add("-rc-lookahead");
                 args.Add(lookahead.Value.ToInvariantString());
-            }
-
-            if (options.EnableSceneCutAwareBitrate && selection.SceneCutAware)
-            {
-                args.Add("-sc_threshold");
-                args.Add(options.SceneCutThreshold.ToInvariantString());
             }
         }
         else
@@ -1221,15 +1394,19 @@ public sealed class VideoOptimiser : IOptimiser
         _ => aggressive ? options.SoftwarePresetAggressive : options.SoftwarePresetGentle
     };
 
-    private static VideoEncoderSelection SelectEncoder(VideoOptimiserOptions options, VideoHardwareCapabilities hardware, bool aggressive, bool forceMp4, string requestedExtension, VideoCodec? overrideCodec, VideoEncoderPreset preset, VideoProbeInfo? probe)
+    private static VideoEncoderSelection SelectEncoder(VideoOptimiserOptions options, VideoHardwareCapabilities hardware, bool aggressive, bool forceMp4, string requestedExtension, VideoCodec? overrideCodec, VideoEncoderPreset preset, VideoProbeInfo? probe, bool autoPrefersHardware = false)
     {
         var candidates = BuildCodecPriorityList(options, aggressive, requestedExtension, overrideCodec, preset).ToList();
+
+        // "Auto" with adaptive selection is a decision made per job (see DecideAutoHardware); without it, Auto keeps
+        // software AV1 whenever ffmpeg has it.
+        var adaptiveAuto = preset == VideoEncoderPreset.Auto && options.EnableAdaptiveAutoEncoder;
 
         // An explicit GPU preset means "encode on the GPU". The priority list leads with AV1, and most GPUs have no AV1
         // encoder, so walking it codec by codec would stop at software SVT-AV1 on the first entry and never reach the
         // HEVC/H.264 hardware encoders the preset was chosen for. Offer every codec to the hardware first. A forced
         // codec (WebM -> VP9, ProRes -> HEVC) keeps its own hardware-then-software order below.
-        var gpuPreset = preset is not (VideoEncoderPreset.Auto or VideoEncoderPreset.Cpu);
+        var gpuPreset = preset is not (VideoEncoderPreset.Auto or VideoEncoderPreset.Cpu) || (adaptiveAuto && autoPrefersHardware);
         if (gpuPreset && overrideCodec is null)
         {
             foreach (var codec in candidates)
@@ -1244,13 +1421,15 @@ public sealed class VideoOptimiser : IOptimiser
         foreach (var codec in candidates)
         {
             // Hardware AV1 encoders are far less efficient than SVT-AV1, so the automatic choice stays in software.
-            var softwareAv1 = codec == VideoCodec.Av1 && preset == VideoEncoderPreset.Auto && hardware.SupportsSoftwareAv1;
+            var softwareAv1 = codec == VideoCodec.Av1 && preset == VideoEncoderPreset.Auto && hardware.SupportsSoftwareAv1 && !(adaptiveAuto && autoPrefersHardware);
             if (codec == VideoCodec.Av1 && !hardware.SupportsSoftwareAv1 && preset is VideoEncoderPreset.Auto or VideoEncoderPreset.Cpu)
             {
                 continue;
             }
 
-            if (preset != VideoEncoderPreset.Cpu
+            // An adaptive Auto that chose software must not slip onto the GPU through a forced codec (ProRes -> HEVC).
+            var hardwareAllowed = preset != VideoEncoderPreset.Cpu && (!adaptiveAuto || autoPrefersHardware);
+            if (hardwareAllowed
                 && !softwareAv1
                 && TrySelectHardwareEncoder(options, hardware, codec, aggressive, forceMp4, requestedExtension, preset, out var hardwareSelection))
             {
@@ -1442,36 +1621,28 @@ public sealed class VideoOptimiser : IOptimiser
             return HardwareRateControlHelper.GetQuality(targetCodec, adjusted, options, aggressive);
         }
 
+        // NVIDIA's newest silicon has the "ultra high quality" tune; everything else uses plain "hq".
+        var nvencTune = hardware.FlagshipAv1Silicon && hardware.SupportsAv1Nvenc ? "uhq" : "hq";
+
         switch (codec)
         {
             case VideoCodec.H264:
-                if (hardware.SupportsNvenc)
+                if (hardware.CanEncodeH264Nvenc)
                 {
                     var quality = BuildHardwareQuality(VideoCodec.H264, options.HardwareQuality);
-                    selection = VideoEncoderSelection.Hardware(
-                        VideoCodec.H264,
-                        "h264_nvenc",
-                        container,
-                        "yuv420p",
-                        "cuda",
-                        "cuda",
-                        quality,
-                        new[] { "-preset", "p7", "-tune", "hq", "-rc", "vbr_hq" },
-                        supportsTwoPass: false,
-                        suggestedLookahead: 12,
-                        sceneCutAware: true);
+                    selection = VideoEncoderSelection.Hardware(VideoCodec.H264, "h264_nvenc", container, "yuv420p", "cuda", "cuda", quality, NvencProfile(VideoCodec.H264, preset, "hq"), supportsTwoPass: false, suggestedLookahead: 12, sceneCutAware: false);
                     return true;
                 }
-                if (hardware.SupportsAmf)
+                if (hardware.CanEncodeH264Amf)
                 {
                     var quality = BuildHardwareQuality(VideoCodec.H264, options.HardwareQuality);
-                    selection = VideoEncoderSelection.Hardware(VideoCodec.H264, options.HardwareEncoder, container, "yuv420p", "d3d11va", null, quality, Array.Empty<string>(), supportsTwoPass: false, suggestedLookahead: 10, sceneCutAware: true);
+                    selection = VideoEncoderSelection.Hardware(VideoCodec.H264, options.HardwareEncoder, container, "yuv420p", "d3d11va", null, quality, AmfProfile(preset), supportsTwoPass: false, suggestedLookahead: 0, sceneCutAware: false);
                     return true;
                 }
-                if (hardware.SupportsQsv)
+                if (hardware.CanEncodeH264Qsv)
                 {
                     var quality = BuildHardwareQuality(VideoCodec.H264, options.HardwareQuality);
-                    selection = VideoEncoderSelection.Hardware(VideoCodec.H264, "h264_qsv", container, "yuv420p", "qsv", null, quality, Array.Empty<string>(), supportsTwoPass: false, suggestedLookahead: 10, sceneCutAware: true);
+                    selection = VideoEncoderSelection.Hardware(VideoCodec.H264, "h264_qsv", container, "yuv420p", "qsv", null, quality, QsvProfile(preset, Array.Empty<string>()), supportsTwoPass: false, suggestedLookahead: 0, sceneCutAware: false);
                     return true;
                 }
                 break;
@@ -1479,18 +1650,7 @@ public sealed class VideoOptimiser : IOptimiser
                 if (hardware.SupportsHevcNvenc)
                 {
                     var quality = BuildHardwareQuality(VideoCodec.Hevc, options.HardwareQualityHevc, 3);
-                    selection = VideoEncoderSelection.Hardware(
-                        VideoCodec.Hevc,
-                        "hevc_nvenc",
-                        container,
-                        "p010le",
-                        "cuda",
-                        "cuda",
-                        quality,
-                        new[] { "-preset", "p7", "-tune", "hq", "-rc", "vbr_hq" }.Concat(hevcTag).ToArray(),
-                        supportsTwoPass: false,
-                        suggestedLookahead: 12,
-                        sceneCutAware: true);
+                    selection = VideoEncoderSelection.Hardware(VideoCodec.Hevc, "hevc_nvenc", container, "p010le", "cuda", "cuda", quality, NvencProfile(VideoCodec.Hevc, preset, nvencTune, hevcTag), supportsTwoPass: false, suggestedLookahead: 12, sceneCutAware: false);
                     return true;
                 }
                 if (hardware.SupportsHevcAmf)
@@ -1516,7 +1676,7 @@ public sealed class VideoOptimiser : IOptimiser
                 if (hardware.SupportsHevcQsv)
                 {
                     var quality = BuildHardwareQuality(VideoCodec.Hevc, options.HardwareQualityHevc, 3);
-                    selection = VideoEncoderSelection.Hardware(VideoCodec.Hevc, "hevc_qsv", container, "p010le", "qsv", null, quality, hevcTag, supportsTwoPass: false, suggestedLookahead: 10, sceneCutAware: true);
+                    selection = VideoEncoderSelection.Hardware(VideoCodec.Hevc, "hevc_qsv", container, "p010le", "qsv", null, quality, QsvProfile(preset, hevcTag), supportsTwoPass: false, suggestedLookahead: 0, sceneCutAware: false);
                     return true;
                 }
                 break;
@@ -1524,38 +1684,27 @@ public sealed class VideoOptimiser : IOptimiser
                 if (hardware.SupportsAv1Nvenc)
                 {
                     var quality = BuildHardwareQuality(VideoCodec.Av1, options.HardwareQualityAv1, 4);
-                    selection = VideoEncoderSelection.Hardware(
-                        VideoCodec.Av1,
-                        "av1_nvenc",
-                        container,
-                        "p010le",
-                        "cuda",
-                        "cuda",
-                        quality,
-                        new[] { "-preset", "p7", "-tune", "hq", "-rc", "vbr_hq" },
-                        supportsTwoPass: false,
-                        suggestedLookahead: 14,
-                        sceneCutAware: true);
+                    selection = VideoEncoderSelection.Hardware(VideoCodec.Av1, "av1_nvenc", container, "p010le", "cuda", "cuda", quality, NvencProfile(VideoCodec.Av1, preset, nvencTune), supportsTwoPass: false, suggestedLookahead: 14, sceneCutAware: false);
                     return true;
                 }
                 if (hardware.SupportsAv1Amf)
                 {
                     var quality = BuildHardwareQuality(VideoCodec.Av1, options.HardwareQualityAv1, 4);
-                    selection = VideoEncoderSelection.Hardware(VideoCodec.Av1, options.HardwareEncoderAv1, container, "p010le", "d3d11va", null, quality, Array.Empty<string>(), supportsTwoPass: false, suggestedLookahead: 12, sceneCutAware: true);
+                    selection = VideoEncoderSelection.Hardware(VideoCodec.Av1, options.HardwareEncoderAv1, container, "p010le", "d3d11va", null, quality, AmfProfile(preset), supportsTwoPass: false, suggestedLookahead: 0, sceneCutAware: false);
                     return true;
                 }
                 if (hardware.SupportsAv1Qsv)
                 {
                     var quality = BuildHardwareQuality(VideoCodec.Av1, options.HardwareQualityAv1, 4);
-                    selection = VideoEncoderSelection.Hardware(VideoCodec.Av1, "av1_qsv", container, "p010le", "qsv", null, quality, Array.Empty<string>(), supportsTwoPass: false, suggestedLookahead: 12, sceneCutAware: true);
+                    selection = VideoEncoderSelection.Hardware(VideoCodec.Av1, "av1_qsv", container, "p010le", "qsv", null, quality, QsvProfile(preset, Array.Empty<string>(), adaptiveFrames: false), supportsTwoPass: false, suggestedLookahead: 0, sceneCutAware: false);
                     return true;
                 }
                 break;
             case VideoCodec.Vp9:
-                if (hardware.SupportsQsv)
+                if (hardware.CanEncodeVp9Qsv)
                 {
                     var quality = BuildHardwareQuality(VideoCodec.Vp9, options.HardwareQualityVp9, 4);
-                    selection = VideoEncoderSelection.Hardware(VideoCodec.Vp9, "vp9_qsv", container, "yuv420p", "qsv", null, quality, Array.Empty<string>(), supportsTwoPass: false, suggestedLookahead: 10, sceneCutAware: false);
+                    selection = VideoEncoderSelection.Hardware(VideoCodec.Vp9, "vp9_qsv", container, "yuv420p", "qsv", null, quality, Array.Empty<string>(), supportsTwoPass: false, suggestedLookahead: 0, sceneCutAware: false);
                     return true;
                 }
                 break;
@@ -1564,6 +1713,60 @@ public sealed class VideoOptimiser : IOptimiser
         return false;
     }
 
+    /// <summary>
+    /// NVENC encoder profile. <c>-rc vbr</c> replaces the legacy <c>vbr_hq</c> (gone from current ffmpeg, where the encoder
+    /// then refuses to open), and the perceptual extras are what separate a good NVENC file from a poor one at the same
+    /// quantiser: quarter-resolution multipass, spatial (and, for H.264/HEVC, temporal) adaptive quantisation, and B-frames
+    /// as references. Features a particular chip lacks are switched off by ffmpeg with a warning, not an error.
+    /// </summary>
+    internal static string[] NvencProfile(VideoCodec codec, VideoEncoderPreset preset, string tune, IEnumerable<string>? extra = null)
+    {
+        var simple = preset == VideoEncoderPreset.GpuSimple;
+        var args = new List<string>
+        {
+            "-preset", simple ? "p4" : "p7",
+            "-tune", tune,
+            "-rc", "vbr",
+            "-multipass", simple ? "disabled" : "qres",
+            "-spatial-aq", "1",
+            "-b_ref_mode", "middle"
+        };
+
+        if (codec != VideoCodec.Av1)
+        {
+            args.AddRange(new[] { "-temporal-aq", "1" });
+        }
+
+        if (extra is not null)
+        {
+            args.AddRange(extra);
+        }
+
+        return args.ToArray();
+    }
+
+    /// <summary>
+    /// AMF profile for H.264 and AV1 (HEVC has its own, see <see cref="ResolveAmdHevcProfile"/>). Deliberately without
+    /// pre-analysis: it makes AMF load an ML runtime, ran about 3x slower on RDNA 4, and stalled outright with AV1. Nor
+    /// <c>-aq_mode caq</c> for AV1: it shrinks the file at a given quantiser (by 27-35%) but lowers the quality at that
+    /// quantiser too, and at equal SSIMULACRA2 it came out larger on 2 of 3 real clips (Sintel +56%, Jellyfish +23%).
+    /// </summary>
+    internal static string[] AmfProfile(VideoEncoderPreset preset)
+        => new[] { "-quality", preset == VideoEncoderPreset.GpuSimple ? "balanced" : "quality", "-usage", "transcoding" };
+
+    internal static string[] QsvProfile(VideoEncoderPreset preset, IEnumerable<string> extra, bool adaptiveFrames = true)
+    {
+        var args = new List<string> { "-preset", preset == VideoEncoderPreset.GpuSimple ? "medium" : "slower" };
+        if (adaptiveFrames)
+        {
+            args.AddRange(new[] { "-adaptive_i", "1", "-adaptive_b", "1" });
+        }
+
+        args.AddRange(extra);
+        return args.ToArray();
+    }
+
+    // AMD's HEVC encoder has no B-frames (-bf changes nothing and -qp_b is reported as unused), so none are requested.
     private static (IReadOnlyList<string> Arguments, string RateControlFlag, string? RateControlValueOverride) ResolveAmdHevcProfile(VideoEncoderPreset preset)
     {
         return preset switch
@@ -1573,9 +1776,8 @@ public sealed class VideoOptimiser : IOptimiser
                 "-quality", "balanced",
                 "-usage", "transcoding",
                 "-profile:v", "main10",
-                "-level", "5.1",
-                "-bf", "2"
-            }, "-rc", "vbr"),
+                "-level", "5.1"
+            }, "-rc", "vbr_peak"),
             VideoEncoderPreset.GpuCqp => (new[]
             {
                 "-quality", "quality",
@@ -1583,18 +1785,15 @@ public sealed class VideoOptimiser : IOptimiser
                 "-profile:v", "main10",
                 "-level", "5.1",
                 "-qp_i", "22",
-                "-qp_p", "24",
-                "-qp_b", "26",
-                "-bf", "3"
+                "-qp_p", "24"
             }, "-rc", "cqp"),
             _ => (new[]
             {
                 "-quality", "quality",
                 "-usage", "transcoding",
                 "-profile:v", "main10",
-                "-level", "5.1",
-                "-bf", "3"
-            }, "-rc", "vbr")
+                "-level", "5.1"
+            }, "-rc", "vbr_peak")
         };
     }
 
@@ -1820,6 +2019,15 @@ public sealed record VideoOptimiserPlan(
 
     /// <summary>Subtitle streams carried into the output (none unless the probe found convertible ones).</summary>
     public SubtitlePlan Subtitles { get; init; } = SubtitlePlan.None;
+
+    /// <summary>
+    /// Set when frame decimation was dropped so the GPU can keep frames in video memory end to end; holds the filter chain
+    /// as it was, for the retry if that zero-copy encode fails.
+    /// </summary>
+    public IReadOnlyList<string>? FiltersBeforeZeroCopy { get; init; }
+
+    /// <summary>The GPU was picked by the adaptive Auto policy (not by an explicit GPU preset), so Auto may still take it back.</summary>
+    public bool AutoSelectedHardware { get; init; }
 }
 
 public interface IVideoToolchain
@@ -1945,6 +2153,25 @@ internal sealed class ExternalVideoToolchain : IVideoToolchain
 
     private async Task<ToolchainResult> TrySoftwareFallbackAsync(VideoOptimiserPlan plan, FilePath tempOutput, OptimiserExecutionContext context, CancellationToken cancellationToken, FfmpegProgressTracker tracker, ToolchainResult lastResult)
     {
+        // Step 1: the same GPU, plain profile and the original filters. Tuned flags and zero-copy decoding are the parts a
+        // driver or chip is most likely to refuse, and a plain GPU encode is far cheaper than the software one.
+        if (VideoOptimiser.BuildConservativeHardwarePlan(_options, plan) is { } conservative)
+        {
+            Log.Info("Tuned hardware encode failed; retrying the GPU with a conservative profile.");
+            context.ReportProgress(5, "Retrying GPU encode");
+            TryDelete(tempOutput);
+
+            var retryArgs = BuildTranscodeArguments(conservative, tempOutput, includeAudio: true);
+            var retry = await RunProcessAsync(_options.FfmpegPath, retryArgs, context, cancellationToken, line => tracker.Process(line, context)).ConfigureAwait(false);
+            if (retry.Success)
+            {
+                return retry;
+            }
+
+            lastResult = retry;
+        }
+
+        // Step 2: software.
         if (plan.SoftwareFallback is null)
         {
             return lastResult;
@@ -2025,6 +2252,12 @@ internal sealed class ExternalVideoToolchain : IVideoToolchain
             // in GPU memory and the filter graph fails to negotiate a format, so the GPU encode would always crash and
             // fall back to software. Without it ffmpeg still decodes on the GPU and downloads the frames for the filters.
             RemoveOptionWithValue(inputScoped, "-hwaccel_output_format");
+        }
+        else if (inputScoped.Contains("-hwaccel_output_format", StringComparer.OrdinalIgnoreCase))
+        {
+            // Frames stay in GPU memory end to end, so there is no CPU filter to convert them: a forced -pix_fmt would ask
+            // ffmpeg to convert hardware frames, which it cannot. The encoder takes the surface format as decoded.
+            RemoveOptionWithValue(encoderScoped, "-pix_fmt");
         }
 
         if (inputScoped.Count > 0)

@@ -172,6 +172,43 @@ public sealed record VideoOptimiserOptions
     public VideoEncoderPreset EncoderPreset { get; init; } = VideoEncoderPreset.Auto;
 
     /// <summary>
+    /// "Auto" weighs the job (resolution x frame rate x duration), the GPU's encoder generation and the power source,
+    /// staying on software SVT-AV1 for small jobs and moving large ones to the GPU. Off restores the old behaviour of
+    /// always choosing software AV1 when it is available.
+    /// </summary>
+    public bool EnableAdaptiveAutoEncoder { get; init; } = true;
+
+    /// <summary>On AC power, jobs up to this many megapixels of work (~15 s of 1080p30) always use software.</summary>
+    public double AutoCpuMaxMegapixels { get; init; } = 1_000;
+
+    /// <summary>Jobs above this many megapixels (~30 s of 1080p30 is 1,900) go to the GPU with latest-generation AV1 silicon.</summary>
+    public double AutoGpuMinMegapixelsFlagship { get; init; } = 1_900;
+
+    /// <summary>Threshold for first-generation hardware AV1 (~30 s of 1080p60).</summary>
+    public double AutoGpuMinMegapixelsAv1 { get; init; } = 3_700;
+
+    /// <summary>Threshold for hardware HEVC without AV1 (~60 s of 1080p60), where the GPU's files are 25-40% larger.</summary>
+    public double AutoGpuMinMegapixelsModern { get; init; } = 7_500;
+
+    /// <summary>Threshold for GPUs that only encode H.264.</summary>
+    public double AutoGpuMinMegapixelsLegacy { get; init; } = 15_000;
+
+    /// <summary>On battery (or battery saver) a GPU that can encode HEVC or better takes any job from this size up (~8 s of 1080p30).</summary>
+    public double AutoBatteryGpuMinMegapixels { get; init; } = 500;
+
+    /// <summary>
+    /// When Auto chose the GPU, the perceptual search predicts what the GPU will actually produce. If that is more than this
+    /// fraction of the source's own video bitrate, the GPU is barely compressing (some content, notably flat gradients, needs
+    /// a hardware AV1 encoder to run at very low quantisers) and Auto switches to software instead. Explicit GPU presets are
+    /// never overridden. Measured on real clips with an RDNA 4 GPU: footage the GPU handles well lands at 12-26% of the
+    /// source (and often beats software), while the cases where software was 4-5x smaller landed at 56% and above.
+    /// </summary>
+    public double AutoHardwareMaxSourceBitrateRatio { get; init; } = 0.4;
+
+    /// <summary>Pins the power source instead of asking Windows; used by tests and by hosts that want a fixed behaviour.</summary>
+    public VideoPowerState? PowerStateOverride { get; init; }
+
+    /// <summary>
     /// Minimum duration (in seconds) before two-pass encoding is considered. Short clips finish faster with a single pass.
     /// Set to 0 to always allow two-pass.
     /// </summary>
@@ -202,6 +239,12 @@ public sealed record VideoOptimiserOptions
     public int HardwareBitrateRetryLimit { get; init; } = 2;
 
     public bool EnableFrameDecimation { get; init; } = true;
+
+    /// <summary>
+    /// A GPU encode drops frame decimation (a CPU filter that forces every frame through system memory) when the sampled
+    /// footage would lose fewer than this fraction of its frames to it.
+    /// </summary>
+    public double ZeroCopyMaxDuplicateFrameRatio { get; init; } = 0.03;
 
     public double FrameDecimationHighThreshold { get; init; } = 64;
 

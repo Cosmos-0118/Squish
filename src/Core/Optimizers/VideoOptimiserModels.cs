@@ -235,6 +235,28 @@ public enum AnimatedExportFormat
     AnimatedWebp
 }
 
+/// <summary>
+/// How capable the machine's best GPU video encoder is, from the encoders that actually opened (see
+/// <see cref="VideoHardwareDetector"/>). It sets how large a job must be before the GPU beats software SVT-AV1 for
+/// the automatic choice: newer silicon compresses nearly as well as software at several times the speed.
+/// </summary>
+public enum GpuEncoderTier
+{
+    None = 0,
+
+    /// <summary>H.264 only (or nothing worth using).</summary>
+    Legacy = 1,
+
+    /// <summary>Hardware HEVC, no AV1: RTX 20/30, GTX 16, Intel 11th-14th gen, RDNA 2. Files run ~25-40% larger than SVT-AV1.</summary>
+    Modern = 2,
+
+    /// <summary>First-generation hardware AV1: RTX 40, Arc Alchemist/Meteor Lake, RDNA 3/4. ~12-22% larger than SVT-AV1.</summary>
+    Av1 = 3,
+
+    /// <summary>Latest AV1 silicon: RTX 50, Arc Battlemage, Lunar/Arrow Lake. ~6-11% larger than SVT-AV1.</summary>
+    Flagship = 4
+}
+
 public sealed record VideoHardwareCapabilities(
     bool SupportsNvenc,
     bool SupportsAmf,
@@ -250,133 +272,36 @@ public sealed record VideoHardwareCapabilities(
 {
     public static VideoHardwareCapabilities CpuOnly { get; } = new(false, false, false, false, false, false, false, false, false, false);
 
+    // H.264 / VP9 are tracked per encoder so a vendor that only does HEVC+AV1 is never asked for H.264 (and vice versa).
+    // Hand-built capabilities that leave these unset fall back to the vendor-wide flag, as before.
+    public bool? SupportsH264Nvenc { get; init; }
+
+    public bool? SupportsH264Amf { get; init; }
+
+    public bool? SupportsH264Qsv { get; init; }
+
+    public bool? SupportsVp9Qsv { get; init; }
+
+    /// <summary>The newest AV1 silicon generation, confirmed by a working AV1 encode plus the adapter name.</summary>
+    public bool FlagshipAv1Silicon { get; init; }
+
+    public bool CanEncodeH264Nvenc => SupportsH264Nvenc ?? SupportsNvenc;
+
+    public bool CanEncodeH264Amf => SupportsH264Amf ?? SupportsAmf;
+
+    public bool CanEncodeH264Qsv => SupportsH264Qsv ?? SupportsQsv;
+
+    public bool CanEncodeVp9Qsv => SupportsVp9Qsv ?? SupportsQsv;
+
     public bool HasAnyHardware => SupportsNvenc || SupportsAmf || SupportsQsv || SupportsDxva;
 
     public bool SupportsAv1Hardware => SupportsAv1Nvenc || SupportsAv1Amf || SupportsAv1Qsv;
 
     public bool SupportsHevcHardware => SupportsHevcNvenc || SupportsHevcAmf || SupportsHevcQsv;
-}
 
-public static class VideoHardwareDetector
-{
-    private static readonly object Gate = new();
-    private static VideoHardwareCapabilities? _cached;
-    private static string? _cachedKey;
-
-    public static VideoHardwareCapabilities Detect(string ffmpegPath, bool probe)
-    {
-        if (!probe)
-        {
-            return VideoHardwareCapabilities.CpuOnly;
-        }
-
-        var cacheKey = BuildCacheKey(ffmpegPath);
-
-        lock (Gate)
-        {
-            if (_cached is not null && string.Equals(_cachedKey, cacheKey, StringComparison.Ordinal))
-            {
-                return _cached;
-            }
-
-            try
-            {
-                var encoderResult = ProcessRunner.Run(ffmpegPath, new[] { "-hide_banner", "-encoders" }, ProcessRunnerOptions.Create(throwOnError: false));
-                var encoders = encoderResult.ExitCode == 0
-                    ? ParseLines(encoderResult.StandardOutput)
-                    : Array.Empty<string>();
-
-                var hwAccelResult = ProcessRunner.Run(ffmpegPath, new[] { "-hide_banner", "-hwaccels" }, ProcessRunnerOptions.Create(throwOnError: false));
-                var hwAccels = hwAccelResult.ExitCode == 0
-                    ? ParseLines(hwAccelResult.StandardOutput)
-                    : Array.Empty<string>();
-
-                var hasNvDriver = HasVendorLibrary("nvcuda.dll") || HasVendorLibrary("nvEncodeAPI64.dll");
-                var hasAmfDriver = HasVendorLibrary("amfrt64.dll") || HasVendorLibrary("amfrt32.dll");
-                var hasQsvDriver = HasVendorLibrary("libmfxhw64.dll") || HasVendorLibrary("libmfxhw32.dll");
-
-                var caps = new VideoHardwareCapabilities(
-                    SupportsNvenc: hasNvDriver && encoders.Any(line => line.Contains("nvenc", StringComparison.OrdinalIgnoreCase)),
-                    SupportsAmf: hasAmfDriver && encoders.Any(line => line.Contains("_amf", StringComparison.OrdinalIgnoreCase)),
-                    SupportsQsv: hasQsvDriver && encoders.Any(line => line.Contains("_qsv", StringComparison.OrdinalIgnoreCase)),
-                    SupportsDxva: hwAccels.Any(line => line.Contains("d3d11", StringComparison.OrdinalIgnoreCase) || line.Contains("dxva2", StringComparison.OrdinalIgnoreCase)),
-                    SupportsAv1Nvenc: hasNvDriver && encoders.Any(line => line.Contains("av1_nvenc", StringComparison.OrdinalIgnoreCase)),
-                    SupportsAv1Amf: hasAmfDriver && encoders.Any(line => line.Contains("av1_amf", StringComparison.OrdinalIgnoreCase)),
-                    SupportsAv1Qsv: hasQsvDriver && encoders.Any(line => line.Contains("av1_qsv", StringComparison.OrdinalIgnoreCase)),
-                    SupportsHevcNvenc: hasNvDriver && encoders.Any(line => line.Contains("hevc_nvenc", StringComparison.OrdinalIgnoreCase)),
-                    SupportsHevcAmf: hasAmfDriver && encoders.Any(line => line.Contains("hevc_amf", StringComparison.OrdinalIgnoreCase)),
-                    SupportsHevcQsv: hasQsvDriver && encoders.Any(line => line.Contains("hevc_qsv", StringComparison.OrdinalIgnoreCase)),
-                    SupportsSoftwareAv1: encoders.Any(line => line.Contains("libsvtav1", StringComparison.OrdinalIgnoreCase)));
-
-                _cached = caps;
-                _cachedKey = cacheKey;
-                return caps;
-            }
-            catch (Exception ex)
-            {
-                Log.Warning($"Failed to probe ffmpeg hardware capabilities: {ex.Message}");
-                _cached = VideoHardwareCapabilities.CpuOnly;
-                _cachedKey = cacheKey;
-                return _cached;
-            }
-        }
-    }
-
-    private static string BuildCacheKey(string ffmpegPath)
-    {
-        if (string.IsNullOrWhiteSpace(ffmpegPath))
-        {
-            return string.Empty;
-        }
-
-        try
-        {
-            var info = new FileInfo(ffmpegPath);
-            var timestamp = info.Exists ? info.LastWriteTimeUtc.Ticks : 0L;
-            return $"{ffmpegPath}|{timestamp}";
-        }
-        catch
-        {
-            return ffmpegPath;
-        }
-    }
-
-    private static IReadOnlyCollection<string> ParseLines(string stdout)
-    {
-        if (string.IsNullOrWhiteSpace(stdout))
-        {
-            return Array.Empty<string>();
-        }
-
-        var lines = stdout
-            .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
-            .Select(line => line.Trim())
-            .Where(line => !string.IsNullOrWhiteSpace(line))
-            .ToArray();
-        return new ReadOnlyCollection<string>(lines);
-    }
-
-    private static bool HasVendorLibrary(string libraryName)
-    {
-        if (string.IsNullOrWhiteSpace(libraryName))
-        {
-            return false;
-        }
-
-        try
-        {
-            // System32 only: the default search order would also probe the app and current directories (DLL planting).
-            if (NativeLibrary.TryLoad(libraryName, typeof(VideoHardwareDetector).Assembly, DllImportSearchPath.System32, out var handle))
-            {
-                NativeLibrary.Free(handle);
-                return true;
-            }
-        }
-        catch
-        {
-            // ignored — absence means the driver is missing.
-        }
-
-        return false;
-    }
+    public GpuEncoderTier EncoderTier
+        => SupportsAv1Hardware ? (FlagshipAv1Silicon ? GpuEncoderTier.Flagship : GpuEncoderTier.Av1)
+            : SupportsHevcHardware ? GpuEncoderTier.Modern
+            : SupportsNvenc || SupportsAmf || SupportsQsv ? GpuEncoderTier.Legacy
+            : GpuEncoderTier.None;
 }

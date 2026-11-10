@@ -28,7 +28,8 @@ public static class VideoOptimiserOptionsFactory
             CapFps = store.Get(SettingsRegistry.CapVideoFps),
             TargetFps = (int)System.Math.Round(store.Get(SettingsRegistry.TargetVideoFps)),
             MinFps = (int)System.Math.Round(store.Get(SettingsRegistry.MinVideoFps)),
-            RemoveAudio = store.Get(SettingsRegistry.RemoveAudioFromVideos)
+            RemoveAudio = store.Get(SettingsRegistry.RemoveAudioFromVideos),
+            EncoderPreset = store.Get(SettingsRegistry.VideoEncoderPresetPreference)
         };
     }
 }
