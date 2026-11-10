@@ -201,7 +201,8 @@
                              AutomationProperties.LabeledBy="{Binding ElementName=FloatingHudPlacementLabel}">
                         <ListBox.ItemsPanel>
                             <ItemsPanelTemplate>
-                                <controls:SmartWrapPanel MinColumnWidth="130" HorizontalSpacing="8" VerticalSpacing="8" />
+                                <!-- Two options: split the row evenly. -->
+                                <UniformGrid Columns="2" Rows="1" />
                             </ItemsPanelTemplate>
                         </ListBox.ItemsPanel>
                         <ListBox.ItemContainerStyle>

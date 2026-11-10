@@ -43,15 +43,9 @@ public partial class FloatingHudWindow : Window
             return;
         }
 
-        if (placement == FloatingHudPlacement.Custom)
+        if (placement == FloatingHudPlacement.Custom && TryMoveToCustomPosition())
         {
-            if (TryMoveToCustomPosition())
-            {
-                return;
-            }
-
-            // Never dragged yet, or the monitor it was on is gone: start in the middle, where it is easy to grab.
-            placement = FloatingHudPlacement.Center;
+            return;
         }
 
         var workArea = SystemParameters.WorkArea;
@@ -91,7 +85,8 @@ public partial class FloatingHudWindow : Window
             FloatingHudPlacement.BottomLeft => (left, bottom),
             FloatingHudPlacement.BottomCenter => (centerX, bottom),
             FloatingHudPlacement.BottomRight => (right, bottom),
-            FloatingHudPlacement.Center => (centerX, centerY),
+            // Custom but never dragged yet, or the monitor it was on is gone: start in the middle, where it is easy to grab.
+            FloatingHudPlacement.Custom => (centerX, centerY),
             _ => (right, top)
         };
 
@@ -583,7 +578,7 @@ public partial class FloatingHudWindow : Window
         var shift = placement switch
         {
             FloatingHudPlacement.BottomLeft or FloatingHudPlacement.BottomCenter or FloatingHudPlacement.BottomRight => delta,
-            FloatingHudPlacement.MiddleLeft or FloatingHudPlacement.MiddleRight or FloatingHudPlacement.Center => delta / 2,
+            FloatingHudPlacement.MiddleLeft or FloatingHudPlacement.MiddleRight => delta / 2,
             _ => 0d
         };
 

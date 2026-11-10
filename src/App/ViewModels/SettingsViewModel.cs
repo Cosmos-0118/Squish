@@ -808,15 +808,9 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     {
         return new List<FloatingHudPlacementOptionViewModel>
         {
-            CreatePlacementOption(FloatingHudPlacement.TopLeft),
-            CreatePlacementOption(FloatingHudPlacement.TopCenter),
+            // Only the default spot and "wherever you drag it" are offered. The older corner/edge presets still work
+            // for settings saved by earlier versions (FloatingHudWindow.MoveToPlacement), but are no longer listed.
             CreatePlacementOption(FloatingHudPlacement.TopRight),
-            CreatePlacementOption(FloatingHudPlacement.MiddleLeft),
-            CreatePlacementOption(FloatingHudPlacement.Center),
-            CreatePlacementOption(FloatingHudPlacement.MiddleRight),
-            CreatePlacementOption(FloatingHudPlacement.BottomLeft),
-            CreatePlacementOption(FloatingHudPlacement.BottomCenter),
-            CreatePlacementOption(FloatingHudPlacement.BottomRight),
             CreatePlacementOption(FloatingHudPlacement.Custom)
         };
     }
