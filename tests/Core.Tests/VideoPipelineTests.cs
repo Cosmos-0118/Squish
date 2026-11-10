@@ -385,9 +385,18 @@ public sealed class HardwareConstantQualityTests
     [Fact]
     public void AmfUsesConstantQuantisersAndNoBitrateTarget()
     {
-        var args = HardwareConstantQuality.Arguments(Gpu("hevc_amf", VideoCodec.Hevc), 28);
+        // H.264 is the AMD codec with B-frames, so it alone gets a B quantiser.
+        var args = HardwareConstantQuality.Arguments(Gpu("h264_amf", VideoCodec.H264), 28);
 
         Assert.Equal(new[] { "-rc", "cqp", "-qp_i", "28", "-qp_p", "28", "-qp_b", "30" }, args);
+    }
+
+    [Fact]
+    public void AmfHevcHasNoBFrameQuantiserEither()
+    {
+        var args = HardwareConstantQuality.Arguments(Gpu("hevc_amf", VideoCodec.Hevc), 28);
+
+        Assert.Equal(new[] { "-rc", "cqp", "-qp_i", "28", "-qp_p", "28" }, args);
     }
 
     [Fact]

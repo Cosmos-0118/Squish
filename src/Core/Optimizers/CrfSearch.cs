@@ -109,7 +109,7 @@ internal static class CrfSearch
         {
             token.ThrowIfCancellationRequested();
 
-            var decayPerCrf = EstimateDecay(probes);
+            var decayPerCrf = EstimateDecay(probes, maxCrf);
             var estimated = chosen.Crf + (int)Math.Ceiling(Math.Log(chosen.BitrateKbps / capKbps) / decayPerCrf);
             estimated = Math.Clamp(estimated, chosen.Crf + 1, maxCrf);
 
@@ -154,10 +154,18 @@ internal static class CrfSearch
         return new CrfSearchOutcome(chosen, targetMet && !adjusted, probes);
     }
 
-    private static double EstimateDecay(IReadOnlyList<CrfProbe> probes)
+    /// <summary>
+    /// Fractional bitrate lost per quantiser step, from measured pairs when there are any. The prior depends on the scale
+    /// the encoder's quantiser runs on: x264/x265/NVENC (0-51) lose ~11% of their bitrate per step, SVT-AV1 (0-63) ~6%, but
+    /// AMD's AV1 quantiser runs 0-255 and each step is worth only ~2.5% (measured on real footage: 0.021-0.027). A prior from
+    /// the wrong scale makes the bitrate cap under-step several-fold and ship a file far above the cap.
+    /// </summary>
+    internal static double EstimateDecay(IReadOnlyList<CrfProbe> probes, int maxCrf)
     {
-        // ln(bitrate) falls ~0.10-0.12 per CRF step for x264/x265; use measured pairs when available.
-        double best = 0.11;
+        double best = maxCrf > 100 ? 0.025 : maxCrf > 45 ? 0.065 : 0.11;
+
+        // Accept only physically plausible measurements; the floor is low enough for the finest (0-255) scales.
+        var floor = maxCrf > 100 ? 0.004 : 0.03;
         for (var i = 0; i < probes.Count; i++)
         {
             for (var j = i + 1; j < probes.Count; j++)
@@ -167,7 +175,7 @@ internal static class CrfSearch
                 if (a.Crf != b.Crf && a.BitrateKbps > 0 && b.BitrateKbps > 0)
                 {
                     var measured = Math.Log(a.BitrateKbps / b.BitrateKbps) / (b.Crf - a.Crf);
-                    if (measured is > 0.03 and < 0.4)
+                    if (measured > floor && measured < 0.4)
                     {
                         best = measured;
                     }

@@ -59,21 +59,34 @@ internal static class HardwareConstantQuality
             "av1_amf" => (40, 200, -0.25, 110),
             "hevc_nvenc" or "h264_nvenc" or "hevc_qsv" or "h264_qsv" => (16, 40, -2.6, 26),
             "av1_nvenc" => (20, 55, -1.0, 34),
+            // Intel ICQ quality for AV1 (1-51): roughly 1.2 SSIMULACRA2 points per step around the middle of the range.
+            "av1_qsv" => (18, 50, -1.2, 30),
             _ => default
         };
 
         return range != default;
     }
 
+    /// <summary>
+    /// The quantiser to use when no perceptual search picked one. Most scales match the CRF-like value the selection
+    /// carries; AMD's AV1 quantiser runs 0-255 (about 3-4x the H.264/HEVC value), so it starts from the search's midpoint
+    /// instead of an H.264-sized number that would be near-lossless.
+    /// </summary>
+    public static int FixedQuality(VideoEncoderSelection selection)
+        => selection.VideoEncoder.Equals("av1_amf", StringComparison.Ordinal) && TryGetSearchRange(selection, out var range)
+            ? range.Start
+            : selection.Quality;
+
     public static IReadOnlyList<string> Arguments(VideoEncoderSelection selection, int quality)
     {
         var q = quality.ToString(System.Globalization.CultureInfo.InvariantCulture);
         if (selection.VideoEncoder.EndsWith("_amf", StringComparison.Ordinal))
         {
-            // B-frames a notch coarser than P, as x264/x265 do; AV1 AMF has no B-frame quantiser.
-            return selection.Codec == VideoCodec.Av1
-                ? new[] { "-rc", "cqp", "-qp_i", q, "-qp_p", q }
-                : new[] { "-rc", "cqp", "-qp_i", q, "-qp_p", q, "-qp_b", (quality + 2).ToString(System.Globalization.CultureInfo.InvariantCulture) };
+            // Only H.264 uses a B-frame quantiser (a notch coarser than P, as x264 does). HEVC has no B-frames on AMD and the AV1
+            // encoder is run without them, so a -qp_b there is at best reported as unused.
+            return selection.Codec == VideoCodec.H264
+                ? new[] { "-rc", "cqp", "-qp_i", q, "-qp_p", q, "-qp_b", (quality + 2).ToString(System.Globalization.CultureInfo.InvariantCulture) }
+                : new[] { "-rc", "cqp", "-qp_i", q, "-qp_p", q };
         }
 
         if (selection.VideoEncoder.EndsWith("_nvenc", StringComparison.Ordinal))
