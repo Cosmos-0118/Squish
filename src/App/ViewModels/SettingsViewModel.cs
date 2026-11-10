@@ -812,10 +812,12 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
             CreatePlacementOption(FloatingHudPlacement.TopCenter),
             CreatePlacementOption(FloatingHudPlacement.TopRight),
             CreatePlacementOption(FloatingHudPlacement.MiddleLeft),
+            CreatePlacementOption(FloatingHudPlacement.Center),
             CreatePlacementOption(FloatingHudPlacement.MiddleRight),
             CreatePlacementOption(FloatingHudPlacement.BottomLeft),
             CreatePlacementOption(FloatingHudPlacement.BottomCenter),
-            CreatePlacementOption(FloatingHudPlacement.BottomRight)
+            CreatePlacementOption(FloatingHudPlacement.BottomRight),
+            CreatePlacementOption(FloatingHudPlacement.Custom)
         };
     }
 

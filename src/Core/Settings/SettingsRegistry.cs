@@ -109,6 +109,10 @@ public static class SettingsRegistry
     public static readonly SettingKey<int> AutoClearCompactResultsAfter = Int("autoClearAllCompactResultsAfter", 120);
     public static readonly SettingKey<FloatingHudPlacement> FloatingHudPlacement = new("floatingHudPlacement", global::Squish.Core.Settings.FloatingHudPlacement.TopRight);
 
+    // Where the HUD was dragged to (window left/top in WPF units) for FloatingHudPlacement.Custom. NaN = never placed.
+    public static readonly SettingKey<double> FloatingHudCustomLeft = new("floatingHudCustomLeft", double.NaN);
+    public static readonly SettingKey<double> FloatingHudCustomTop = new("floatingHudCustomTop", double.NaN);
+
     public static readonly SettingKey<bool> AutoCopyToClipboard = Bool("autoCopyToClipboard", true);
     public static readonly SettingKey<bool> CliInstalled = Bool("cliInstalled", true);
     public static readonly SettingKey<bool> OpenAtStartup = Bool("openAtStartup", false);
@@ -210,6 +214,8 @@ public static class SettingsRegistry
         AutoHideClipboardResultAfter,
         AutoClearCompactResultsAfter,
         FloatingHudPlacement,
+        FloatingHudCustomLeft,
+        FloatingHudCustomTop,
         FloatingHudScale,
         FloatingHudWidthScale,
         FloatingHudHeightScale,

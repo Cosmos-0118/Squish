@@ -141,12 +141,19 @@ public sealed class FloatingHudController : IDisposable
         }
 
         var window = _window ??= CreateWindow();
-        if (!window.IsVisible)
+        var justShown = !window.IsVisible;
+        if (justShown)
         {
             window.Show();
         }
 
-        PositionWindow();
+        // Presets re-snap on every update, as before. A custom (dragged) spot is applied when the window opens and
+        // then left alone, so the window can grow and be nudged on screen without jumping back on the next update.
+        if (justShown || SettingsHost.Get(SettingsRegistry.FloatingHudPlacement) != FloatingHudPlacement.Custom)
+        {
+            PositionWindow();
+        }
+
         window.BringToFront();
     }
 
@@ -398,7 +405,17 @@ public sealed class FloatingHudController : IDisposable
 
         if (string.Equals(e.Name, SettingsRegistry.FloatingHudPlacement.Name, StringComparison.Ordinal))
         {
-            Dispatch(PositionWindow);
+            var placement = e.Value is FloatingHudPlacement value ? value : SettingsHost.Get(SettingsRegistry.FloatingHudPlacement);
+            Dispatch(() =>
+            {
+                PositionWindow();
+
+                // Choosing "Custom" in Settings shows the HUD so there is something to drag into place.
+                if (placement == FloatingHudPlacement.Custom)
+                {
+                    EnsureVisible(forceShow: true);
+                }
+            });
         }
     }
 

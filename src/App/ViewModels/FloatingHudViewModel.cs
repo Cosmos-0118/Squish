@@ -123,6 +123,8 @@ public sealed class FloatingHudViewModel : ObservableObject
 
         SettingsHost.Set(SettingsRegistry.FloatingHudWidth, WindowWidth);
         SettingsHost.Set(SettingsRegistry.FloatingHudHeight, WindowHeight);
+        SettingsHost.Set(SettingsRegistry.FloatingHudCustomLeft, double.NaN);
+        SettingsHost.Set(SettingsRegistry.FloatingHudCustomTop, double.NaN);
         SettingsHost.Set(SettingsRegistry.FloatingHudPlacement, FloatingHudPlacement.TopRight);
     }
 
