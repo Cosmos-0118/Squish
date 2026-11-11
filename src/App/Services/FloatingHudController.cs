@@ -15,7 +15,9 @@ namespace Squish.App.Services;
 
 public sealed class FloatingHudController : IDisposable
 {
-    private const int MaxVisibleResults = 6;
+    // The HUD scrolls, so every queued file stays listed (a 100-image folder shows all 100). This only bounds memory for
+    // very long sessions: past it, the oldest *finished* cards are dropped. Running and queued cards are never trimmed.
+    private const int MaxStoredResults = 300;
     private static readonly TimeSpan DefaultNotificationDuration = TimeSpan.FromSeconds(4);
 
     private readonly FloatingHudViewModel _viewModel;
@@ -101,6 +103,7 @@ public sealed class FloatingHudController : IDisposable
         Dispatch(() =>
         {
             _viewModel.ResetLayout();
+            _window?.ResetUserPosition();
             PositionWindow();
             EnsureVisible(forceShow: true);
         });
@@ -141,19 +144,13 @@ public sealed class FloatingHudController : IDisposable
         }
 
         var window = _window ??= CreateWindow();
-        var justShown = !window.IsVisible;
-        if (justShown)
+        if (!window.IsVisible)
         {
             window.Show();
         }
 
-        // Presets re-snap on every update, as before. A custom (dragged) spot is applied when the window opens and
-        // then left alone, so the window can grow and be nudged on screen without jumping back on the next update.
-        if (justShown || SettingsHost.Get(SettingsRegistry.FloatingHudPlacement) != FloatingHudPlacement.Custom)
-        {
-            PositionWindow();
-        }
-
+        // Snaps to the chosen preset on every update, unless the user has dragged the HUD (the window then keeps its spot).
+        PositionWindow();
         window.BringToFront();
     }
 
@@ -278,7 +275,8 @@ public sealed class FloatingHudController : IDisposable
         viewModel.ApplyRequest(request);
         _results[request.RequestId] = viewModel;
         _requests[request.RequestId] = request;
-        _viewModel.InsertResult(viewModel);
+        // Queue order, oldest first: new files join the end, so cards already on screen (and the scroll position) stay put.
+        _viewModel.AppendResult(viewModel);
         TrimOverflow();
     }
 
@@ -356,10 +354,17 @@ public sealed class FloatingHudController : IDisposable
 
     private void TrimOverflow()
     {
-        while (_viewModel.Results.Count > MaxVisibleResults)
+        var excess = _viewModel.Results.Count - MaxStoredResults;
+        if (excess <= 0)
         {
-            var overflow = _viewModel.Results[^1];
-            BeginDismissal(overflow, animate: false);
+            return;
+        }
+
+        // Oldest first; a card that is still queued or running is never removed (it would pop back on its next update).
+        var finished = _viewModel.Results.Where(result => !result.IsRunning).Take(excess).ToList();
+        foreach (var result in finished)
+        {
+            BeginDismissal(result, animate: false);
         }
     }
 
@@ -408,15 +413,30 @@ public sealed class FloatingHudController : IDisposable
             var placement = e.Value is FloatingHudPlacement value ? value : SettingsHost.Get(SettingsRegistry.FloatingHudPlacement);
             Dispatch(() =>
             {
+                // Picking a preset overrides wherever the HUD was dragged to.
+                _window?.ResetUserPosition();
                 PositionWindow();
-
-                // Choosing "Custom" in Settings shows the HUD so there is something to drag into place.
-                if (placement == FloatingHudPlacement.Custom)
-                {
-                    EnsureVisible(forceShow: true);
-                }
+                ShowPlacementPreview(placement);
             });
         }
+    }
+
+    // Shows a short-lived card at the newly chosen spot, so the user sees where the HUD will appear.
+    private void ShowPlacementPreview(FloatingHudPlacement placement)
+    {
+        if (!SettingsHost.Get(SettingsRegistry.EnableFloatingResults))
+        {
+            return;
+        }
+
+        var token = placement.ToString();
+        var name = SquishStringCatalog.Get($"settings.floatingHud.placementOption.{char.ToLowerInvariant(token[0])}{token[1..]}");
+        ShowNotification(
+            SquishStringCatalog.Get("hud.notification.placement.title"),
+            SquishStringCatalog.Get("hud.notification.placement.preview"),
+            FloatingHudNotificationStyle.Info,
+            TimeSpan.FromSeconds(3),
+            name);
     }
 
     private void ApplyAutoHideSettings()

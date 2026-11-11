@@ -12,6 +12,7 @@ using Squish.BackgroundService.Automation;
 using Squish.BackgroundService.Clipboard;
 using Squish.Core.Optimizers;
 using Squish.Core.Settings;
+using Squish.Core.Stats;
 using Squish.Core.Shared;
 using Squish.Core.Shared.Logging;
 using Microsoft.Extensions.DependencyInjection;
@@ -97,6 +98,9 @@ public partial class App : System.Windows.Application
                 services.AddSingleton<FloatingHudController>();
                 services.AddSingleton<KeyboardShortcutService>();
                 services.AddSingleton<OnboardingViewModel>();
+                services.AddSingleton<OptimisationStatsStore>();
+                services.AddSingleton<OptimisationStatsRecorder>();
+                services.AddSingleton<SummaryViewModel>();
                 services.AddSingleton<CompareViewModel>();
                 services.AddSingleton<SettingsViewModel>();
                 services.AddSingleton<MainWindowViewModel>();
@@ -115,6 +119,8 @@ public partial class App : System.Windows.Application
 
         DispatcherUnhandledException += OnDispatcherUnhandledException;
         AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
+
+        _host.Services.GetRequiredService<OptimisationStatsRecorder>().Start();
 
         var hudController = _host.Services.GetRequiredService<FloatingHudController>();
         hudController.Initialize();

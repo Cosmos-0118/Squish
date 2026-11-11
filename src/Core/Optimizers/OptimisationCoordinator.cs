@@ -126,6 +126,19 @@ public sealed class OptimisationCoordinator : IAsyncDisposable
         return false;
     }
 
+    /// <summary>Looks up a queued or running request. Gone once it finishes, i.e. before its completion event fires.</summary>
+    public bool TryGetRequest(string requestId, out OptimisationRequest request)
+    {
+        if (_requests.TryGetValue(requestId, out var found))
+        {
+            request = found;
+            return true;
+        }
+
+        request = null!;
+        return false;
+    }
+
     public IReadOnlyCollection<OptimisationRequest> PendingRequests => _requests.Values.ToList();
 
     private Channel<OptimisationWorkItem> ChannelFor(ItemType type) => IsHeavy(type) ? _heavyChannel : _lightChannel;

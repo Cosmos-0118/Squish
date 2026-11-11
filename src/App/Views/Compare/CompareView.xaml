@@ -5,9 +5,13 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:loc="clr-namespace:Squish.App.Localization"
+             xmlns:infra="clr-namespace:Squish.App.Infrastructure"
              mc:Ignorable="d"
              d:DesignHeight="600"
              d:DesignWidth="800">
+    <UserControl.Resources>
+        <infra:ScaledSizeConverter x:Key="ScaledSize" />
+    </UserControl.Resources>
     <!-- The whole page accepts drops, not just the drop zone. -->
     <Grid AllowDrop="True"
           Background="Transparent"
@@ -15,18 +19,8 @@
           DragEnter="OnDragEnter"
           DragLeave="OnDragLeave"
           Drop="OnDropFiles">
-        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-            <Border>
-                <Border.Style>
-                    <Style TargetType="Border" BasedOn="{StaticResource PageColumn}">
-                        <Setter Property="MaxWidth" Value="880" />
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding DataContext.IsWideLayout, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
-                                <Setter Property="MaxWidth" Value="1040" />
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </Border.Style>
+        <ScrollViewer x:Name="PageScroller" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <Border Style="{StaticResource PageColumn}">
                 <StackPanel>
                     <StackPanel Margin="0,0,0,20">
                         <TextBlock Text="{loc:Loc navigation.compare.title}" Style="{StaticResource Text.PageTitle}" />
@@ -34,17 +28,9 @@
                     </StackPanel>
 
                     <!-- Drop zone -->
-                    <Grid AutomationProperties.HelpText="{loc:Loc compare.dropHint.accessible}">
-                        <Grid.Style>
-                            <Style TargetType="Grid">
-                                <Setter Property="Height" Value="300" />
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding DataContext.IsCompactLayout, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
-                                        <Setter Property="Height" Value="220" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Grid.Style>
+                    <!-- Height follows the window (about a third of the visible page, never under 220), so it suits any screen. -->
+                    <Grid Height="{Binding ActualHeight, ElementName=PageScroller, Converter={StaticResource ScaledSize}, ConverterParameter=0.34|220}"
+                          AutomationProperties.HelpText="{loc:Loc compare.dropHint.accessible}">
                         <Rectangle x:Name="DropZone"
                                    RadiusX="12"
                                    RadiusY="12"

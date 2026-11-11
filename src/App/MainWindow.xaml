@@ -214,6 +214,21 @@
                             </ToggleButton.Style>
                         </ToggleButton>
 
+                        <ToggleButton Content="{loc:Loc navigation.summary.title}"
+                                      Tag="&#xE9D2;"
+                                      Command="{Binding ShowSummaryCommand}">
+                            <ToggleButton.Style>
+                                <Style TargetType="ToggleButton" BasedOn="{StaticResource NavItem}">
+                                    <Setter Property="IsChecked" Value="False" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding SelectedItem.Section}" Value="{x:Static vm:MainSection.Summary}">
+                                            <Setter Property="IsChecked" Value="True" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </ToggleButton.Style>
+                        </ToggleButton>
+
                         <ToggleButton Content="{loc:Loc navigation.onboarding.title}"
                                       Tag="&#xE736;"
                                       Command="{Binding ShowOnboardingCommand}">

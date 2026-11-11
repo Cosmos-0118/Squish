@@ -24,6 +24,7 @@ public partial class FloatingHudWindow : Window
     private bool _isDraggingCard;
     private bool _isUserResizing;
     private bool _isUserMoving;
+    private bool _isUserPositioned;
     private bool _hasRoundedCorners;
 
     public FloatingHudWindow()
@@ -37,13 +38,8 @@ public partial class FloatingHudWindow : Window
 
     public void MoveToPlacement(FloatingHudPlacement placement)
     {
-        // A progress update must not yank the window away from under the cursor mid-drag.
-        if (_isUserMoving)
-        {
-            return;
-        }
-
-        if (placement == FloatingHudPlacement.Custom && TryMoveToCustomPosition())
+        // Progress updates must not yank the window away mid-drag, or from where the user dropped it.
+        if (_isUserMoving || _isUserPositioned)
         {
             return;
         }
@@ -85,32 +81,16 @@ public partial class FloatingHudWindow : Window
             FloatingHudPlacement.BottomLeft => (left, bottom),
             FloatingHudPlacement.BottomCenter => (centerX, bottom),
             FloatingHudPlacement.BottomRight => (right, bottom),
-            // Custom but never dragged yet, or the monitor it was on is gone: start in the middle, where it is easy to grab.
-            FloatingHudPlacement.Custom => (centerX, centerY),
             _ => (right, top)
         };
 
         MoveTo(targetLeft, targetTop);
     }
 
-    private bool TryMoveToCustomPosition()
-    {
-        var left = SettingsHost.Get(SettingsRegistry.FloatingHudCustomLeft);
-        var top = SettingsHost.Get(SettingsRegistry.FloatingHudCustomTop);
-        if (!double.IsFinite(left) || !double.IsFinite(top))
-        {
-            return false;
-        }
-
-        MoveTo(left, top);
-        if (!IsTitleBarOnScreen())
-        {
-            return false;
-        }
-
-        KeepBottomOnScreen();
-        return true;
-    }
+    /// <summary>
+    /// Forget where the user dragged the HUD, so the next <see cref="MoveToPlacement"/> snaps it to the chosen preset again.
+    /// </summary>
+    public void ResetUserPosition() => _isUserPositioned = false;
 
     public void MoveTo(double left, double top)
     {
@@ -408,10 +388,9 @@ public partial class FloatingHudWindow : Window
 
         KeepBottomOnScreen();
 
-        // Remember the spot and switch to Custom so later updates and restarts keep the HUD here.
-        SettingsHost.Set(SettingsRegistry.FloatingHudCustomLeft, Left);
-        SettingsHost.Set(SettingsRegistry.FloatingHudCustomTop, Top);
-        SettingsHost.Set(SettingsRegistry.FloatingHudPlacement, FloatingHudPlacement.Custom);
+        // Keep the HUD where the user dropped it while it is on screen. This is not saved: the next time the HUD
+        // opens it is back at the preset chosen in Settings.
+        _isUserPositioned = true;
     }
 
     /// <summary>
@@ -563,7 +542,7 @@ public partial class FloatingHudWindow : Window
 
         var delta = e.NewSize.Height - e.PreviousSize.Height;
         var placement = SettingsHost.Get(SettingsRegistry.FloatingHudPlacement);
-        if (placement == FloatingHudPlacement.Custom)
+        if (_isUserPositioned)
         {
             // Keep the user's spot; only nudge up if the taller window would run off the bottom of its monitor.
             // Deferred so the HWND already has its new size when it is measured.
