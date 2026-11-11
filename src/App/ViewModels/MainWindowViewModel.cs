@@ -15,9 +15,11 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
 
     private readonly OnboardingViewModel _onboardingViewModel;
     private readonly CompareViewModel _compareViewModel;
+    private readonly SummaryViewModel _summaryViewModel;
     private readonly SettingsViewModel _settingsViewModel;
     private readonly NavigationItemViewModel _onboardingItem;
     private readonly NavigationItemViewModel _compareItem;
+    private readonly NavigationItemViewModel _summaryItem;
     private readonly NavigationItemViewModel _settingsItem;
     private NavigationItemViewModel? _selectedItem;
     private ObservableObject? _currentView;
@@ -28,10 +30,12 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
     public MainWindowViewModel(
         OnboardingViewModel onboardingViewModel,
         CompareViewModel compareViewModel,
+        SummaryViewModel summaryViewModel,
         SettingsViewModel settingsViewModel)
     {
         _onboardingViewModel = onboardingViewModel;
         _compareViewModel = compareViewModel;
+        _summaryViewModel = summaryViewModel;
         _settingsViewModel = settingsViewModel;
 
         NavigationItems = new ObservableCollection<NavigationItemViewModel>
@@ -45,6 +49,10 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
                 SquishStringCatalog.Get("navigation.compare.title"),
                 SquishStringCatalog.Get("navigation.compare.subtitle")),
             new NavigationItemViewModel(
+                MainSection.Summary,
+                SquishStringCatalog.Get("navigation.summary.title"),
+                SquishStringCatalog.Get("navigation.summary.subtitle")),
+            new NavigationItemViewModel(
                 MainSection.Settings,
                 SquishStringCatalog.Get("navigation.settings.title"),
                 SquishStringCatalog.Get("navigation.settings.subtitle"))
@@ -52,10 +60,12 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
 
         _onboardingItem = NavigationItems.First(item => item.Section == MainSection.Onboarding);
         _compareItem = NavigationItems.First(item => item.Section == MainSection.Compare);
+        _summaryItem = NavigationItems.First(item => item.Section == MainSection.Summary);
         _settingsItem = NavigationItems.First(item => item.Section == MainSection.Settings);
 
         ShowOnboardingCommand = new RelayCommand(_ => SelectedItem = _onboardingItem);
         ShowCompareCommand = new RelayCommand(_ => SelectedItem = _compareItem);
+        ShowSummaryCommand = new RelayCommand(_ => SelectedItem = _summaryItem);
         ShowSettingsCommand = new RelayCommand(_ => SelectedItem = _settingsItem);
         BrowseFilesCommand = new RelayCommand(_ =>
         {
@@ -81,6 +91,8 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
     public ICommand ShowOnboardingCommand { get; }
 
     public ICommand ShowCompareCommand { get; }
+
+    public ICommand ShowSummaryCommand { get; }
 
     public ICommand ShowSettingsCommand { get; }
 
@@ -159,6 +171,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
     {
         MainSection.Onboarding => _onboardingViewModel,
         MainSection.Compare => _compareViewModel,
+        MainSection.Summary => _summaryViewModel,
         MainSection.Settings => _settingsViewModel,
         _ => _onboardingViewModel
     };
@@ -178,6 +191,7 @@ public enum MainSection
 {
     Onboarding,
     Compare,
+    Summary,
     Settings
 }
 

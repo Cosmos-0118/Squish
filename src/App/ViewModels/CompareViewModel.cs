@@ -19,7 +19,8 @@ namespace Squish.App.ViewModels;
 
 public sealed class CompareViewModel : ObservableObject, IDisposable
 {
-    private const int MaxRecentItems = 6;
+    // Every result of a batch stays listed (the page scrolls); the cap only bounds memory for very long sessions.
+    private const int MaxRecentItems = 500;
 
     private readonly OptimisationCoordinator _coordinator;
     private readonly FloatingHudController _hudController;

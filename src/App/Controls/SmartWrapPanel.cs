@@ -34,6 +34,22 @@ public class SmartWrapPanel : System.Windows.Controls.Panel
         typeof(SmartWrapPanel),
         new FrameworkPropertyMetadata(new Thickness(0), FrameworkPropertyMetadataOptions.AffectsMeasure));
 
+    /// <summary>
+    /// When true, a small fixed set of cards fills the whole row and wraps to an even grid as the width shrinks.
+    /// Off by default, so existing pages keep their column maths.
+    /// </summary>
+    public static readonly DependencyProperty FillRowProperty = DependencyProperty.Register(
+        nameof(FillRow),
+        typeof(bool),
+        typeof(SmartWrapPanel),
+        new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.AffectsMeasure | FrameworkPropertyMetadataOptions.AffectsArrange));
+
+    public bool FillRow
+    {
+        get => (bool)GetValue(FillRowProperty);
+        set => SetValue(FillRowProperty, value);
+    }
+
     public double MinColumnWidth
     {
         get => (double)GetValue(MinColumnWidthProperty);
@@ -201,6 +217,19 @@ public class SmartWrapPanel : System.Windows.Controls.Panel
         var totalWidth = availableWidth;
         double requiredWidth = MinColumnWidth + HorizontalSpacing;
         int columns = (int)Math.Floor((totalWidth + HorizontalSpacing) / requiredWidth);
+
+        // Never more columns than children: a short row of cards then stretches across the full width.
+        if (FillRow)
+        {
+            columns = Math.Min(columns, Math.Max(1, InternalChildren.Count));
+
+            // Wrap evenly (4 -> 2 x 2 -> 1) rather than leaving an orphan card on the last row.
+            while (columns > 1 && InternalChildren.Count % columns != 0)
+            {
+                columns--;
+            }
+        }
+
         return Math.Max(1, columns);
     }
 

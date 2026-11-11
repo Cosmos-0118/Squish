@@ -1,0 +1,354 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl x:Class="Squish.App.Views.Summary.SummaryView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:loc="clr-namespace:Squish.App.Localization"
+             xmlns:controls="clr-namespace:Squish.App.Controls"
+             xmlns:infra="clr-namespace:Squish.App.Infrastructure"
+             xmlns:vm="clr-namespace:Squish.App.ViewModels"
+             mc:Ignorable="d"
+             d:DesignHeight="720"
+             d:DesignWidth="900">
+    <UserControl.Resources>
+        <infra:ScaledSizeConverter x:Key="ScaledSize" />
+        <infra:BarHeightConverter x:Key="BarHeight" />
+
+        <!-- Segmented range picker. -->
+        <Style x:Key="RangeChip" TargetType="ToggleButton">
+            <Setter Property="Foreground" Value="{DynamicResource Brush.SecondaryText}" />
+            <Setter Property="FontWeight" Value="Medium" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Padding" Value="12,5" />
+            <Setter Property="FocusVisualStyle" Value="{DynamicResource FocusVisual.Rounded}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="Chrome"
+                                Background="Transparent"
+                                CornerRadius="5"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource Brush.GhostHoverBackground}" />
+                                <Setter Property="Foreground" Value="{DynamicResource Brush.PrimaryText}" />
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource Brush.CardBackground}" />
+                                <Setter Property="Foreground" Value="{DynamicResource Brush.PrimaryText}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="MeterBar" TargetType="ProgressBar">
+            <Setter Property="Height" Value="6" />
+            <Setter Property="Maximum" Value="100" />
+            <Setter Property="Foreground" Value="{DynamicResource Brush.StatusSuccess}" />
+            <Setter Property="Background" Value="{DynamicResource Brush.BadgeBackground}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ProgressBar">
+                        <Grid>
+                            <Border x:Name="PART_Track" Background="{TemplateBinding Background}" CornerRadius="3" />
+                            <Border x:Name="PART_Indicator" Background="{TemplateBinding Foreground}" CornerRadius="3" HorizontalAlignment="Left" />
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="KpiCard" TargetType="Border" BasedOn="{StaticResource Card}">
+            <Setter Property="Padding" Value="20,18" />
+            <Setter Property="MinHeight" Value="124" />
+        </Style>
+
+        <Style x:Key="KpiLabel" TargetType="TextBlock" BasedOn="{StaticResource Text.Body}">
+            <Setter Property="TextWrapping" Value="NoWrap" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        </Style>
+
+        <Style x:Key="KpiValue" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{DynamicResource Font.Display}" />
+            <Setter Property="FontSize" Value="28" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{DynamicResource Brush.PrimaryText}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        </Style>
+
+        <Style x:Key="KpiCaption" TargetType="TextBlock" BasedOn="{StaticResource Text.Caption}">
+            <Setter Property="TextWrapping" Value="NoWrap" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        </Style>
+
+        <Style x:Key="ColumnHeader" TargetType="TextBlock" BasedOn="{StaticResource Text.Caption}">
+            <Setter Property="TextWrapping" Value="NoWrap" />
+            <Setter Property="FontWeight" Value="Medium" />
+        </Style>
+    </UserControl.Resources>
+
+    <ScrollViewer x:Name="PageScroller" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <!-- The page uses all the room the window gives it; the cards, chart and table flex with it. -->
+        <Border Style="{StaticResource PageColumn}">
+            <StackPanel>
+                <!-- Header with the range picker. -->
+                <Grid Margin="0,0,0,20">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="{loc:Loc navigation.summary.title}" Style="{StaticResource Text.PageTitle}" />
+                        <TextBlock Text="{loc:Loc summary.subtitle}" Style="{StaticResource Text.PageSubtitle}" />
+                    </StackPanel>
+                    <Border Grid.Column="1"
+                            Margin="16,0,0,0"
+                            VerticalAlignment="Center"
+                            Padding="3"
+                            CornerRadius="8"
+                            Background="{DynamicResource Brush.BadgeBackground}"
+                            AutomationProperties.Name="{loc:Loc summary.range.label}">
+                        <StackPanel Orientation="Horizontal">
+                            <ToggleButton Style="{StaticResource RangeChip}"
+                                          Content="{loc:Loc summary.range.7d}"
+                                          IsChecked="{Binding IsLast7Days, Mode=OneWay}"
+                                          Command="{Binding SelectRangeCommand}"
+                                          CommandParameter="Last7Days" />
+                            <ToggleButton Style="{StaticResource RangeChip}"
+                                          Content="{loc:Loc summary.range.30d}"
+                                          IsChecked="{Binding IsLast30Days, Mode=OneWay}"
+                                          Command="{Binding SelectRangeCommand}"
+                                          CommandParameter="Last30Days" />
+                            <ToggleButton Style="{StaticResource RangeChip}"
+                                          Content="{loc:Loc summary.range.all}"
+                                          IsChecked="{Binding IsAllTime, Mode=OneWay}"
+                                          Command="{Binding SelectRangeCommand}"
+                                          CommandParameter="AllTime" />
+                        </StackPanel>
+                    </Border>
+                </Grid>
+
+                <!-- Headline numbers: equal-width cards that wrap as the window narrows. Each has the same three rows
+                     (label, value, caption), so the values line up across the row. -->
+                <controls:SmartWrapPanel MinColumnWidth="200" HorizontalSpacing="16" VerticalSpacing="16" FillRow="True">
+                    <Border Style="{StaticResource KpiCard}">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <TextBlock Text="{loc:Loc summary.kpi.files}" Style="{StaticResource KpiLabel}" />
+                            <TextBlock Grid.Row="1" Text="{Binding FilesText}" Style="{StaticResource KpiValue}" />
+                            <TextBlock Grid.Row="2" Text="{loc:Loc summary.kpi.files.caption}" Style="{StaticResource KpiCaption}" />
+                        </Grid>
+                    </Border>
+                    <Border Style="{StaticResource KpiCard}">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <TextBlock Text="{loc:Loc summary.kpi.saved}" Style="{StaticResource KpiLabel}" />
+                            <TextBlock Grid.Row="1" Text="{Binding SavedText}" Style="{StaticResource KpiValue}" Foreground="{DynamicResource Brush.StatusSuccess}" />
+                            <TextBlock Grid.Row="2" Style="{StaticResource KpiCaption}">
+                                <Run Text="{Binding OriginalText, Mode=OneWay}" /><Run Text=" → " /><Run Text="{Binding OptimisedText, Mode=OneWay}" />
+                            </TextBlock>
+                        </Grid>
+                    </Border>
+                    <Border Style="{StaticResource KpiCard}">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <TextBlock Text="{loc:Loc summary.kpi.reduction}" Style="{StaticResource KpiLabel}" />
+                            <TextBlock Grid.Row="1" Text="{Binding ReductionText}" Style="{StaticResource KpiValue}" />
+                            <ProgressBar Grid.Row="2"
+                                         Style="{StaticResource MeterBar}"
+                                         Margin="0,5,0,5"
+                                         Value="{Binding ReductionPercent, Mode=OneWay}" />
+                        </Grid>
+                    </Border>
+                    <Border Style="{StaticResource KpiCard}">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <TextBlock Text="{loc:Loc summary.kpi.time}" Style="{StaticResource KpiLabel}" />
+                            <TextBlock Grid.Row="1" Text="{Binding TimeText}" Style="{StaticResource KpiValue}" />
+                            <TextBlock Grid.Row="2" Text="{loc:Loc summary.kpi.time.caption}" Style="{StaticResource KpiCaption}" />
+                        </Grid>
+                    </Border>
+                </controls:SmartWrapPanel>
+
+                <!-- Activity chart. Its height follows the window (30% of the visible page, at least 150), and the bars
+                     share the width equally, so it fills any screen. -->
+                <Border Style="{StaticResource Card}" Padding="20,18,20,14" Margin="0,16,0,0">
+                    <StackPanel>
+                        <Grid Margin="0,0,0,14">
+                            <TextBlock Text="{loc:Loc summary.chart.title}" Style="{StaticResource Text.SectionLabel}" Margin="0" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding ChartPeakText}" Style="{StaticResource Text.Caption}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                        </Grid>
+
+                        <Grid Height="{Binding ActualHeight, ElementName=PageScroller, Converter={StaticResource ScaledSize}, ConverterParameter=0.3|150}">
+                            <!-- Guide lines: top, middle and the baseline the bars stand on. -->
+                            <Border Height="1" VerticalAlignment="Top" Background="{DynamicResource Brush.Divider}" Opacity="0.6" />
+                            <Border Height="1" VerticalAlignment="Center" Background="{DynamicResource Brush.Divider}" Opacity="0.6" />
+                            <Border Height="1" VerticalAlignment="Bottom" Background="{DynamicResource Brush.Divider}" />
+
+                            <ItemsControl x:Name="Bars"
+                                          ItemsSource="{Binding Days}"
+                                          AutomationProperties.Name="{loc:Loc summary.chart.title}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <UniformGrid Rows="1" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="{x:Type vm:DayBarViewModel}">
+                                        <Grid Background="Transparent" ToolTip="{Binding Tooltip}" ToolTipService.InitialShowDelay="150">
+                                            <Border x:Name="Bar"
+                                                    VerticalAlignment="Bottom"
+                                                    Margin="2,0"
+                                                    CornerRadius="3,3,0,0"
+                                                    Background="{DynamicResource Brush.BadgeBackground}">
+                                                <Border.Height>
+                                                    <MultiBinding Converter="{StaticResource BarHeight}">
+                                                        <Binding Path="Fraction" />
+                                                        <Binding Path="ActualHeight" ElementName="Bars" />
+                                                    </MultiBinding>
+                                                </Border.Height>
+                                            </Border>
+                                        </Grid>
+                                        <DataTemplate.Triggers>
+                                            <DataTrigger Binding="{Binding HasActivity}" Value="True">
+                                                <Setter TargetName="Bar" Property="Background" Value="{DynamicResource Brush.StatusSuccess}" />
+                                            </DataTrigger>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="Bar" Property="Opacity" Value="0.7" />
+                                            </Trigger>
+                                        </DataTemplate.Triggers>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <!-- Shown instead of an empty-looking chart. -->
+                            <StackPanel HorizontalAlignment="Center"
+                                        VerticalAlignment="Center"
+                                        Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVisibility}}">
+                                <TextBlock Text="{loc:Loc summary.empty.title}"
+                                           FontWeight="SemiBold"
+                                           TextAlignment="Center"
+                                           Foreground="{DynamicResource Brush.PrimaryText}" />
+                                <TextBlock Text="{loc:Loc summary.empty.description}"
+                                           Style="{StaticResource Text.Body}"
+                                           Margin="0,4,0,0"
+                                           TextAlignment="Center" />
+                            </StackPanel>
+                        </Grid>
+
+                        <Grid Margin="0,8,0,0">
+                            <TextBlock Text="{Binding ChartStartLabel}" Style="{StaticResource Text.Caption}" />
+                            <TextBlock Text="{Binding ChartEndLabel}" Style="{StaticResource Text.Caption}" HorizontalAlignment="Right" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- Per-type breakdown: a shared-size table, so the header and every row line up whatever the width.
+                     The share bar takes all the spare room; the other columns fit their content. -->
+                <Border Style="{StaticResource Card}" Margin="0,16,0,0">
+                    <StackPanel Grid.IsSharedSizeScope="True">
+                        <TextBlock Text="{loc:Loc summary.kind.title}" Style="{StaticResource Text.SectionLabel}" Margin="20,18,20,12" />
+                        <Border Style="{StaticResource Divider}" />
+
+                        <Grid Margin="20,10,20,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="KindName" />
+                                <ColumnDefinition Width="*" MinWidth="60" />
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="KindFiles" />
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="KindSaved" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="{loc:Loc summary.col.type}" Style="{StaticResource ColumnHeader}" />
+                            <TextBlock Grid.Column="1" Text="{loc:Loc summary.col.share}" Style="{StaticResource ColumnHeader}" />
+                            <TextBlock Grid.Column="2" Text="{loc:Loc summary.col.files}" Style="{StaticResource ColumnHeader}" TextAlignment="Right" Margin="16,0,0,0" />
+                            <TextBlock Grid.Column="3" Text="{loc:Loc summary.col.saved}" Style="{StaticResource ColumnHeader}" TextAlignment="Right" Margin="24,0,0,0" />
+                        </Grid>
+
+                        <ItemsControl ItemsSource="{Binding Kinds}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type vm:KindRowViewModel}">
+                                    <Border BorderBrush="{DynamicResource Brush.Divider}" BorderThickness="0,1,0,0" Padding="20,12">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" SharedSizeGroup="KindName" />
+                                                <ColumnDefinition Width="*" MinWidth="60" />
+                                                <ColumnDefinition Width="Auto" SharedSizeGroup="KindFiles" />
+                                                <ColumnDefinition Width="Auto" SharedSizeGroup="KindSaved" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" MinWidth="150">
+                                                <Border Width="32"
+                                                        Height="32"
+                                                        CornerRadius="8"
+                                                        Background="{DynamicResource Brush.BadgeBackground}">
+                                                    <TextBlock Style="{StaticResource Text.Icon}"
+                                                               FontSize="15"
+                                                               Text="{Binding Glyph}"
+                                                               Foreground="{DynamicResource Brush.SecondaryText}" />
+                                                </Border>
+                                                <TextBlock Text="{Binding Name}"
+                                                           Margin="12,0,0,0"
+                                                           VerticalAlignment="Center"
+                                                           FontWeight="Medium"
+                                                           Foreground="{DynamicResource Brush.PrimaryText}" />
+                                            </StackPanel>
+                                            <ProgressBar Grid.Column="1"
+                                                         Style="{StaticResource MeterBar}"
+                                                         VerticalAlignment="Center"
+                                                         Margin="0,0,8,0"
+                                                         Foreground="{DynamicResource Brush.PrimaryText}"
+                                                         Value="{Binding SharePercent, Mode=OneWay}" />
+                                            <TextBlock Grid.Column="2"
+                                                       Text="{Binding FilesText}"
+                                                       MinWidth="48"
+                                                       Margin="16,0,0,0"
+                                                       VerticalAlignment="Center"
+                                                       TextAlignment="Right"
+                                                       Foreground="{DynamicResource Brush.PrimaryText}" />
+                                            <TextBlock Grid.Column="3"
+                                                       Text="{Binding SavedText}"
+                                                       MinWidth="88"
+                                                       Margin="24,0,0,0"
+                                                       VerticalAlignment="Center"
+                                                       TextAlignment="Right"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="{DynamicResource Brush.PrimaryText}" />
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+
+                <Button Style="{StaticResource GhostButton}"
+                        Margin="0,16,0,0"
+                        HorizontalAlignment="Right"
+                        MinHeight="28"
+                        Content="{loc:Loc summary.clear}"
+                        Command="{Binding ClearCommand}"
+                        Visibility="{Binding HasData, Converter={StaticResource BoolToVisibility}}" />
+            </StackPanel>
+        </Border>
+    </ScrollViewer>
+</UserControl>

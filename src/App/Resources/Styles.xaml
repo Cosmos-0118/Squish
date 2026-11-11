@@ -291,17 +291,13 @@
         </Setter>
     </Style>
 
-    <!-- Centered, width-capped page column with padding that tightens on narrow windows. -->
+    <!-- Full-width page column: no width cap, so every page uses the room the window gives it. Padding tightens on narrow windows. -->
     <Style x:Key="PageColumn" TargetType="Border">
-        <Setter Property="MaxWidth" Value="{DynamicResource Layout.ContentMaxWidth}" />
         <Setter Property="Padding" Value="{DynamicResource Spacing.ContentPadding}" />
         <Setter Property="HorizontalAlignment" Value="Stretch" />
         <Style.Triggers>
             <DataTrigger Binding="{Binding DataContext.IsCompactLayout, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
                 <Setter Property="Padding" Value="{DynamicResource Spacing.ContentPaddingCompact}" />
-            </DataTrigger>
-            <DataTrigger Binding="{Binding DataContext.IsWideLayout, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
-                <Setter Property="MaxWidth" Value="{DynamicResource Layout.ContentMaxWidthWide}" />
             </DataTrigger>
         </Style.Triggers>
     </Style>

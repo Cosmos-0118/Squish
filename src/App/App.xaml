@@ -5,7 +5,8 @@
              xmlns:vm="clr-namespace:Squish.App.ViewModels"
              xmlns:onboarding="clr-namespace:Squish.App.Views.Onboarding"
              xmlns:compare="clr-namespace:Squish.App.Views.Compare"
-             xmlns:settings="clr-namespace:Squish.App.Views.Settings">
+             xmlns:settings="clr-namespace:Squish.App.Views.Settings"
+             xmlns:summary="clr-namespace:Squish.App.Views.Summary">
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
@@ -25,6 +26,9 @@
             </DataTemplate>
             <DataTemplate DataType="{x:Type vm:CompareViewModel}">
                 <compare:CompareView />
+            </DataTemplate>
+            <DataTemplate DataType="{x:Type vm:SummaryViewModel}">
+                <summary:SummaryView />
             </DataTemplate>
             <DataTemplate DataType="{x:Type vm:SettingsViewModel}">
                 <settings:SettingsView />

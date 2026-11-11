@@ -31,6 +31,69 @@
     </shell:WindowChrome.WindowChrome>
 
     <Window.Resources>
+        <!-- The list can hold hundreds of cards, so the scroll bar needs a visible, bounded track and a thumb that stays
+             grabbable however long the list gets. Colours follow the HUD theme brushes. -->
+        <Style TargetType="ScrollBar">
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Width" Value="12" />
+            <Setter Property="MinWidth" Value="12" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ScrollBar">
+                        <Grid Width="12" Background="Transparent">
+                            <Border Margin="3,4,3,4"
+                                    CornerRadius="3"
+                                    Background="{DynamicResource Brush.HudCardBackground}"
+                                    BorderBrush="{DynamicResource Brush.HudCardBorder}"
+                                    BorderThickness="1" />
+                            <Track x:Name="PART_Track" Margin="3,4,3,4" IsDirectionReversed="True">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="{x:Static ScrollBar.PageUpCommand}" Focusable="False" IsTabStop="False">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate TargetType="RepeatButton">
+                                                <Rectangle Fill="Transparent" />
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.DecreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb MinHeight="40" Focusable="False">
+                                        <Thumb.Template>
+                                            <ControlTemplate TargetType="Thumb">
+                                                <Border x:Name="ThumbChrome"
+                                                        Margin="1"
+                                                        CornerRadius="2"
+                                                        Opacity="0.55"
+                                                        Background="{DynamicResource Brush.HudTextSecondary}" />
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="ThumbChrome" Property="Opacity" Value="0.85" />
+                                                    </Trigger>
+                                                    <Trigger Property="IsDragging" Value="True">
+                                                        <Setter TargetName="ThumbChrome" Property="Opacity" Value="1" />
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Command="{x:Static ScrollBar.PageDownCommand}" Focusable="False" IsTabStop="False">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate TargetType="RepeatButton">
+                                                <Rectangle Fill="Transparent" />
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.IncreaseRepeatButton>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style x:Key="HudProgressBar" TargetType="ProgressBar">
             <Setter Property="Height" Value="3" />
             <Setter Property="Maximum" Value="100" />
@@ -105,7 +168,7 @@
             <Border Grid.Row="1" Height="1" Background="{DynamicResource Brush.HudCardBorder}" />
 
             <ScrollViewer Grid.Row="2"
-                          Padding="6"
+                          Padding="6,6,2,6"
                           VerticalScrollBarVisibility="Auto"
                           HorizontalScrollBarVisibility="Disabled"
                           Visibility="{Binding HasResults, Converter={StaticResource BoolToVisibility}}">

@@ -23,6 +23,8 @@ public partial class FloatingHudWindow : Window
     private FrameworkElement? _dragSource;
     private bool _isDraggingCard;
     private bool _isUserResizing;
+    private bool _isUserMoving;
+    private bool _isUserPositioned;
     private bool _hasRoundedCorners;
 
     public FloatingHudWindow()
@@ -36,6 +38,12 @@ public partial class FloatingHudWindow : Window
 
     public void MoveToPlacement(FloatingHudPlacement placement)
     {
+        // Progress updates must not yank the window away mid-drag, or from where the user dropped it.
+        if (_isUserMoving || _isUserPositioned)
+        {
+            return;
+        }
+
         var workArea = SystemParameters.WorkArea;
         var width = ActualWidth > 0 ? ActualWidth : Width;
         var height = ActualHeight > 0 ? ActualHeight : Height;
@@ -78,6 +86,11 @@ public partial class FloatingHudWindow : Window
 
         MoveTo(targetLeft, targetTop);
     }
+
+    /// <summary>
+    /// Forget where the user dragged the HUD, so the next <see cref="MoveToPlacement"/> snaps it to the chosen preset again.
+    /// </summary>
+    public void ResetUserPosition() => _isUserPositioned = false;
 
     public void MoveTo(double left, double top)
     {
@@ -343,14 +356,99 @@ public partial class FloatingHudWindow : Window
             return;
         }
 
+        var startLeft = Left;
+        var startTop = Top;
+        _isUserMoving = true;
         try
         {
+            // DragMove runs the system move loop and returns once the mouse button is released.
             DragMove();
         }
         catch
         {
             // Ignore drag errors caused by rapid clicks.
         }
+        finally
+        {
+            _isUserMoving = false;
+        }
+
+        // A plain click on the header is not a move.
+        if (Math.Abs(Left - startLeft) < 1 && Math.Abs(Top - startTop) < 1)
+        {
+            return;
+        }
+
+        // Dropped with the header off every screen: put it back, or it could never be grabbed again.
+        if (!IsTitleBarOnScreen())
+        {
+            MoveTo(startLeft, startTop);
+            return;
+        }
+
+        KeepBottomOnScreen();
+
+        // Keep the HUD where the user dropped it while it is on screen. This is not saved: the next time the HUD
+        // opens it is back at the preset chosen in Settings.
+        _isUserPositioned = true;
+    }
+
+    /// <summary>
+    /// True when the middle of the header (the drag handle) is on a connected monitor. Checked in device pixels
+    /// against the real monitor layout, so it is right on multi-monitor setups with mixed scaling too.
+    /// </summary>
+    private bool IsTitleBarOnScreen()
+    {
+        var handle = new WindowInteropHelper(this).Handle;
+        if (handle == IntPtr.Zero || !NativeMethods.GetWindowRect(handle, out var rect))
+        {
+            // Not created yet; nothing to check against.
+            return true;
+        }
+
+        var point = new NativeMethods.POINT
+        {
+            X = rect.Left + (rect.Right - rect.Left) / 2,
+            Y = rect.Top + Math.Min(16, Math.Max(0, (rect.Bottom - rect.Top) / 2))
+        };
+
+        return NativeMethods.MonitorFromPoint(point, NativeMethods.MONITOR_DEFAULTTONULL) != IntPtr.Zero;
+    }
+
+    /// <summary>
+    /// A custom-placed HUD keeps its top edge where the user put it and grows downwards. If it would run past the
+    /// bottom of its monitor's work area, slide it up just enough (never above the work area's top).
+    /// </summary>
+    private void KeepBottomOnScreen()
+    {
+        var handle = new WindowInteropHelper(this).Handle;
+        if (handle == IntPtr.Zero || !NativeMethods.GetWindowRect(handle, out var rect))
+        {
+            return;
+        }
+
+        var monitor = NativeMethods.MonitorFromWindow(handle, NativeMethods.MONITOR_DEFAULTTONEAREST);
+        var info = new NativeMethods.MONITORINFO { cbSize = System.Runtime.InteropServices.Marshal.SizeOf<NativeMethods.MONITORINFO>() };
+        if (monitor == IntPtr.Zero || !NativeMethods.GetMonitorInfo(monitor, ref info))
+        {
+            return;
+        }
+
+        var overflow = rect.Bottom - info.rcWork.Bottom;
+        if (overflow <= 0)
+        {
+            return;
+        }
+
+        var newTop = Math.Max(info.rcWork.Top, rect.Top - overflow);
+        if (newTop == rect.Top)
+        {
+            return;
+        }
+
+        // Moving the HWND directly (in device pixels) lets WPF pick up the new Top itself, with no DPI conversion here.
+        _ = NativeMethods.SetWindowPos(handle, IntPtr.Zero, rect.Left, newTop, 0, 0,
+            NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOZORDER | NativeMethods.SWP_NOACTIVATE);
     }
 
     private void OnHideClicked(object sender, RoutedEventArgs e)
@@ -444,6 +542,18 @@ public partial class FloatingHudWindow : Window
 
         var delta = e.NewSize.Height - e.PreviousSize.Height;
         var placement = SettingsHost.Get(SettingsRegistry.FloatingHudPlacement);
+        if (_isUserPositioned)
+        {
+            // Keep the user's spot; only nudge up if the taller window would run off the bottom of its monitor.
+            // Deferred so the HWND already has its new size when it is measured.
+            if (!_isUserMoving)
+            {
+                _ = Dispatcher.InvokeAsync(KeepBottomOnScreen, System.Windows.Threading.DispatcherPriority.Loaded);
+            }
+
+            return;
+        }
+
         var shift = placement switch
         {
             FloatingHudPlacement.BottomLeft or FloatingHudPlacement.BottomCenter or FloatingHudPlacement.BottomRight => delta,
@@ -464,6 +574,59 @@ public partial class FloatingHudWindow : Window
         public const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
         public const int DWMWA_BORDER_COLOR = 34;
         public const int DWMWCP_ROUND = 2;
+        public const uint MONITOR_DEFAULTTONULL = 0;
+        public const uint MONITOR_DEFAULTTONEAREST = 2;
+        public const uint SWP_NOSIZE = 0x0001;
+        public const uint SWP_NOZORDER = 0x0004;
+        public const uint SWP_NOACTIVATE = 0x0010;
+
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        public struct POINT
+        {
+            public int X;
+            public int Y;
+        }
+
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        public struct RECT
+        {
+            public int Left;
+            public int Top;
+            public int Right;
+            public int Bottom;
+        }
+
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        public struct MONITORINFO
+        {
+            public int cbSize;
+            public RECT rcMonitor;
+            public RECT rcWork;
+            public uint dwFlags;
+        }
+
+        [System.Runtime.InteropServices.DefaultDllImportSearchPaths(System.Runtime.InteropServices.DllImportSearchPath.System32)]
+        [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+        [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+        public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+
+        [System.Runtime.InteropServices.DefaultDllImportSearchPaths(System.Runtime.InteropServices.DllImportSearchPath.System32)]
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        public static extern IntPtr MonitorFromPoint(POINT pt, uint dwFlags);
+
+        [System.Runtime.InteropServices.DefaultDllImportSearchPaths(System.Runtime.InteropServices.DllImportSearchPath.System32)]
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        public static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
+
+        [System.Runtime.InteropServices.DefaultDllImportSearchPaths(System.Runtime.InteropServices.DllImportSearchPath.System32)]
+        [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+        [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+        public static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
+
+        [System.Runtime.InteropServices.DefaultDllImportSearchPaths(System.Runtime.InteropServices.DllImportSearchPath.System32)]
+        [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+        [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+        public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
 
         [System.Runtime.InteropServices.DefaultDllImportSearchPaths(System.Runtime.InteropServices.DllImportSearchPath.System32)]
         [System.Runtime.InteropServices.DllImport("dwmapi.dll")]

@@ -98,6 +98,11 @@ public sealed class FloatingHudViewModel : ObservableObject
         _results.Insert(0, viewModel);
     }
 
+    internal void AppendResult(FloatingResultViewModel viewModel)
+    {
+        _results.Add(viewModel);
+    }
+
     internal void RemoveResult(FloatingResultViewModel viewModel)
     {
         _results.Remove(viewModel);
