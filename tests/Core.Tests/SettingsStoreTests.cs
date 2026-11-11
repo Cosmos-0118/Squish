@@ -36,41 +36,6 @@ public sealed class SettingsStoreTests : IDisposable
     }
 
     [Fact]
-    public void CustomHudPositionDefaultsToUnsetAndPersists()
-    {
-        using var temp = new TempDirectory();
-        using (var store = new SettingsStore(temp.Path))
-        {
-            // Never dragged: the HUD falls back to a preset until the user places it.
-            Assert.True(double.IsNaN(store.Get(SettingsRegistry.FloatingHudCustomLeft)));
-            Assert.True(double.IsNaN(store.Get(SettingsRegistry.FloatingHudCustomTop)));
-
-            store.Set(SettingsRegistry.FloatingHudCustomLeft, 812.5);
-            store.Set(SettingsRegistry.FloatingHudCustomTop, -340d); // a monitor left of / above the primary one
-            store.Set(SettingsRegistry.FloatingHudPlacement, FloatingHudPlacement.Custom);
-        }
-
-        using var rehydrated = new SettingsStore(temp.Path);
-        Assert.Equal(812.5, rehydrated.Get(SettingsRegistry.FloatingHudCustomLeft));
-        Assert.Equal(-340d, rehydrated.Get(SettingsRegistry.FloatingHudCustomTop));
-        Assert.Equal(FloatingHudPlacement.Custom, rehydrated.Get(SettingsRegistry.FloatingHudPlacement));
-    }
-
-    [Fact]
-    public void ResetCustomHudPositionPersistsAsUnset()
-    {
-        using var temp = new TempDirectory();
-        using (var store = new SettingsStore(temp.Path))
-        {
-            store.Set(SettingsRegistry.FloatingHudCustomLeft, 100d);
-            store.Set(SettingsRegistry.FloatingHudCustomLeft, double.NaN);
-        }
-
-        using var rehydrated = new SettingsStore(temp.Path);
-        Assert.True(double.IsNaN(rehydrated.Get(SettingsRegistry.FloatingHudCustomLeft)));
-    }
-
-    [Fact]
     public void RunsSquishIgnoreMigration()
     {
         using var temp = new TempDirectory();
