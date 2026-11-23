@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Runtime.Versioning;
+using Squish.Core.Shared;
 
 namespace Squish.BackgroundService.Clipboard;
 
@@ -32,6 +33,9 @@ internal sealed class ClipboardImageEntry
 
     internal bool Finished { get; set; }
 
+    /// <summary>The optimised file this image ended up as, once finished. A repeat of the image reuses it instead of saving another copy.</summary>
+    internal FilePath? ResultPath { get; set; }
+
     internal DateTimeOffset CreatedAt { get; }
 
     internal DateTimeOffset LastActivity { get; set; }
@@ -50,6 +54,12 @@ internal sealed class ClipboardImageTracker
     /// </summary>
     internal static readonly TimeSpan DefaultSettleWindow = TimeSpan.FromSeconds(3);
 
+    /// <summary>
+    /// How long a finished image that produced a file is remembered. Copying the same picture again inside this window
+    /// puts the already optimised file back on the clipboard instead of saving and optimising a second identical file.
+    /// </summary>
+    internal static readonly TimeSpan DefaultReuseWindow = TimeSpan.FromMinutes(2);
+
     // Guards against entries leaking if a completion is somehow never reported.
     private static readonly TimeSpan MaxUnfinishedAge = TimeSpan.FromMinutes(10);
     private const int MaxEntries = 32;
@@ -57,11 +67,13 @@ internal sealed class ClipboardImageTracker
     private readonly object _gate = new();
     private readonly List<ClipboardImageEntry> _entries = new();
     private readonly TimeSpan _settleWindow;
+    private readonly TimeSpan _reuseWindow;
     private readonly TimeProvider _time;
 
-    public ClipboardImageTracker(TimeSpan? settleWindow = null, TimeProvider? timeProvider = null)
+    public ClipboardImageTracker(TimeSpan? settleWindow = null, TimeProvider? timeProvider = null, TimeSpan? reuseWindow = null)
     {
         _settleWindow = settleWindow ?? DefaultSettleWindow;
+        _reuseWindow = reuseWindow ?? DefaultReuseWindow;
         _time = timeProvider ?? TimeProvider.System;
     }
 
@@ -162,7 +174,7 @@ internal sealed class ClipboardImageTracker
     /// The optimisation for <paramref name="requestId"/> ended. A success stays on record for the settle window so a
     /// late repeat of the same image is still ignored; anything else is forgotten so a retry is possible.
     /// </summary>
-    public void Finish(string requestId, bool keep)
+    public void Finish(string requestId, bool keep, FilePath? resultPath = null)
     {
         lock (_gate)
         {
@@ -180,7 +192,17 @@ internal sealed class ClipboardImageTracker
 
             var entry = _entries[index];
             entry.Finished = true;
+            entry.ResultPath = resultPath;
             entry.LastActivity = _time.GetUtcNow();
+        }
+    }
+
+    /// <summary>The optimised file of a finished image, or null while it is still being optimised or produced no file.</summary>
+    public FilePath? GetResult(ClipboardImageEntry entry)
+    {
+        lock (_gate)
+        {
+            return entry.Finished ? entry.ResultPath : null;
         }
     }
 
@@ -207,7 +229,7 @@ internal sealed class ClipboardImageTracker
     private void Prune(DateTimeOffset now)
     {
         _entries.RemoveAll(e => e.Finished
-            ? now - e.LastActivity > _settleWindow
+            ? now - e.LastActivity > (e.ResultPath is null ? _settleWindow : TimeSpan.FromTicks(Math.Max(_settleWindow.Ticks, _reuseWindow.Ticks)))
             : now - e.CreatedAt > MaxUnfinishedAge);
 
         while (_entries.Count >= MaxEntries)
