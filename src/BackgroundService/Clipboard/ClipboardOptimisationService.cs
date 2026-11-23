@@ -167,6 +167,7 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
 
         ClipboardItem? contributionItem = null;
         FilePath? contributionPath = null;
+        FilePath? resultPath = null;
         try
         {
             var sourcePath = item.SourcePath;
@@ -201,6 +202,7 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
                 }
 
                 RegisterOptimisedResult(finalPath);
+                resultPath = finalPath;
 
                 if (item.IsTemporary && !PathsEqual(sourcePath, finalPath))
                 {
@@ -244,7 +246,7 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
         finally
         {
             // Keep a success on record briefly so a late repeat of the same snip is still recognised.
-            _recentImages.Finish(result.RequestId, keep: result.Status == OptimisationStatus.Succeeded && !superseded);
+            _recentImages.Finish(result.RequestId, keep: result.Status == OptimisationStatus.Succeeded && !superseded, resultPath);
         }
     }
 
@@ -420,9 +422,10 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
     {
         var signature = ClipboardImageSignature.Create(bytes);
 
-        if (_recentImages.FindDuplicate(signature, sequence) is not null)
+        if (_recentImages.FindDuplicate(signature, sequence) is { } duplicate)
         {
             _logger.LogDebug("Clipboard image is a repeat of one already handled ({Width}x{Height}); skipping.", signature.Width, signature.Height);
+            RepublishFinishedResult(duplicate, sequence);
             return null;
         }
 
@@ -444,6 +447,36 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
         {
             ImageEntry = entry
         };
+    }
+
+    /// <summary>
+    /// The same picture was copied again after its optimisation finished. Saving and optimising it a second time would
+    /// only leave an identical file behind, so the file already produced goes back on the clipboard instead.
+    /// </summary>
+    private void RepublishFinishedResult(ClipboardImageEntry entry, uint sequence)
+    {
+        if (!_autoCopy || _recentImages.GetResult(entry) is not { } path)
+        {
+            return;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                // The user may have copied something else while this was queued; never replace newer contents.
+                if (!File.Exists(path.Value) || _monitor.CurrentSequence != sequence)
+                {
+                    return;
+                }
+
+                await CopyImageToClipboardAsync(path, null).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Could not put the optimised clipboard image {Path} back on the clipboard.", path.Value);
+            }
+        });
     }
 
     /// <summary>
@@ -688,7 +721,7 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
         return currentPath;
     }
 
-    private async Task CopyImageToClipboardAsync(FilePath path, ClipboardItem item)
+    private async Task CopyImageToClipboardAsync(FilePath path, ClipboardItem? item)
     {
         System.Drawing.Bitmap? bitmap = null;
         MemoryStream? bitmapStream = null;
@@ -770,9 +803,9 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
         }
     }
 
-    private void RememberOwnWrite(ClipboardItem item, uint sequence)
+    private void RememberOwnWrite(ClipboardItem? item, uint sequence)
     {
-        if (item.OriginSequence == 0)
+        if (item is null || item.OriginSequence == 0)
         {
             return;
         }

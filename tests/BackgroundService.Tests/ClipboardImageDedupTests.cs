@@ -200,6 +200,36 @@ public sealed class ClipboardImageDedupTests
         Assert.Empty(tracker.SupersedeInFlight());
     }
 
+    [Fact]
+    public void AFinishedImageWithAResultFileIsReusedForLongerThanTheSettleWindow()
+    {
+        var time = new ManualTime();
+        var tracker = new ClipboardImageTracker(TimeSpan.FromSeconds(3), time, TimeSpan.FromMinutes(2));
+        var result = Squish.Core.Shared.FilePath.From(Path.Combine(Path.GetTempPath(), "clipboard-result.png"));
+        tracker.MarkQueued(tracker.Add(Sig(0), 10), "req-1");
+        tracker.Finish("req-1", keep: true, result);
+
+        time.Advance(TimeSpan.FromSeconds(30));
+        var repeat = tracker.FindDuplicate(Sig(0), 11);
+
+        Assert.NotNull(repeat);
+        Assert.Equal(result, tracker.GetResult(repeat!));
+
+        time.Advance(TimeSpan.FromMinutes(3));
+        Assert.Null(tracker.FindDuplicate(Sig(0), 12));
+    }
+
+    [Fact]
+    public void AnImageStillBeingOptimisedHasNoResultYet()
+    {
+        var tracker = new ClipboardImageTracker();
+        var entry = tracker.Add(Sig(0), 10);
+        tracker.MarkQueued(entry, "req-1");
+
+        Assert.Null(tracker.GetResult(entry));
+    }
+
+
     private sealed class ManualTime : TimeProvider
     {
         private DateTimeOffset _now = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
