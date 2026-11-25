@@ -44,6 +44,31 @@ public class FileFingerprintTests : IDisposable
     }
 
     [Fact]
+    public void HashTextMatchesTheIncrementalCanonicalDigest()
+    {
+        // Markers written by the first (incremental) implementation must keep matching.
+        var data = Random(200_000, 9);
+        var incremental = new System.IO.Hashing.XxHash128();
+        incremental.Append(data.AsSpan(0, 100_000));
+        incremental.Append(data.AsSpan(100_000));
+
+        Assert.Equal(Convert.ToHexString(incremental.GetCurrentHash()), FileFingerprint.FromBytes(data).Hash);
+    }
+
+    [Fact]
+    public void SampledTierMatchesTheIncrementalCanonicalDigest()
+    {
+        var data = Random(3 * 1024 * 1024, 10);
+        var incremental = new System.IO.Hashing.XxHash128();
+        incremental.Append(BitConverter.GetBytes((long)data.Length));
+        incremental.Append(data.AsSpan(0, FileFingerprint.SampleSize));
+        incremental.Append(data.AsSpan((data.Length - FileFingerprint.SampleSize) / 2, FileFingerprint.SampleSize));
+        incremental.Append(data.AsSpan(data.Length - FileFingerprint.SampleSize));
+
+        Assert.Equal(Convert.ToHexString(incremental.GetCurrentHash()), FileFingerprint.FromBytes(data).Hash);
+    }
+
+    [Fact]
     public void SmallFilesHashEveryByte()
     {
         var data = Random(2048, 2);

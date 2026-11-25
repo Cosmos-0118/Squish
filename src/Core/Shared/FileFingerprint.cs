@@ -1,5 +1,6 @@
 using System;
 using System.Buffers;
+using System.Buffers.Binary;
 using System.IO;
 using System.IO.Hashing;
 
@@ -11,10 +12,15 @@ namespace Squish.Core.Shared;
 /// constant however large the file is. Bytes and files produce identical values, so clipboard data can be compared to a
 /// file on disk.
 /// </summary>
+/// <remarks>
+/// Hashing is always one-shot on a single buffer: the incremental XxHash128 API is several times slower on large spans.
+/// </remarks>
 public readonly record struct FileFingerprint(long Length, string Hash)
 {
     public const int FullHashLimit = 1024 * 1024;
     public const int SampleSize = 4096;
+
+    private const int SampledBytes = 8 + (3 * SampleSize);
 
     public bool IsEmpty => string.IsNullOrEmpty(Hash);
 
@@ -22,20 +28,17 @@ public readonly record struct FileFingerprint(long Length, string Hash)
 
     public static FileFingerprint FromBytes(ReadOnlySpan<byte> data)
     {
-        var hasher = new XxHash128();
         if (data.Length <= FullHashLimit)
         {
-            hasher.Append(data);
-        }
-        else
-        {
-            AppendLength(ref hasher, data.Length);
-            hasher.Append(data[..SampleSize]);
-            hasher.Append(data.Slice((data.Length - SampleSize) / 2, SampleSize));
-            hasher.Append(data[^SampleSize..]);
+            return new FileFingerprint(data.Length, Format(XxHash128.HashToUInt128(data)));
         }
 
-        return new FileFingerprint(data.Length, Convert.ToHexString(hasher.GetCurrentHash()));
+        Span<byte> sampled = stackalloc byte[SampledBytes];
+        BinaryPrimitives.WriteInt64LittleEndian(sampled, data.Length);
+        data[..SampleSize].CopyTo(sampled[8..]);
+        data.Slice((int)SampleOffset(data.Length), SampleSize).CopyTo(sampled[(8 + SampleSize)..]);
+        data[^SampleSize..].CopyTo(sampled[(8 + (2 * SampleSize))..]);
+        return new FileFingerprint(data.Length, Format(XxHash128.HashToUInt128(sampled)));
     }
 
     public static bool TryCreate(FilePath path, out FileFingerprint fingerprint)
@@ -49,51 +52,40 @@ public readonly record struct FileFingerprint(long Length, string Hash)
 
         try
         {
-            using var stream = new FileStream(path.Value, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, bufferSize: 1, FileOptions.SequentialScan);
-            var length = stream.Length;
-            var hasher = new XxHash128();
+            // A bare handle and positioned reads: no FileStream buffering or seeking for what is at most four reads.
+            using var handle = File.OpenHandle(path.Value, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, FileOptions.None);
+            var length = RandomAccess.GetLength(handle);
 
             if (length <= FullHashLimit)
             {
-                // Streamed through a small pooled buffer: renting a file-sized (LOH) array cost more than the hashing itself.
-                var buffer = ArrayPool<byte>.Shared.Rent(64 * 1024);
+                var buffer = ArrayPool<byte>.Shared.Rent((int)Math.Max(length, 1));
                 try
                 {
-                    long total = 0;
-                    int read;
-                    while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
-                    {
-                        hasher.Append(buffer.AsSpan(0, read));
-                        total += read;
-                    }
-
-                    if (total != length)
+                    var span = buffer.AsSpan(0, (int)length);
+                    if (RandomAccess.Read(handle, span, 0) != length)
                     {
                         return false;
                     }
+
+                    fingerprint = FromBytes(span);
+                    return true;
                 }
                 finally
                 {
                     ArrayPool<byte>.Shared.Return(buffer);
                 }
             }
-            else
-            {
-                Span<byte> sample = stackalloc byte[SampleSize];
-                AppendLength(ref hasher, length);
-                foreach (var offset in new[] { 0L, (length - SampleSize) / 2, length - SampleSize })
-                {
-                    stream.Seek(offset, SeekOrigin.Begin);
-                    if (ReadFully(stream, sample) != SampleSize)
-                    {
-                        return false;
-                    }
 
-                    hasher.Append(sample);
-                }
+            Span<byte> sampled = stackalloc byte[SampledBytes];
+            BinaryPrimitives.WriteInt64LittleEndian(sampled, length);
+            if (RandomAccess.Read(handle, sampled.Slice(8, SampleSize), 0) != SampleSize ||
+                RandomAccess.Read(handle, sampled.Slice(8 + SampleSize, SampleSize), SampleOffset(length)) != SampleSize ||
+                RandomAccess.Read(handle, sampled.Slice(8 + (2 * SampleSize), SampleSize), length - SampleSize) != SampleSize)
+            {
+                return false;
             }
 
-            fingerprint = new FileFingerprint(length, Convert.ToHexString(hasher.GetCurrentHash()));
+            fingerprint = new FileFingerprint(length, Format(XxHash128.HashToUInt128(sampled)));
             return true;
         }
         catch (IOException)
@@ -106,27 +98,13 @@ public readonly record struct FileFingerprint(long Length, string Hash)
         }
     }
 
-    private static int ReadFully(Stream stream, Span<byte> destination)
+    private static long SampleOffset(long length) => (length - SampleSize) / 2;
+
+    // Same text as the earlier streaming implementation (big-endian hex of the 128-bit digest), so markers written by it still match.
+    private static string Format(UInt128 hash)
     {
-        var total = 0;
-        while (total < destination.Length)
-        {
-            var n = stream.Read(destination[total..]);
-            if (n == 0)
-            {
-                break;
-            }
-
-            total += n;
-        }
-
-        return total;
-    }
-
-    private static void AppendLength(ref XxHash128 hasher, long length)
-    {
-        Span<byte> bytes = stackalloc byte[8];
-        System.Buffers.Binary.BinaryPrimitives.WriteInt64LittleEndian(bytes, length);
-        hasher.Append(bytes);
+        Span<byte> bytes = stackalloc byte[16];
+        BinaryPrimitives.WriteUInt128BigEndian(bytes, hash);
+        return Convert.ToHexString(bytes);
     }
 }
