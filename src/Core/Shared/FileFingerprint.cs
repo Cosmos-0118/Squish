@@ -55,16 +55,22 @@ public readonly record struct FileFingerprint(long Length, string Hash)
 
             if (length <= FullHashLimit)
             {
-                var buffer = ArrayPool<byte>.Shared.Rent((int)Math.Max(length, 1));
+                // Streamed through a small pooled buffer: renting a file-sized (LOH) array cost more than the hashing itself.
+                var buffer = ArrayPool<byte>.Shared.Rent(64 * 1024);
                 try
                 {
-                    var read = ReadFully(stream, buffer.AsSpan(0, (int)length));
-                    if (read != length)
+                    long total = 0;
+                    int read;
+                    while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
+                    {
+                        hasher.Append(buffer.AsSpan(0, read));
+                        total += read;
+                    }
+
+                    if (total != length)
                     {
                         return false;
                     }
-
-                    hasher.Append(buffer.AsSpan(0, read));
                 }
                 finally
                 {
