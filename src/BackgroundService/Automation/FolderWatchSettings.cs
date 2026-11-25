@@ -25,8 +25,13 @@ internal sealed record FolderWatchConfig(
     IReadOnlyList<string>? PdfDirectories = null,
     IReadOnlyList<string>? DocumentDirectories = null,
     int MaxDocumentSizeMb = 0,
-    int MaxDocumentJobs = 0)
+    int MaxDocumentJobs = 0,
+    bool Recursive = true,
+    Func<string?, bool>? ExtensionFilter = null)
 {
+    /// <summary>Extra extension filter on top of the per-type switches (the CLI's --types / --exclude-types).</summary>
+    public bool IsExtensionAllowed(string? extension) => ExtensionFilter is null || ExtensionFilter(extension);
+
     public bool IsEnabled(ItemType type) => type switch
     {
         ItemType.Image => AutoImages,
@@ -74,7 +79,7 @@ internal sealed record FolderWatchConfig(
     };
 
     public IReadOnlyList<WatchRootSpec> BuildPlan() =>
-        WatchPlan.Build(Paused, AutoImages, AutoVideos, ImageDirectories, VideoDirectories, AutoPdfs, AutoDocuments, PdfDirectories, DocumentDirectories);
+        WatchPlan.Build(Paused, AutoImages, AutoVideos, ImageDirectories, VideoDirectories, AutoPdfs, AutoDocuments, PdfDirectories, DocumentDirectories, Recursive);
 }
 
 /// <summary>Where the folder watcher gets its configuration from; swapped for a fake in tests and benchmarks.</summary>

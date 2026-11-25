@@ -22,7 +22,7 @@ internal sealed class FolderWatcher : IDisposable
     private long _eventCount;
     private volatile int _allowedTypes;
 
-    public FolderWatcher(string root, WatchTypes allowedTypes, Action<string, WatchTypes, bool> onHit, Action<FolderWatcher, Exception> onFault)
+    public FolderWatcher(string root, WatchTypes allowedTypes, Action<string, WatchTypes, bool> onHit, Action<FolderWatcher, Exception> onFault, bool recursive = true)
     {
         Root = root;
         _allowedTypes = (int)allowedTypes;
@@ -31,7 +31,7 @@ internal sealed class FolderWatcher : IDisposable
 
         _watcher = new FileSystemWatcher(root)
         {
-            IncludeSubdirectories = true,
+            IncludeSubdirectories = recursive,
             InternalBufferSize = BufferBytes,
             NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size
         };

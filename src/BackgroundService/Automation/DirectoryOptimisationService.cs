@@ -137,6 +137,12 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
         }
     }
 
+    /// <summary>Raised just before a watched file is handed to the coordinator (the CLI uses it to label progress).</summary>
+    internal event EventHandler<DirectoryJob>? JobSubmitted;
+
+    /// <summary>Raised when a job ends; the result is null if it was cancelled or never completed.</summary>
+    internal event EventHandler<DirectoryJobCompleted>? JobCompleted;
+
     public ValueTask DisposeAsync()
     {
         _disposed = true;
@@ -221,6 +227,7 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
         if (IsWithinWorkRoot(path) ||
             SquishFileGuards.IsSquishGenerated(path) ||
             config.IsFormatSkipped(type, path.Extension) ||
+            !config.IsExtensionAllowed(path.Extension) ||
             _optimisedFiles.WasPathRecentlyOptimised(path) ||
             _activePaths.ContainsKey(path.Value))
         {
@@ -302,7 +309,7 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
 
         _activeStems.AddOrUpdate(StemKey(path), 1, static (_, count) => count + 1);
 
-        Submit(type, path, entry.Payload.Root);
+        Submit(type, path, entry.Payload.Root, probe.Length);
     }
 
     private static string StemKey(FilePath path) =>
@@ -362,7 +369,7 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
         _queue.Reschedule(entry, delay);
     }
 
-    private void Submit(ItemType type, FilePath path, string root)
+    private void Submit(ItemType type, FilePath path, string root, long length)
     {
         string? requestId = null;
 
@@ -378,7 +385,8 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
 
             var request = new OptimisationRequest(type, path, metadata: metadata);
             requestId = request.RequestId;
-            _pending[requestId] = new DirectoryRequestContext(type, path);
+            _pending[requestId] = new DirectoryRequestContext(type, path, length);
+            JobSubmitted?.Invoke(this, new DirectoryJob(requestId, type, path, length));
 
             var ticket = _coordinator.Enqueue(request);
             Interlocked.Increment(ref _submitted);
@@ -438,6 +446,15 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
         ReleaseSlot(context.ItemType);
         _queue.WakeDeferred();
 
+        try
+        {
+            JobCompleted?.Invoke(this, new DirectoryJobCompleted(new DirectoryJob(requestId, context.ItemType, context.Path, context.Length), result));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "A watcher completion handler failed for {Path}.", context.Path.Value);
+        }
+
         if (result is null)
         {
             _logger.LogWarning("Watcher optimisation {RequestId} for {Path} did not complete.", requestId, context.Path.Value);
@@ -480,9 +497,14 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
             return false;
         }
 
-        return ImagePixelHasher.TryHashFile(path.Value) is { } pixels &&
-               _optimisedFiles.WasImagePixelsRecentlyHandled(pixels.Key);
+        return DecodedPixelsMatch(path);
     }
+
+    // Kept out of line so hosts without GDI+ (the CLI) never have to load it unless a clipboard image is actually fresh.
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private bool DecodedPixelsMatch(FilePath path) =>
+        ImagePixelHasher.TryHashFile(path.Value) is { } pixels &&
+        _optimisedFiles.WasImagePixelsRecentlyHandled(pixels.Key);
 
     private const long MaxScreenshotBytes = 32L * 1024 * 1024;
 
@@ -626,7 +648,7 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
         try
         {
             var root = spec.Path;
-            state.Watcher = new FolderWatcher(root, spec.Types, (path, types, renamed) => OnWatcherHit(root, path, types, renamed), OnWatcherFault);
+            state.Watcher = new FolderWatcher(root, spec.Types, (path, types, renamed) => OnWatcherHit(root, path, types, renamed), OnWatcherFault, spec.Recursive);
             state.Failures = 0;
             state.ReportedOffline = false;
             state.IsPolled = IsPolledLocation(root);
@@ -839,7 +861,7 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
             {
                 var enumeration = new EnumerationOptions
                 {
-                    RecurseSubdirectories = true,
+                    RecurseSubdirectories = state.Spec.Recursive,
                     IgnoreInaccessible = true,
                     MaxRecursionDepth = 32,
                     ReturnSpecialDirectories = false
@@ -912,8 +934,12 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
 
     private readonly record struct WatchHit(ItemType Type, string Root);
 
-    private readonly record struct DirectoryRequestContext(ItemType ItemType, FilePath Path);
+    private readonly record struct DirectoryRequestContext(ItemType ItemType, FilePath Path, long Length);
 }
+
+internal readonly record struct DirectoryJob(string RequestId, ItemType Type, FilePath Path, long Length);
+
+internal readonly record struct DirectoryJobCompleted(DirectoryJob Job, OptimisationResult? Result);
 
 internal readonly record struct DirectoryServiceStats(
     long WatcherHits,

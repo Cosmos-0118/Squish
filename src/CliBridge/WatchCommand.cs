@@ -1,11 +1,12 @@
 using System;
 using System.Collections.Concurrent;
+using Microsoft.Extensions.Logging;
+using Squish.BackgroundService.Automation;
 using System.Collections.Generic;
 using System.CommandLine;
 using System.CommandLine.Invocation;
 using System.IO;
 using System.Text.Json;
-using System.Threading.Channels;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Linq;
@@ -112,9 +113,7 @@ internal sealed class WatchCommandHandler
     private readonly CancellationToken _cancellationToken;
     private readonly TypeFilter _filter;
     private readonly JsonSerializerOptions _jsonOptions;
-    private readonly ConcurrentDictionary<string, WatchRequestContext> _requests = new(StringComparer.Ordinal);
-    private readonly ConcurrentDictionary<string, byte> _inFlight = new(StringComparer.OrdinalIgnoreCase);
-    private readonly ConcurrentDictionary<string, DateTimeOffset> _recent = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, TargetFile> _targets = new(StringComparer.Ordinal);
 
     public WatchCommandHandler(WatchCommandOptions options, CancellationToken cancellationToken)
     {
@@ -156,19 +155,6 @@ internal sealed class WatchCommandHandler
             Console.CancelKeyPress += cancelHandler;
         }
 
-        var channel = Channel.CreateUnbounded<WatchFileEvent>(new UnboundedChannelOptions
-        {
-            AllowSynchronousContinuations = false,
-            SingleReader = true,
-            SingleWriter = false
-        });
-
-        var watchers = new List<FileSystemWatcher>();
-        foreach (var directory in directories)
-        {
-            watchers.Add(CreateWatcher(directory, channel.Writer));
-        }
-
         var imageOptions = ImageOptimiserOptionsFactory.FromSettings();
         var videoOptions = (VideoOptimiserOptionsFactory.FromSettings() with
         {
@@ -187,24 +173,28 @@ internal sealed class WatchCommandHandler
             },
             Math.Max(1, Environment.ProcessorCount / 2));
 
+        // The same watcher the background service uses: settle queue, share-mode readiness probe, markers, output
+        // suppression and reconciliation scans.
+        await using var service = new DirectoryOptimisationService(
+            coordinator,
+            new OptimisedFileRegistry(),
+            new WatchLogger(_options.Json),
+            new CliFolderWatchSettings(_options, directories, _filter),
+            BuildWatchOptions(),
+            TimeProvider.System);
+
         var progressPrinter = new ProgressPrinter(_options.ShowProgress);
-        EventHandler<OptimisationProgressEventArgs>? progressHandler = null;
-        progressHandler = (_, e) =>
+        EventHandler<OptimisationProgressEventArgs> progressHandler = (_, e) =>
         {
-            if (_requests.TryGetValue(e.Progress.RequestId, out var ctx))
+            if (_targets.TryGetValue(e.Progress.RequestId, out var target))
             {
-                progressPrinter.Report(ctx.Target, e.Progress);
+                progressPrinter.Report(target, e.Progress);
             }
         };
 
-        if (progressHandler is not null)
-        {
-            coordinator.ProgressChanged += progressHandler;
-        }
-        coordinator.RequestCompleted += OnCoordinatorCompleted;
-        coordinator.RequestFailed += OnCoordinatorCompleted;
-
-        var processingTask = Task.Run(() => ProcessEventsAsync(channel.Reader, coordinator, token), token);
+        coordinator.ProgressChanged += progressHandler;
+        service.JobSubmitted += OnJobSubmitted;
+        service.JobCompleted += OnJobCompleted;
 
         if (!_options.Json)
         {
@@ -213,7 +203,7 @@ internal sealed class WatchCommandHandler
 
         try
         {
-            await Task.Delay(Timeout.Infinite, token).ConfigureAwait(false);
+            await service.RunAsync(token).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -221,26 +211,9 @@ internal sealed class WatchCommandHandler
         }
         finally
         {
-            channel.Writer.TryComplete();
-            try
-            {
-                await processingTask.ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-            }
-
-            foreach (var watcher in watchers)
-            {
-                watcher.Dispose();
-            }
-
-            if (progressHandler is not null)
-            {
-                coordinator.ProgressChanged -= progressHandler;
-            }
-            coordinator.RequestCompleted -= OnCoordinatorCompleted;
-            coordinator.RequestFailed -= OnCoordinatorCompleted;
+            coordinator.ProgressChanged -= progressHandler;
+            service.JobSubmitted -= OnJobSubmitted;
+            service.JobCompleted -= OnJobCompleted;
 
             if (cancelHandler is not null)
             {
@@ -251,127 +224,55 @@ internal sealed class WatchCommandHandler
         return 0;
     }
 
-    private async Task ProcessEventsAsync(ChannelReader<WatchFileEvent> reader, OptimisationCoordinator coordinator, CancellationToken token)
+    private FolderWatchOptions BuildWatchOptions()
     {
-        var debounceWindow = TimeSpan.FromMilliseconds(_options.DebounceMilliseconds);
-
-        await foreach (var watchEvent in reader.ReadAllAsync(token).ConfigureAwait(false))
+        var debounce = TimeSpan.FromMilliseconds(_options.DebounceMilliseconds);
+        var defaults = FolderWatchOptions.Default;
+        return defaults with
         {
-            token.ThrowIfCancellationRequested();
-
-            var path = watchEvent.Path.Value;
-            if (!File.Exists(path))
-            {
-                if (!_options.SkipErrors && !_options.Json)
-                {
-                    Console.Error.WriteLine($"[warn] Skipping missing file '{path}'.");
-                }
-                continue;
-            }
-
-            if (_recent.TryGetValue(path, out var last) && (watchEvent.ObservedAt - last) < debounceWindow)
-            {
-                continue;
-            }
-
-            _recent[path] = watchEvent.ObservedAt;
-
-            if (!_filter.Allows(watchEvent.Path.Extension ?? string.Empty))
-            {
-                continue;
-            }
-
-            if (IsWithinWorkRoot(watchEvent.Path))
-            {
-                continue;
-            }
-
-            // Never re-process Squish's own output (photo.squish.jpg) or a file it already optimised in place;
-            // otherwise each result is picked up as a new input and the folder fills with photo.squish.squish.jpg.
-            if (SquishFileGuards.IsSquishGenerated(watchEvent.Path) || SquishOptimisationMarker.HasValidMarker(watchEvent.Path))
-            {
-                continue;
-            }
-
-            if (!_inFlight.TryAdd(path, 0))
-            {
-                continue;
-            }
-
-            var enqueued = false;
-            try
-            {
-                var target = await CreateTargetAsync(watchEvent.Path, token).ConfigureAwait(false);
-                if (target is not TargetFile targetValue)
-                {
-                    continue;
-                }
-
-                var metadata = BuildMetadata(watchEvent);
-                var request = new OptimisationRequest(targetValue.ItemType, targetValue.Path, metadata: metadata);
-                var context = new WatchRequestContext(targetValue, path, watchEvent.ObservedAt);
-                if (!_requests.TryAdd(request.RequestId, context))
-                {
-                    continue;
-                }
-
-                coordinator.Enqueue(request, token);
-                enqueued = true;
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                if (!_options.Json)
-                {
-                    Console.Error.WriteLine($"[warn] Failed to schedule '{path}': {ex.Message}");
-                }
-            }
-            finally
-            {
-                if (!enqueued)
-                {
-                    _inFlight.TryRemove(path, out _);
-                }
-            }
-        }
+            ImageQuietPeriod = debounce,
+            VideoQuietPeriod = debounce > defaults.VideoQuietPeriod ? debounce : defaults.VideoQuietPeriod,
+            DocumentQuietPeriod = debounce > defaults.DocumentQuietPeriod ? debounce : defaults.DocumentQuietPeriod,
+            MaxPendingAge = TimeSpan.FromMilliseconds(_options.ReadyTimeoutMilliseconds)
+        };
     }
 
-    private void OnCoordinatorCompleted(object? sender, OptimisationCompletedEventArgs e)
+    private void OnJobSubmitted(object? sender, DirectoryJob job)
     {
-        if (!_requests.TryRemove(e.Result.RequestId, out var context))
+        _targets[job.RequestId] = new TargetFile(job.Path, job.Type, job.Length);
+    }
+
+    private void OnJobCompleted(object? sender, DirectoryJobCompleted e)
+    {
+        _targets.TryRemove(e.Job.RequestId, out _);
+        var result = e.Result;
+        if (result is null)
         {
             return;
         }
 
-        _inFlight.TryRemove(context.SourcePath, out _);
-        _recent[context.SourcePath] = DateTimeOffset.UtcNow;
-
+        var target = new TargetFile(e.Job.Path, e.Job.Type, e.Job.Length);
         if (_options.Json)
         {
             var payload = new
             {
-                requestId = e.Result.RequestId,
-                status = e.Result.Status.ToString().ToLowerInvariant(),
-                sourcePath = context.Target.Path.Value,
-                outputPath = e.Result.OutputPath?.Value,
-                message = e.Result.Message
+                requestId = result.RequestId,
+                status = result.Status.ToString().ToLowerInvariant(),
+                sourcePath = target.Path.Value,
+                outputPath = result.OutputPath?.Value,
+                message = result.Message
             };
             Console.WriteLine(JsonSerializer.Serialize(payload, _jsonOptions));
             return;
         }
 
-        if (e.Result.Status == OptimisationStatus.Succeeded)
+        if (result.Status == OptimisationStatus.Succeeded)
         {
-            var success = CliSuccess.FromResult(e.Result, context.Target);
-            Console.WriteLine(success.FormatForConsole());
+            Console.WriteLine(CliSuccess.FromResult(result, target).FormatForConsole());
         }
         else
         {
-            var failure = CliFailure.FromResult(e.Result, context.Target);
-            Console.Error.WriteLine(failure.FormatForConsole());
+            Console.Error.WriteLine(CliFailure.FromResult(result, target).FormatForConsole());
         }
     }
 
@@ -424,163 +325,53 @@ internal sealed class WatchCommandHandler
 
         return Path.GetFullPath(value);
     }
+}
 
-    private FileSystemWatcher CreateWatcher(string directory, ChannelWriter<WatchFileEvent> writer)
+/// <summary>Feeds the CLI's flags to the shared folder watcher in place of the app's saved settings.</summary>
+internal sealed class CliFolderWatchSettings : IFolderWatchSettings
+{
+    private readonly WatchCommandOptions _options;
+
+    public CliFolderWatchSettings(WatchCommandOptions options, IReadOnlyList<string> directories, TypeFilter filter)
     {
-        var watcher = new FileSystemWatcher(directory)
-        {
-            IncludeSubdirectories = _options.Recursive,
-            NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size,
-            EnableRaisingEvents = true
-        };
-
-        FileSystemEventHandler handler = (_, e) => QueuePath(e.FullPath, writer);
-        RenamedEventHandler renameHandler = (_, e) => QueuePath(e.FullPath, writer);
-
-        watcher.Created += handler;
-        watcher.Changed += handler;
-        watcher.Renamed += renameHandler;
-        watcher.Error += (_, ex) =>
-        {
-            if (!_options.Json)
-            {
-                Console.Error.WriteLine($"[warn] FileSystemWatcher error: {ex.GetException().Message}");
-            }
-        };
-
-        return watcher;
+        _options = options;
+        var none = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        Current = new FolderWatchConfig(
+            Paused: false,
+            AutoImages: true,
+            AutoVideos: true,
+            ImageDirectories: directories,
+            VideoDirectories: directories,
+            SkipImageFormats: none,
+            SkipVideoFormats: none,
+            MaxImageSizeMb: 0,
+            MaxVideoSizeMb: 0,
+            MaxImageJobs: 0,
+            MaxVideoJobs: 0,
+            AutoPdfs: true,
+            AutoDocuments: true,
+            PdfDirectories: directories,
+            DocumentDirectories: directories,
+            MaxDocumentSizeMb: 0,
+            MaxDocumentJobs: 0,
+            Recursive: options.Recursive,
+            ExtensionFilter: extension => filter.Allows(extension ?? string.Empty));
     }
 
-    private static void QueuePath(string? path, ChannelWriter<WatchFileEvent> writer)
+    public FolderWatchConfig Current { get; }
+
+    // The CLI's settings are fixed for the lifetime of the command.
+    public event EventHandler? Changed
     {
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            return;
-        }
-
-        try
-        {
-            var filePath = FilePath.From(path);
-            if (Directory.Exists(filePath.Value))
-            {
-                return;
-            }
-
-            writer.TryWrite(new WatchFileEvent(filePath, DateTimeOffset.UtcNow));
-        }
-        catch
-        {
-            // ignore malformed paths
-        }
+        add { }
+        remove { }
     }
 
-    private async Task<TargetFile?> CreateTargetAsync(FilePath path, CancellationToken token)
+    public void ApplyRequestMetadata(ItemType type, FilePath path, IDictionary<string, object?> metadata)
     {
-        var info = await WaitForFileReadyAsync(path, token).ConfigureAwait(false);
-        if (info is null)
-        {
-            return null;
-        }
-
-        if (!TryDetermineItemType(path, out var itemType))
-        {
-            return null;
-        }
-
-        return new TargetFile(path, itemType, info.Length);
-    }
-
-    private async Task<FileInfo?> WaitForFileReadyAsync(FilePath path, CancellationToken token)
-    {
-        var timeout = TimeSpan.FromMilliseconds(_options.ReadyTimeoutMilliseconds);
-        var deadline = DateTimeOffset.UtcNow + timeout;
-        FileInfo? info = null;
-
-        while (DateTimeOffset.UtcNow <= deadline)
-        {
-            token.ThrowIfCancellationRequested();
-
-            try
-            {
-                info = new FileInfo(path.Value);
-                if (!info.Exists)
-                {
-                    return null;
-                }
-
-                using var stream = new FileStream(path.Value, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-                var length = info.Length;
-                await Task.Delay(200, token).ConfigureAwait(false);
-                info.Refresh();
-                if (info.Length == length && info.Length > 0)
-                {
-                    return info;
-                }
-            }
-            catch (IOException)
-            {
-                await Task.Delay(200, token).ConfigureAwait(false);
-            }
-            catch (UnauthorizedAccessException)
-            {
-                await Task.Delay(200, token).ConfigureAwait(false);
-            }
-        }
-
-        return info;
-    }
-
-    private static bool TryDetermineItemType(FilePath path, out ItemType type)
-    {
-        if (MediaFormats.IsImage(path))
-        {
-            type = ItemType.Image;
-            return true;
-        }
-
-        if (MediaFormats.IsVideo(path))
-        {
-            type = ItemType.Video;
-            return true;
-        }
-
-        if (MediaFormats.IsPdf(path))
-        {
-            type = ItemType.Pdf;
-            return true;
-        }
-
-        if (MediaFormats.IsDocument(path))
-        {
-            type = ItemType.Document;
-            return true;
-        }
-
-        type = ItemType.Unknown;
-        return false;
-    }
-
-
-    private static bool IsWithinWorkRoot(FilePath path)
-    {
-        var workRoot = SquishPaths.WorkRoot.Value;
-        if (!Path.EndsInDirectorySeparator(workRoot))
-        {
-            workRoot += Path.DirectorySeparatorChar;
-        }
-
-        return path.Value.StartsWith(workRoot, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private Dictionary<string, object?> BuildMetadata(WatchFileEvent watchEvent)
-    {
-        var metadata = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["source"] = "cli.watch",
-            ["watch.observedAt"] = watchEvent.ObservedAt,
-            ["watch.recursive"] = _options.Recursive,
-            ["watch.debounceMs"] = _options.DebounceMilliseconds
-        };
+        metadata["source"] = "cli.watch";
+        metadata["watch.recursive"] = _options.Recursive;
+        metadata["watch.debounceMs"] = _options.DebounceMilliseconds;
 
         if (_options.Aggressive)
         {
@@ -605,10 +396,25 @@ internal sealed class WatchCommandHandler
 
         OutputBehaviourSettings.ApplyTo(metadata);
         VideoEncoderPresetSettings.ApplyTo(metadata);
-        return metadata;
     }
+}
 
-    private readonly record struct WatchFileEvent(FilePath Path, DateTimeOffset ObservedAt);
+/// <summary>Surfaces watcher warnings and errors on stderr (the service logs everything else at lower levels).</summary>
+internal sealed class WatchLogger : ILogger<DirectoryOptimisationService>
+{
+    private readonly bool _quiet;
 
-    private readonly record struct WatchRequestContext(TargetFile Target, string SourcePath, DateTimeOffset ObservedAt);
+    public WatchLogger(bool quiet) => _quiet = quiet;
+
+    public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+    public bool IsEnabled(LogLevel logLevel) => !_quiet && logLevel >= LogLevel.Warning;
+
+    public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+    {
+        if (IsEnabled(logLevel))
+        {
+            Console.Error.WriteLine($"[{(logLevel >= LogLevel.Error ? "error" : "warn")}] {formatter(state, exception)}");
+        }
+    }
 }

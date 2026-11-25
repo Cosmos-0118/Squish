@@ -16,7 +16,7 @@ internal enum WatchTypes
     Document = 8
 }
 
-internal readonly record struct WatchRootSpec(string Path, WatchTypes Types);
+internal readonly record struct WatchRootSpec(string Path, WatchTypes Types, bool Recursive = true);
 
 /// <summary>
 /// Turns the configured image/video/PDF/document folder lists into the smallest set of OS watches that still covers them.
@@ -34,7 +34,8 @@ internal static class WatchPlan
         bool pdfs = false,
         bool documents = false,
         IEnumerable<string?>? pdfDirs = null,
-        IEnumerable<string?>? documentDirs = null)
+        IEnumerable<string?>? documentDirs = null,
+        bool recursive = true)
     {
         if (paused)
         {
@@ -62,7 +63,7 @@ internal static class WatchPlan
             Merge(merged, documentDirs, WatchTypes.Document);
         }
 
-        var roots = merged.Select(kvp => new WatchRootSpec(kvp.Key, kvp.Value)).ToList();
+        var roots = merged.Select(kvp => new WatchRootSpec(kvp.Key, kvp.Value, recursive)).ToList();
         return roots
             .Where(root => !roots.Any(other => IsCoveredBy(root, other)))
             .OrderBy(root => root.Path, StringComparer.OrdinalIgnoreCase)
@@ -129,7 +130,8 @@ internal static class WatchPlan
             return false;
         }
 
-        if ((inner.Types & ~outer.Types) != 0)
+        // A flat watch on the outer folder does not see changes in the inner one.
+        if (!outer.Recursive || (inner.Types & ~outer.Types) != 0)
         {
             return false;
         }

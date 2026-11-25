@@ -489,4 +489,60 @@ public sealed class DirectoryOptimisationServiceTests : IAsyncLifetime
         await Eventually(() => _imageOptimiser.Processed.Contains(path, StringComparer.OrdinalIgnoreCase));
         Assert.Contains(registry.RecentWatcherImages(), p => string.Equals(p, path, StringComparison.OrdinalIgnoreCase));
     }
+
+    [Fact]
+    public async Task FlatWatchIgnoresSubfoldersAndExtensionFilterIsApplied()
+    {
+        var settings = new FakeFolderSettings(_images);
+        settings.Update(c => c with { Recursive = false, ExtensionFilter = ext => !string.Equals(ext, "bmp", StringComparison.OrdinalIgnoreCase) });
+        Start(settings);
+        await Task.Delay(300);
+
+        var sub = Directory.CreateDirectory(Path.Combine(_images, "nested")).FullName;
+        var nested = Path.Combine(sub, "deep.png");
+        var filtered = Path.Combine(_images, "skip.bmp");
+        var top = Path.Combine(_images, "top.png");
+        await File.WriteAllBytesAsync(nested, Bytes());
+        await File.WriteAllBytesAsync(filtered, Bytes());
+        await File.WriteAllBytesAsync(top, Bytes());
+
+        await Eventually(() => _imageOptimiser.Processed.Contains(top, StringComparer.OrdinalIgnoreCase));
+        await Task.Delay(400);
+        Assert.Single(_imageOptimiser.Processed);
+    }
+
+    [Fact]
+    public async Task JobEventsReportSubmissionAndCompletionWithTheOriginalLength()
+    {
+        var service = Start(new FakeFolderSettings(_images));
+        var submitted = new ConcurrentQueue<DirectoryJob>();
+        var completed = new ConcurrentQueue<DirectoryJobCompleted>();
+        service.JobSubmitted += (_, job) => submitted.Enqueue(job);
+        service.JobCompleted += (_, done) => completed.Enqueue(done);
+        await Task.Delay(300);
+
+        var path = Path.Combine(_images, "evt.png");
+        await File.WriteAllBytesAsync(path, Bytes(1500));
+
+        await Eventually(() => !completed.IsEmpty);
+        Assert.True(submitted.TryPeek(out var job));
+        Assert.Equal(1500, job.Length);
+        Assert.True(completed.TryPeek(out var done));
+        Assert.Equal(job.RequestId, done.Job.RequestId);
+        Assert.Equal(OptimisationStatus.Succeeded, done.Result!.Status);
+    }
+
+    [Fact]
+    public void FlatOuterWatchDoesNotCoverNestedFolder()
+    {
+        var outer = Path.Combine(_root, "outer");
+        var inner = Path.Combine(outer, "inner");
+
+        var flat = WatchPlan.Build(false, true, false, new[] { outer, inner }, Array.Empty<string>(), recursive: false);
+        var deep = WatchPlan.Build(false, true, false, new[] { outer, inner }, Array.Empty<string>());
+
+        Assert.Equal(2, flat.Count);
+        Assert.All(flat, spec => Assert.False(spec.Recursive));
+        Assert.Single(deep);
+    }
 }
