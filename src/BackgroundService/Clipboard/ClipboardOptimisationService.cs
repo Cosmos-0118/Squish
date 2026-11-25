@@ -436,10 +436,23 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
             return null;
         }
 
+        // The same screenshot may also have been saved to a watched folder (Snipping Tool, PrintScreen, ShareX), where the
+        // folder watcher is already optimising it. One screenshot should produce one job.
+        if (signature.PixelHash is not null && MatchesWatcherImage(signature))
+        {
+            _logger.LogDebug("Clipboard image is the screenshot the folder watcher is already optimising ({Width}x{Height}); skipping.", signature.Width, signature.Height);
+            return null;
+        }
+
         var tempPath = PersistClipboardImage(bytes);
         if (tempPath is null)
         {
             return null;
+        }
+
+        if (signature.PixelHash is not null)
+        {
+            _optimisedFiles.RegisterImagePixels(new ImagePixels(signature.Width, signature.Height, signature.PixelHash).Key);
         }
 
         var entry = _recentImages.Add(signature, sequence);
@@ -447,6 +460,24 @@ public sealed class ClipboardOptimisationService : IAsyncDisposable
         {
             ImageEntry = entry
         };
+    }
+
+    private bool MatchesWatcherImage(ClipboardImageSignature signature)
+    {
+        // At most a handful of files the watcher picked up in the last few seconds, so this decodes a few small screenshots, not a folder.
+        foreach (var file in _optimisedFiles.RecentWatcherImages())
+        {
+            var pixels = ImagePixelHasher.TryHashFile(file);
+            if (pixels is { } found &&
+                found.Width == signature.Width &&
+                found.Height == signature.Height &&
+                string.Equals(found.Hash, signature.PixelHash, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>

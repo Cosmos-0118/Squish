@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Threading;
 using Squish.Core.Shared;
 
@@ -19,13 +20,19 @@ public sealed class OptimisedFileRegistry
     // Lengths of registered fingerprints. Hashing a file is a full read, so callers can rule out a match from the
     // length alone before paying for it.
     private readonly ConcurrentDictionary<long, DateTimeOffset> _fingerprintLengths = new();
+    // A screenshot reaches the clipboard and the screenshots folder within moments of each other, so image-pixel
+    // matches only need to be remembered briefly; the encoded-bytes fingerprints above cover the long window.
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _imagePixels = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _watcherImages = new(StringComparer.OrdinalIgnoreCase);
+    private readonly TimeSpan _imageWindow;
     private readonly TimeSpan _window;
     private readonly TimeProvider _time;
     private long _lastCleanupTicks;
 
-    public OptimisedFileRegistry(TimeSpan? window = null, TimeProvider? timeProvider = null)
+    public OptimisedFileRegistry(TimeSpan? window = null, TimeProvider? timeProvider = null, TimeSpan? imageWindow = null)
     {
         _window = window ?? TimeSpan.FromMinutes(2);
+        _imageWindow = imageWindow ?? TimeSpan.FromSeconds(10);
         _time = timeProvider ?? TimeProvider.System;
     }
 
@@ -94,6 +101,95 @@ public sealed class OptimisedFileRegistry
         return !_fingerprintLengths.IsEmpty && CheckRecent(_fingerprintLengths, length);
     }
 
+    /// <summary>
+    /// The clipboard accepted an image with these decoded pixels (an <c>ImagePixels.Key</c>). A file with the same pixels
+    /// that shows up in a watched folder a moment later is the same screenshot and needs no second optimisation.
+    /// </summary>
+    public void RegisterImagePixels(string pixelsKey)
+    {
+        if (!string.IsNullOrEmpty(pixelsKey))
+        {
+            _imagePixels[pixelsKey] = _time.GetUtcNow();
+        }
+    }
+
+    /// <summary>True while a clipboard image was registered recently, i.e. watcher files are worth decoding to compare.</summary>
+    public bool HasRecentImagePixels
+    {
+        get
+        {
+            if (_imagePixels.IsEmpty)
+            {
+                return false;
+            }
+
+            var cutoff = _time.GetUtcNow() - _imageWindow;
+            foreach (var entry in _imagePixels)
+            {
+                if (entry.Value >= cutoff)
+                {
+                    return true;
+                }
+
+                _imagePixels.TryRemove(entry);
+            }
+
+            return false;
+        }
+    }
+
+    public bool WasImagePixelsRecentlyHandled(string pixelsKey)
+    {
+        return !string.IsNullOrEmpty(pixelsKey) && CheckRecent(_imagePixels, pixelsKey, _imageWindow);
+    }
+
+    /// <summary>The folder watcher started optimising this image file; the clipboard can compare its pixels against a new clipboard image.</summary>
+    public void NoteWatcherImage(FilePath path)
+    {
+        if (string.IsNullOrWhiteSpace(path.Value))
+        {
+            return;
+        }
+
+        _watcherImages[path.Value] = _time.GetUtcNow();
+        if (_watcherImages.Count > 64)
+        {
+            CleanupStore(_watcherImages, _imageWindow);
+        }
+    }
+
+    /// <summary>Image files the watcher picked up within the image window, newest first.</summary>
+    public IReadOnlyList<string> RecentWatcherImages(int max = 4)
+    {
+        if (_watcherImages.IsEmpty)
+        {
+            return Array.Empty<string>();
+        }
+
+        var cutoff = _time.GetUtcNow() - _imageWindow;
+        var fresh = new List<KeyValuePair<string, DateTimeOffset>>();
+        foreach (var entry in _watcherImages)
+        {
+            if (entry.Value >= cutoff)
+            {
+                fresh.Add(entry);
+            }
+            else
+            {
+                _watcherImages.TryRemove(entry);
+            }
+        }
+
+        fresh.Sort(static (a, b) => b.Value.CompareTo(a.Value));
+        var result = new List<string>(Math.Min(max, fresh.Count));
+        for (var i = 0; i < fresh.Count && i < max; i++)
+        {
+            result.Add(fresh[i].Key);
+        }
+
+        return result;
+    }
+
     public void Cleanup() => Cleanup(force: false);
 
     private void Cleanup(bool force)
@@ -113,14 +209,16 @@ public sealed class OptimisedFileRegistry
         CleanupStore(_paths);
         CleanupStore(_fingerprints);
         CleanupStore(_fingerprintLengths);
+        CleanupStore(_imagePixels, _imageWindow);
+        CleanupStore(_watcherImages, _imageWindow);
     }
 
-    private bool CheckRecent<TKey>(ConcurrentDictionary<TKey, DateTimeOffset> store, TKey key)
+    private bool CheckRecent<TKey>(ConcurrentDictionary<TKey, DateTimeOffset> store, TKey key, TimeSpan? window = null)
         where TKey : notnull
     {
         if (store.TryGetValue(key, out var timestamp))
         {
-            if (_time.GetUtcNow() - timestamp <= _window)
+            if (_time.GetUtcNow() - timestamp <= (window ?? _window))
             {
                 return true;
             }
@@ -131,7 +229,7 @@ public sealed class OptimisedFileRegistry
         return false;
     }
 
-    private void CleanupStore<TKey>(ConcurrentDictionary<TKey, DateTimeOffset> store)
+    private void CleanupStore<TKey>(ConcurrentDictionary<TKey, DateTimeOffset> store, TimeSpan? window = null)
         where TKey : notnull
     {
         if (store.IsEmpty)
@@ -139,7 +237,7 @@ public sealed class OptimisedFileRegistry
             return;
         }
 
-        var cutoff = _time.GetUtcNow() - _window;
+        var cutoff = _time.GetUtcNow() - (window ?? _window);
         foreach (var entry in store)
         {
             if (entry.Value < cutoff)

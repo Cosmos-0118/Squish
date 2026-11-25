@@ -31,7 +31,7 @@ internal sealed record ClipboardImageSignature(long Length, string ByteHash, int
     /// Decoding an image only to hash it costs a pixel buffer (4 bytes per pixel). Beyond this size the encoded-bytes
     /// hash is all that is used, so a huge capture never pays for a second full decode.
     /// </summary>
-    internal const long MaxPixelHashPixels = 20_000_000;
+    internal const long MaxPixelHashPixels = ImagePixelHasher.MaxPixels;
 
     private const int PngHeaderLength = 24;
 
@@ -87,57 +87,7 @@ internal sealed record ClipboardImageSignature(long Length, string ByteHash, int
 
     private static string? TryHashPixels(byte[] pngBytes, int width, int height)
     {
-        try
-        {
-            using var stream = new MemoryStream(pngBytes, writable: false);
-            using var bitmap = new Bitmap(stream);
-            if (bitmap.Width != width || bitmap.Height != height)
-            {
-                return null;
-            }
-
-            var data = bitmap.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
-            try
-            {
-                using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-
-                Span<byte> size = stackalloc byte[8];
-                BinaryPrimitives.WriteInt32LittleEndian(size, width);
-                BinaryPrimitives.WriteInt32LittleEndian(size[4..], height);
-                hash.AppendData(size);
-
-                var rowBytes = width * 4;
-                var row = ArrayPool<byte>.Shared.Rent(rowBytes);
-                try
-                {
-                    for (var y = 0; y < height; y++)
-                    {
-                        // Scan0 + y * Stride is correct for bottom-up bitmaps too (negative stride).
-                        Marshal.Copy(IntPtr.Add(data.Scan0, y * data.Stride), row, 0, rowBytes);
-                        for (var i = 3; i < rowBytes; i += 4)
-                        {
-                            row[i] = 0;
-                        }
-
-                        hash.AppendData(row, 0, rowBytes);
-                    }
-                }
-                finally
-                {
-                    ArrayPool<byte>.Shared.Return(row);
-                }
-
-                return Convert.ToHexString(hash.GetHashAndReset());
-            }
-            finally
-            {
-                bitmap.UnlockBits(data);
-            }
-        }
-        catch (Exception ex) when (ex is ArgumentException or ExternalException or InvalidOperationException or OutOfMemoryException)
-        {
-            // Undecodable or too big for GDI+: fall back to the encoded-bytes hash alone.
-            return null;
-        }
+        using var stream = new MemoryStream(pngBytes, writable: false);
+        return ImagePixelHasher.TryHash(stream, width, height)?.Hash;
     }
 }

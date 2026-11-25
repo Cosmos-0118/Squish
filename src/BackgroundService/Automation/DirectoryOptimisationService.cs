@@ -7,6 +7,7 @@ using System.Linq;
 using System.Runtime.Versioning;
 using System.Threading;
 using System.Threading.Tasks;
+using Squish.BackgroundService.Clipboard;
 using Squish.Core.Optimizers;
 using Squish.Core.Settings;
 using Squish.Core.Shared;
@@ -281,10 +282,22 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
             return;
         }
 
+        if (type == ItemType.Image && MatchesRecentClipboardImage(path, probe.Length))
+        {
+            _logger.LogDebug("Skipping {Path}; it is the screenshot the clipboard service is already optimising.", path.Value);
+            return;
+        }
+
         if (!_activePaths.TryAdd(path.Value, 0))
         {
             ReleaseSlot(type);
             return;
+        }
+
+        if (type == ItemType.Image)
+        {
+            // Lets a clipboard image that arrives a moment later recognise this file as the same screenshot.
+            _optimisedFiles.NoteWatcherImage(path);
         }
 
         _activeStems.AddOrUpdate(StemKey(path), 1, static (_, count) => count + 1);
@@ -458,6 +471,20 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
 
         return path.Value.StartsWith(workRoot, StringComparison.OrdinalIgnoreCase);
     }
+
+    private bool MatchesRecentClipboardImage(FilePath path, long length)
+    {
+        // Decoding costs real time, so only do it while a clipboard image is fresh, and only for files a screenshot could be.
+        if (length > MaxScreenshotBytes || !_optimisedFiles.HasRecentImagePixels)
+        {
+            return false;
+        }
+
+        return ImagePixelHasher.TryHashFile(path.Value) is { } pixels &&
+               _optimisedFiles.WasImagePixelsRecentlyHandled(pixels.Key);
+    }
+
+    private const long MaxScreenshotBytes = 32L * 1024 * 1024;
 
     private bool MatchesRecentFingerprint(FilePath path, long length)
     {

@@ -452,4 +452,41 @@ public sealed class DirectoryOptimisationServiceTests : IAsyncLifetime
         await Task.Delay(300);
         Assert.Single(_videoOptimiser.Processed);
     }
+
+    [Fact]
+    public async Task ScreenshotAlreadyHandledByTheClipboardIsNotOptimisedAgain()
+    {
+        var registry = new OptimisedFileRegistry();
+        var shot = TestImages.Png(40, 30, seed: 3);
+        using (var ms = new MemoryStream(shot))
+        {
+            registry.RegisterImagePixels(Squish.BackgroundService.Clipboard.ImagePixelHasher.TryHash(ms)!.Value.Key);
+        }
+
+        Start(new FakeFolderSettings(_images), registry);
+        await Task.Delay(300);
+
+        var duplicate = Path.Combine(_images, "Screenshot.png");
+        var other = Path.Combine(_images, "Other.png");
+        await File.WriteAllBytesAsync(duplicate, shot);
+        await File.WriteAllBytesAsync(other, TestImages.Png(40, 30, seed: 9));
+
+        await Eventually(() => _imageOptimiser.Processed.Contains(other, StringComparer.OrdinalIgnoreCase));
+        await Task.Delay(300);
+        Assert.DoesNotContain(duplicate, _imageOptimiser.Processed, StringComparer.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task WatcherNotesImagesItOptimisesSoTheClipboardCanMatchThem()
+    {
+        var registry = new OptimisedFileRegistry();
+        Start(new FakeFolderSettings(_images), registry);
+        await Task.Delay(300);
+
+        var path = Path.Combine(_images, "Screenshot.png");
+        await File.WriteAllBytesAsync(path, TestImages.Png(40, 30));
+
+        await Eventually(() => _imageOptimiser.Processed.Contains(path, StringComparer.OrdinalIgnoreCase));
+        Assert.Contains(registry.RecentWatcherImages(), p => string.Equals(p, path, StringComparison.OrdinalIgnoreCase));
+    }
 }
