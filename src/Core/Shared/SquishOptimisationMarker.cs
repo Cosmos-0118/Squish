@@ -19,10 +19,19 @@ public static class SquishOptimisationMarker
 
     public static bool TryMark(FilePath path)
     {
-        if (!SupportsMarkers || string.IsNullOrWhiteSpace(path.Value))
+        if (string.IsNullOrWhiteSpace(path.Value))
         {
             return false;
         }
+
+        // The stream marker lives on the file itself; the index covers volumes and tools that lose it.
+        var stream = SupportsMarkers && TryWriteStreamMarker(path);
+        var indexed = OptimisedIndex.Default.Record(path);
+        return stream || indexed;
+    }
+
+    private static bool TryWriteStreamMarker(FilePath path)
+    {
 
         try
         {
@@ -64,12 +73,17 @@ public static class SquishOptimisationMarker
 
     public static bool HasValidMarker(FilePath path)
     {
-        if (!SupportsMarkers || string.IsNullOrWhiteSpace(path.Value))
+        if (string.IsNullOrWhiteSpace(path.Value))
         {
             return false;
         }
 
-        return HasValidMarker(path, MarkerStreamName) || HasValidMarker(path, LegacyMarkerStreamName);
+        if (OptimisedIndex.Default.IsKnown(path))
+        {
+            return true;
+        }
+
+        return SupportsMarkers && (HasValidMarker(path, MarkerStreamName) || HasValidMarker(path, LegacyMarkerStreamName));
     }
 
     private static bool HasValidMarker(FilePath path, string streamName)
@@ -132,7 +146,13 @@ public static class SquishOptimisationMarker
 
     public static void TryClear(FilePath path)
     {
-        if (!SupportsMarkers || string.IsNullOrWhiteSpace(path.Value))
+        if (string.IsNullOrWhiteSpace(path.Value))
+        {
+            return;
+        }
+
+        OptimisedIndex.Default.Forget(path);
+        if (!SupportsMarkers)
         {
             return;
         }
