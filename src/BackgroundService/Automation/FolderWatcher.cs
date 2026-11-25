@@ -14,7 +14,11 @@ internal sealed class FolderWatcher : IDisposable
     // Non-paged memory per watch; 64 KB holds roughly 1,000 events, 8x the 8 KB default.
     internal const int BufferBytes = 64 * 1024;
 
-    private readonly FileSystemWatcher _watcher;
+    private FileSystemWatcher? _watcher;
+    private NativeChangeReader? _native;
+    private readonly bool _recursive;
+    private readonly object _backendGate = new();
+    private bool _disposed;
     private readonly Action<string, WatchTypes, bool> _onHit;
     private readonly Action<FolderWatcher, Exception> _onFault;
     private int _faulted;
@@ -22,25 +26,76 @@ internal sealed class FolderWatcher : IDisposable
     private long _eventCount;
     private volatile int _allowedTypes;
 
-    public FolderWatcher(string root, WatchTypes allowedTypes, Action<string, WatchTypes, bool> onHit, Action<FolderWatcher, Exception> onFault, bool recursive = true)
+    public FolderWatcher(string root, WatchTypes allowedTypes, Action<string, WatchTypes, bool> onHit, Action<FolderWatcher, Exception> onFault, bool recursive = true, bool useNative = true)
     {
         Root = root;
         _allowedTypes = (int)allowedTypes;
         _onHit = onHit;
         _onFault = onFault;
+        _recursive = recursive;
 
-        _watcher = new FileSystemWatcher(root)
+        // Prefer the kernel's extended notifications (no per-event allocation for files we ignore); fall back to
+        // FileSystemWatcher where they are unavailable.
+        lock (_backendGate)
         {
-            IncludeSubdirectories = recursive,
+            _native = OperatingSystem.IsWindows() && useNative
+                ? NativeChangeReader.TryStart(root, recursive, () => (WatchTypes)_allowedTypes, Deliver, OnNativeError)
+                : null;
+
+            if (_native is null)
+            {
+                StartFileSystemWatcher();
+            }
+        }
+    }
+
+    /// <summary>Which OS mechanism is delivering events: "native" or "FileSystemWatcher".</summary>
+    public string Backend
+    {
+        get
+        {
+            lock (_backendGate)
+            {
+                return _native is not null && _watcher is null ? "native" : "FileSystemWatcher";
+            }
+        }
+    }
+
+    /// <summary>Change records the kernel delivered to the native reader, before filtering (0 for FileSystemWatcher).</summary>
+    internal long NativeRecordsSeen
+    {
+        get
+        {
+            lock (_backendGate)
+            {
+                return _native?.RecordsSeen ?? 0;
+            }
+        }
+    }
+
+    private void StartFileSystemWatcher()
+    {
+        var watcher = new FileSystemWatcher(Root)
+        {
+            IncludeSubdirectories = _recursive,
             InternalBufferSize = BufferBytes,
             NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size
         };
 
-        _watcher.Created += OnChanged;
-        _watcher.Changed += OnChanged;
-        _watcher.Renamed += OnRenamed;
-        _watcher.Error += OnError;
-        _watcher.EnableRaisingEvents = true;
+        watcher.Created += OnChanged;
+        watcher.Changed += OnChanged;
+        watcher.Renamed += OnRenamed;
+        watcher.Error += OnError;
+        watcher.EnableRaisingEvents = true;
+        _watcher = watcher;
+    }
+
+    private void OnNativeError(Exception exception) => OnError(this, new ErrorEventArgs(exception));
+
+    private void Deliver(string path, WatchTypes type, bool renamed)
+    {
+        Interlocked.Increment(ref _eventCount);
+        _onHit(path, type, renamed);
     }
 
     public string Root { get; }
@@ -122,11 +177,26 @@ internal sealed class FolderWatcher : IDisposable
 
     public void Dispose()
     {
-        _watcher.EnableRaisingEvents = false;
-        _watcher.Created -= OnChanged;
-        _watcher.Changed -= OnChanged;
-        _watcher.Renamed -= OnRenamed;
-        _watcher.Error -= OnError;
-        _watcher.Dispose();
+        NativeChangeReader? native;
+        FileSystemWatcher? watcher;
+        lock (_backendGate)
+        {
+            _disposed = true;
+            native = _native;
+            watcher = _watcher;
+            _native = null;
+            _watcher = null;
+        }
+
+        native?.Dispose();
+        if (watcher is not null)
+        {
+            watcher.EnableRaisingEvents = false;
+            watcher.Created -= OnChanged;
+            watcher.Changed -= OnChanged;
+            watcher.Renamed -= OnRenamed;
+            watcher.Error -= OnError;
+            watcher.Dispose();
+        }
     }
 }
