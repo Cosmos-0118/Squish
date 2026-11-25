@@ -15,6 +15,7 @@ public static class SquishOptimisationMarker
     private const string MarkerStreamName = "squish.optimised";
     private const string LegacyMarkerStreamName = "clop.optimised";
     private const string MarkerPrefix = "v1|";
+    private const string MarkerPrefixV2 = "v2|";
 
     public static bool TryMark(FilePath path)
     {
@@ -31,7 +32,10 @@ public static class SquishOptimisationMarker
                 return false;
             }
 
-            var payload = string.Format(CultureInfo.InvariantCulture, "{0}{1}|{2}", MarkerPrefix, info.Length, info.LastWriteTimeUtc.Ticks);
+            // v2 also records a content fingerprint, so the marker survives tools that touch the timestamp (cloud sync, SMB rounding).
+            var payload = FileFingerprint.TryCreate(path, out var fingerprint) && fingerprint.Length == info.Length
+                ? string.Format(CultureInfo.InvariantCulture, "{0}{1}|{2}|{3}", MarkerPrefixV2, info.Length, info.LastWriteTimeUtc.Ticks, fingerprint.Hash)
+                : string.Format(CultureInfo.InvariantCulture, "{0}{1}|{2}", MarkerPrefix, info.Length, info.LastWriteTimeUtc.Ticks);
             using (var stream = new FileStream(BuildStreamPath(path.Value), FileMode.Create, FileAccess.Write, FileShare.Read))
             using (var writer = new StreamWriter(stream, Encoding.UTF8, leaveOpen: false))
             {
@@ -81,22 +85,16 @@ public static class SquishOptimisationMarker
             using var stream = new FileStream(BuildStreamPath(path.Value, streamName), FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
             using var reader = new StreamReader(stream, Encoding.UTF8);
             var payload = reader.ReadToEnd();
-            if (!payload.StartsWith(MarkerPrefix, StringComparison.Ordinal))
+            var isV2 = payload.StartsWith(MarkerPrefixV2, StringComparison.Ordinal);
+            if (!isV2 && !payload.StartsWith(MarkerPrefix, StringComparison.Ordinal))
             {
                 return false;
             }
 
-            var remainder = payload.AsSpan(MarkerPrefix.Length);
-            var separatorIndex = remainder.IndexOf('|');
-            if (separatorIndex < 0)
-            {
-                return false;
-            }
-
-            var sizeSpan = remainder[..separatorIndex];
-            var ticksSpan = remainder[(separatorIndex + 1)..];
-            if (!long.TryParse(sizeSpan, NumberStyles.Integer, CultureInfo.InvariantCulture, out var recordedSize) ||
-                !long.TryParse(ticksSpan, NumberStyles.Integer, CultureInfo.InvariantCulture, out var recordedTicks))
+            var fields = payload.Substring(MarkerPrefix.Length).Split('|');
+            if (fields.Length < (isV2 ? 3 : 2) ||
+                !long.TryParse(fields[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var recordedSize) ||
+                !long.TryParse(fields[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var recordedTicks))
             {
                 return false;
             }
@@ -104,6 +102,14 @@ public static class SquishOptimisationMarker
             if (recordedSize == info.Length && recordedTicks == info.LastWriteTimeUtc.Ticks)
             {
                 return true;
+            }
+
+            // Same size, new timestamp: only the metadata changed if the content still matches. Refresh the marker in place.
+            if (isV2 && recordedSize == info.Length &&
+                FileFingerprint.TryCreate(path, out var current) &&
+                string.Equals(current.Hash, fields[2], StringComparison.OrdinalIgnoreCase))
+            {
+                return TryMark(path);
             }
 
             TryClear(path, streamName);

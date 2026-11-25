@@ -39,6 +39,9 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
     private readonly Dictionary<string, RootState> _roots = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, DirectoryRequestContext> _pending = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, byte> _activePaths = new(StringComparer.OrdinalIgnoreCase);
+    // directory + stem of every active file. A format conversion (photo.png -> photo.jpg) writes a differently named
+    // output into the watched folder; its events must not be mistaken for a new file.
+    private readonly ConcurrentDictionary<string, int> _activeStems = new(StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim _healthWake = new(0, int.MaxValue);
 
     private int _running;
@@ -223,6 +226,14 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
             return;
         }
 
+        if (_activeStems.ContainsKey(StemKey(path)))
+        {
+            // Probably the output of a running conversion: look again once that job is done (it is then recognised as
+            // our own output and dropped); a genuinely different sibling file is processed normally.
+            _queue.Reschedule(entry, _options.DeferredFallback, deferred: true);
+            return;
+        }
+
         _optimisedFiles.Cleanup();
 
         var quiet = QuietPeriod(type);
@@ -276,7 +287,24 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
             return;
         }
 
+        _activeStems.AddOrUpdate(StemKey(path), 1, static (_, count) => count + 1);
+
         Submit(type, path, entry.Payload.Root);
+    }
+
+    private static string StemKey(FilePath path) =>
+        System.IO.Path.Combine(System.IO.Path.GetDirectoryName(path.Value) ?? string.Empty, System.IO.Path.GetFileNameWithoutExtension(path.Value));
+
+    private void ReleaseStem(FilePath path)
+    {
+        var key = StemKey(path);
+        while (_activeStems.TryGetValue(key, out var count))
+        {
+            if (count <= 1 ? _activeStems.TryRemove(new KeyValuePair<string, int>(key, count)) : _activeStems.TryUpdate(key, count - 1, count))
+            {
+                return;
+            }
+        }
     }
 
     private void Retry(FileSettleQueue<WatchHit>.Entry entry, FileProbe probe, TimeSpan quiet)
@@ -366,6 +394,7 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
             {
                 // Nothing was registered, so release what ProcessEntry reserved.
                 _activePaths.TryRemove(path.Value, out _);
+                ReleaseStem(path);
                 ReleaseSlot(type);
             }
         }
@@ -387,9 +416,12 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
         if (result?.OutputPath is { } outputPath)
         {
             _optimisedFiles.RegisterPath(outputPath);
+            // Content identity outlives the path window: survives renames and cloud-sync touches of the output.
+            _optimisedFiles.TryRegisterFingerprint(outputPath);
         }
 
         _activePaths.TryRemove(context.Path.Value, out _);
+        ReleaseStem(context.Path);
         ReleaseSlot(context.ItemType);
         _queue.WakeDeferred();
 
@@ -793,7 +825,8 @@ public sealed class DirectoryOptimisationService : IAsyncDisposable
                 {
                     ShouldIncludePredicate = (ref FileSystemEntry entry) =>
                         !entry.IsDirectory &&
-                        entry.LastWriteTimeUtc.UtcDateTime >= cutoff &&
+                        // Extracted archives and copied files keep an old write time but get a fresh creation time.
+                        (entry.LastWriteTimeUtc.UtcDateTime >= cutoff || entry.CreationTimeUtc.UtcDateTime >= cutoff) &&
                         (MediaExtensionFilter.Classify(entry.FileName) & types) != 0
                 };
 

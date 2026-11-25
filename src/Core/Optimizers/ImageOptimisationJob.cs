@@ -131,7 +131,7 @@ internal sealed class ImageOptimisationJob : IDisposable
 
         // Read before the copy: replacing the source in place would otherwise overwrite the timestamps we want to keep.
         var originalTimes = _options.PreserveDates ? ReadTimestamps(_source) : null;
-        File.Copy(best.File.Value, destination.Value, overwrite: true);
+        SafeFileWriter.CopyOver(best.File.Value, destination.Value);
         if (originalTimes is { } times)
         {
             // Must happen before the caller writes the optimisation marker, which records the file's last-write time.

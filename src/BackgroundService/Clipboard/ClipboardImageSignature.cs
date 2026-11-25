@@ -16,7 +16,7 @@ namespace Squish.BackgroundService.Clipboard;
 /// the pixels are the same, so the encoded-bytes hash alone cannot tell they are one image.
 /// </summary>
 /// <param name="Length">Size of the encoded image.</param>
-/// <param name="ByteHash">SHA-256 of the encoded image, in the same format <see cref="FileFingerprint"/> uses.</param>
+/// <param name="ByteHash">XxHash128 of the encoded image, in the same format <see cref="FileFingerprint"/> uses.</param>
 /// <param name="Width">Pixel width read from the PNG header, or 0 when unreadable.</param>
 /// <param name="Height">Pixel height read from the PNG header, or 0 when unreadable.</param>
 /// <param name="PixelHash">
@@ -58,7 +58,7 @@ internal sealed record ClipboardImageSignature(long Length, string ByteHash, int
     {
         ArgumentNullException.ThrowIfNull(pngBytes);
 
-        var byteHash = Convert.ToHexString(SHA256.HashData(pngBytes));
+        var byteHash = FileFingerprint.FromBytes(pngBytes).Hash;
         var (width, height) = TryReadPngSize(pngBytes);
 
         string? pixelHash = null;

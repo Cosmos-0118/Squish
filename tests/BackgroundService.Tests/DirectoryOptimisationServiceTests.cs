@@ -144,7 +144,16 @@ public sealed class DirectoryOptimisationServiceTests : IAsyncLifetime
         return service;
     }
 
-    private static byte[] Bytes(int n = 2048) => Enumerable.Range(0, n).Select(i => (byte)(i % 251)).ToArray();
+    private static int _bytesSeed;
+
+    // Unique content per call: the watcher now remembers finished output by content, so identical fixtures would suppress each other.
+    private static byte[] Bytes(int n = 2048)
+    {
+        var seed = System.Threading.Interlocked.Increment(ref _bytesSeed);
+        var data = Enumerable.Range(0, n).Select(i => (byte)(i % 251)).ToArray();
+        BitConverter.GetBytes(seed).CopyTo(data, 0);
+        return data;
+    }
 
     private static async Task Eventually(Func<bool> condition, int timeoutMs = 8000, string? message = null)
     {
@@ -396,6 +405,7 @@ public sealed class DirectoryOptimisationServiceTests : IAsyncLifetime
         var old = Path.Combine(_images, "ancient.png");
         await File.WriteAllBytesAsync(old, Bytes());
         File.SetLastWriteTimeUtc(old, DateTime.UtcNow.AddDays(-30));
+        File.SetCreationTimeUtc(old, DateTime.UtcNow.AddDays(-30));
 
         var found = await service.ScanAsync(state, DateTime.UtcNow.AddMinutes(-1), CancellationToken.None);
 

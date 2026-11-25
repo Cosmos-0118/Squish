@@ -212,7 +212,7 @@ public sealed class VideoOptimiser : IOptimiser
 
             // Read the source times first: when the output replaces the source in place, the copy below overwrites them.
             var sourceTimes = CaptureTimestamps(plan.SourcePath, plan.PreserveTimestamps);
-            File.Copy(tempOutput.Value, finalOutput.Value, overwrite: true);
+            SafeFileWriter.CopyOver(tempOutput.Value, finalOutput.Value);
             ApplyTimestamps(sourceTimes, finalOutput);
 
             if (outputPlan.RequiresSourceDeletion(plan.SourcePath))
@@ -427,7 +427,7 @@ public sealed class VideoOptimiser : IOptimiser
             var finalOutput = outputPlan.Destination;
             finalOutput.EnsureParentDirectoryExists();
             var sourceTimes = CaptureTimestamps(plan.SourcePath, plan.PreserveTimestamps);
-            File.Copy(tempOutput.Value, finalOutput.Value, overwrite: true);
+            SafeFileWriter.CopyOver(tempOutput.Value, finalOutput.Value);
             ApplyTimestamps(sourceTimes, finalOutput);
 
             if (outputPlan.RequiresSourceDeletion(plan.SourcePath))
@@ -480,7 +480,7 @@ public sealed class VideoOptimiser : IOptimiser
             var optimisedSize = SafeFileSize(tempOutput);
 
             var sourceTimes = CaptureTimestamps(plan.SourcePath, plan.PreserveTimestamps);
-            File.Copy(tempOutput.Value, finalOutput.Value, overwrite: true);
+            SafeFileWriter.CopyOver(tempOutput.Value, finalOutput.Value);
             ApplyTimestamps(sourceTimes, finalOutput);
 
             if (outputPlan.RequiresSourceDeletion(plan.SourcePath))
